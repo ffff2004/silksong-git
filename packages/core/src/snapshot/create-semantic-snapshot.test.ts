@@ -1,8 +1,17 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 
-import type { DecodedSave, MappingData, SemanticSnapshot } from "../index.ts";
+import type {
+  DecodedSave,
+  MappingData,
+  SemanticSnapshot,
+  SemanticSnapshotItemStatus,
+  SourceReference,
+} from "../index.ts";
 import { createSemanticSnapshot, getBuiltinMappingData } from "../index.ts";
+
+type MappingItem =
+  MappingData["sections"][number]["categories"][number]["items"][number];
 
 test("createSemanticSnapshot marks a scene-scoped collected item as done", () => {
   const decodedSave: DecodedSave = {
@@ -21,19 +30,25 @@ test("createSemanticSnapshot marks a scene-scoped collected item as done", () =>
 
   const snapshot = createSemanticSnapshot(
     decodedSave,
-    createSceneBoolMapping(),
+    createMapping([
+      sceneBoolItem("mask-shard-2", "Mask Shard #2", {
+        flag: "Heart Piece",
+        scene: "Crawl_02",
+      }),
+    ]),
   );
-  const item = findSnapshotItem(snapshot, "mask-shard-2");
 
-  assert.equal(item.status, "done");
-  assert.equal(item.value, true);
-  assert.deepEqual(item.sourceReferences, [
-    {
-      flag: "Heart Piece",
-      kind: "sceneFlag",
-      scene: "Crawl_02",
-    },
-  ]);
+  assertSnapshotItem(snapshot, "mask-shard-2", {
+    sourceReferences: [
+      {
+        flag: "Heart Piece",
+        kind: "sceneFlag",
+        scene: "Crawl_02",
+      },
+    ],
+    status: "done",
+    value: true,
+  });
 });
 
 test("createSemanticSnapshot marks an untriggered scene-scoped item as missing", () => {
@@ -53,19 +68,25 @@ test("createSemanticSnapshot marks an untriggered scene-scoped item as missing",
 
   const snapshot = createSemanticSnapshot(
     decodedSave,
-    createSceneBoolMapping(),
+    createMapping([
+      sceneBoolItem("mask-shard-2", "Mask Shard #2", {
+        flag: "Heart Piece",
+        scene: "Crawl_02",
+      }),
+    ]),
   );
-  const item = findSnapshotItem(snapshot, "mask-shard-2");
 
-  assert.equal(item.status, "missing");
-  assert.equal(item.value, false);
-  assert.deepEqual(item.sourceReferences, [
-    {
-      flag: "Heart Piece",
-      kind: "sceneFlag",
-      scene: "Crawl_02",
-    },
-  ]);
+  assertSnapshotItem(snapshot, "mask-shard-2", {
+    sourceReferences: [
+      {
+        flag: "Heart Piece",
+        kind: "sceneFlag",
+        scene: "Crawl_02",
+      },
+    ],
+    status: "missing",
+    value: false,
+  });
 });
 
 test("createSemanticSnapshot maps direct playerData booleans to semantic item status", () => {
@@ -78,27 +99,35 @@ test("createSemanticSnapshot maps direct playerData booleans to semantic item st
 
   const snapshot = createSemanticSnapshot(
     decodedSave,
-    createDirectPlayerDataBooleanMapping(),
+    createMapping(
+      [
+        flagItem("bell-beast", "Bell Beast", "defeatedBellBeast"),
+        bossItem("moorwing", "Moorwing", "defeatedMoorwing"),
+      ],
+      { categoryId: "bosses", categoryLabel: "Bosses", sectionId: "bosses" },
+    ),
   );
-  const defeatedBellBeast = findSnapshotItem(snapshot, "bell-beast");
-  const defeatedMoorwing = findSnapshotItem(snapshot, "moorwing");
 
-  assert.equal(defeatedBellBeast.status, "done");
-  assert.equal(defeatedBellBeast.value, true);
-  assert.deepEqual(defeatedBellBeast.sourceReferences, [
-    {
-      field: "defeatedBellBeast",
-      kind: "playerData",
-    },
-  ]);
-  assert.equal(defeatedMoorwing.status, "missing");
-  assert.equal(defeatedMoorwing.value, false);
-  assert.deepEqual(defeatedMoorwing.sourceReferences, [
-    {
-      field: "defeatedMoorwing",
-      kind: "playerData",
-    },
-  ]);
+  assertSnapshotItem(snapshot, "bell-beast", {
+    sourceReferences: [
+      {
+        field: "defeatedBellBeast",
+        kind: "playerData",
+      },
+    ],
+    status: "done",
+    value: true,
+  });
+  assertSnapshotItem(snapshot, "moorwing", {
+    sourceReferences: [
+      {
+        field: "defeatedMoorwing",
+        kind: "playerData",
+      },
+    ],
+    status: "missing",
+    value: false,
+  });
 });
 
 test("createSemanticSnapshot maps key flags to semantic item status", () => {
@@ -112,35 +141,53 @@ test("createSemanticSnapshot maps key flags to semantic item status", () => {
     },
   };
 
-  const snapshot = createSemanticSnapshot(decodedSave, createKeyMapping());
-  const cityKey = findSnapshotItem(snapshot, "city-key");
-  const simpleKey = findSnapshotItem(snapshot, "simple-key");
-  const unusedKey = findSnapshotItem(snapshot, "unused-key");
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createMapping(
+      [
+        keyItem("city-key", "City Key", { flag: "hasCityKey" }),
+        keyItem("simple-key", "Simple Key", {
+          flags: ["hasSimpleKeyA", "hasSimpleKeyB"],
+        }),
+        keyItem("unused-key", "Unused Key", { flag: "hasUnusedKey" }),
+      ],
+      {
+        categoryId: "keys",
+        categoryLabel: "Keys",
+        sectionId: "essentials",
+        sectionLabel: "Essentials",
+      },
+    ),
+  );
 
-  assert.equal(cityKey.status, "done");
-  assert.equal(cityKey.value, true);
-  assert.deepEqual(cityKey.sourceReferences, [
-    {
-      field: "hasCityKey",
-      kind: "playerData",
-    },
-  ]);
-
-  assert.equal(simpleKey.status, "done");
-  assert.equal(simpleKey.value, true);
-  assert.deepEqual(simpleKey.sourceReferences, [
-    {
-      field: "hasSimpleKeyA",
-      kind: "playerData",
-    },
-    {
-      field: "hasSimpleKeyB",
-      kind: "playerData",
-    },
-  ]);
-
-  assert.equal(unusedKey.status, "missing");
-  assert.equal(unusedKey.value, false);
+  assertSnapshotItem(snapshot, "city-key", {
+    sourceReferences: [
+      {
+        field: "hasCityKey",
+        kind: "playerData",
+      },
+    ],
+    status: "done",
+    value: true,
+  });
+  assertSnapshotItem(snapshot, "simple-key", {
+    sourceReferences: [
+      {
+        field: "hasSimpleKeyA",
+        kind: "playerData",
+      },
+      {
+        field: "hasSimpleKeyB",
+        kind: "playerData",
+      },
+    ],
+    status: "done",
+    value: true,
+  });
+  assertSnapshotItem(snapshot, "unused-key", {
+    status: "missing",
+    value: false,
+  });
 });
 
 test("createSemanticSnapshot maps numeric thresholds to semantic item status", () => {
@@ -154,31 +201,44 @@ test("createSemanticSnapshot maps numeric thresholds to semantic item status", (
 
   const snapshot = createSemanticSnapshot(
     decodedSave,
-    createNumericThresholdMapping(),
+    createMapping(
+      [
+        levelItem("base-needle", "Base Needle", "nailUpgrades", 0),
+        levelItem("shining-needle", "Shining Needle", "nailUpgrades", 2),
+        levelItem("hivesteel-needle", "Hivesteel Needle", "nailUpgrades", 3),
+        flagIntItem("bell-key", "Bell Key", "bellKeyCount"),
+        flagIntItem("simple-key-count", "Simple Key Count", "simpleKeyCount"),
+      ],
+      { categoryId: "needle-upgrades", categoryLabel: "Needle Upgrades" },
+    ),
   );
-  const baseNeedle = findSnapshotItem(snapshot, "base-needle");
-  const shiningNeedle = findSnapshotItem(snapshot, "shining-needle");
-  const hivesteelNeedle = findSnapshotItem(snapshot, "hivesteel-needle");
-  const bellKey = findSnapshotItem(snapshot, "bell-key");
-  const simpleKey = findSnapshotItem(snapshot, "simple-key-count");
 
-  assert.equal(baseNeedle.status, "done");
-  assert.equal(baseNeedle.value, 2);
-  assert.equal(shiningNeedle.status, "done");
-  assert.equal(shiningNeedle.value, 2);
-  assert.equal(hivesteelNeedle.status, "missing");
-  assert.equal(hivesteelNeedle.value, 2);
-  assert.deepEqual(hivesteelNeedle.sourceReferences, [
-    {
-      field: "nailUpgrades",
-      kind: "playerData",
-    },
-  ]);
-
-  assert.equal(bellKey.status, "done");
-  assert.equal(bellKey.value, true);
-  assert.equal(simpleKey.status, "missing");
-  assert.equal(simpleKey.value, false);
+  assertSnapshotItem(snapshot, "base-needle", {
+    status: "done",
+    value: 2,
+  });
+  assertSnapshotItem(snapshot, "shining-needle", {
+    status: "done",
+    value: 2,
+  });
+  assertSnapshotItem(snapshot, "hivesteel-needle", {
+    sourceReferences: [
+      {
+        field: "nailUpgrades",
+        kind: "playerData",
+      },
+    ],
+    status: "missing",
+    value: 2,
+  });
+  assertSnapshotItem(snapshot, "bell-key", {
+    status: "done",
+    value: true,
+  });
+  assertSnapshotItem(snapshot, "simple-key-count", {
+    status: "missing",
+    value: false,
+  });
 });
 
 test("createSemanticSnapshot maps savedData quantity and unlocked entries to semantic item status", () => {
@@ -225,41 +285,49 @@ test("createSemanticSnapshot maps savedData quantity and unlocked entries to sem
 
   const snapshot = createSemanticSnapshot(
     decodedSave,
-    createSavedDataMapping(),
+    createMapping([
+      collectableItem("mossberry", "Mossberry", "Mossberry"),
+      collectableItem("memory-locket", "Memory Locket", "Memory Locket"),
+      toolItem("straight-pin", "Straight Pin", "Straight Pin"),
+      toolItem("compass", "Compass", "Compass"),
+    ]),
   );
-  const mossberry = findSnapshotItem(snapshot, "mossberry");
-  const memoryLocket = findSnapshotItem(snapshot, "memory-locket");
-  const straightPin = findSnapshotItem(snapshot, "straight-pin");
-  const compass = findSnapshotItem(snapshot, "compass");
 
-  assert.equal(mossberry.status, "done");
-  assert.equal(mossberry.value, 2);
-  assert.deepEqual(mossberry.sourceReferences, [
-    {
-      field: "Collectables",
-      kind: "savedData",
-      name: "Mossberry",
-    },
-  ]);
-
-  assert.equal(memoryLocket.status, "missing");
-  assert.equal(memoryLocket.value, 0);
-  assert.equal(straightPin.status, "done");
-  assert.equal(straightPin.value, true);
-  assert.deepEqual(straightPin.sourceReferences, [
-    {
-      field: "Tools",
-      kind: "savedData",
-      name: "Straight Pin",
-    },
-    {
-      field: "ToolEquips",
-      kind: "savedData",
-      name: "Straight Pin",
-    },
-  ]);
-  assert.equal(compass.status, "missing");
-  assert.equal(compass.value, false);
+  assertSnapshotItem(snapshot, "mossberry", {
+    sourceReferences: [
+      {
+        field: "Collectables",
+        kind: "savedData",
+        name: "Mossberry",
+      },
+    ],
+    status: "done",
+    value: 2,
+  });
+  assertSnapshotItem(snapshot, "memory-locket", {
+    status: "missing",
+    value: 0,
+  });
+  assertSnapshotItem(snapshot, "straight-pin", {
+    sourceReferences: [
+      {
+        field: "Tools",
+        kind: "savedData",
+        name: "Straight Pin",
+      },
+      {
+        field: "ToolEquips",
+        kind: "savedData",
+        name: "Straight Pin",
+      },
+    ],
+    status: "done",
+    value: true,
+  });
+  assertSnapshotItem(snapshot, "compass", {
+    status: "missing",
+    value: false,
+  });
 });
 
 test("createSemanticSnapshot maps quest states to semantic item status", () => {
@@ -293,25 +361,42 @@ test("createSemanticSnapshot maps quest states to semantic item status", () => {
     },
   };
 
-  const snapshot = createSemanticSnapshot(decodedSave, createQuestMapping());
-  const citadelSeeker = findSnapshotItem(snapshot, "citadel-seeker");
-  const lostMerchant = findSnapshotItem(snapshot, "lost-merchant");
-  const quietWish = findSnapshotItem(snapshot, "quiet-wish");
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createMapping(
+      [
+        questItem("citadel-seeker", "Citadel Seeker", "Citadel   Seeker"),
+        questItem("lost-merchant", "Lost Merchant", "Lost Merchant"),
+        questItem("quiet-wish", "Quiet Wish", "Quiet Wish"),
+      ],
+      {
+        categoryId: "wishes",
+        categoryLabel: "Wishes",
+        sectionId: "wishes",
+        sectionLabel: "Wishes",
+      },
+    ),
+  );
 
-  assert.equal(citadelSeeker.status, "accepted");
-  assert.equal(citadelSeeker.value, "accepted");
-  assert.deepEqual(citadelSeeker.sourceReferences, [
-    {
-      field: "QuestCompletionData",
-      kind: "savedData",
-      name: "Citadel   Seeker",
-    },
-  ]);
-
-  assert.equal(lostMerchant.status, "done");
-  assert.equal(lostMerchant.value, "completed");
-  assert.equal(quietWish.status, "missing");
-  assert.equal(quietWish.value, false);
+  assertSnapshotItem(snapshot, "citadel-seeker", {
+    sourceReferences: [
+      {
+        field: "QuestCompletionData",
+        kind: "savedData",
+        name: "Citadel   Seeker",
+      },
+    ],
+    status: "accepted",
+    value: "accepted",
+  });
+  assertSnapshotItem(snapshot, "lost-merchant", {
+    status: "done",
+    value: "completed",
+  });
+  assertSnapshotItem(snapshot, "quiet-wish", {
+    status: "missing",
+    value: false,
+  });
 });
 
 test("createSemanticSnapshot maps journal progress to semantic item status", () => {
@@ -336,24 +421,36 @@ test("createSemanticSnapshot maps journal progress to semantic item status", () 
     },
   };
 
-  const snapshot = createSemanticSnapshot(decodedSave, createJournalMapping());
-  const mossCharger = findSnapshotItem(snapshot, "moss-charger");
-  const bellBeast = findSnapshotItem(snapshot, "bell-beast-journal");
-  const missingEntry = findSnapshotItem(snapshot, "missing-entry");
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createMapping(
+      [
+        journalItem("moss-charger", "Moss Charger", "Moss Charger", 5),
+        journalItem("bell-beast-journal", "Bell Beast", "Bell Beast", 5),
+        journalItem("missing-entry", "Missing Entry", "Missing Entry", 1),
+      ],
+      { categoryId: "journal", categoryLabel: "Journal", sectionId: "journal" },
+    ),
+  );
 
-  assert.equal(mossCharger.status, "accepted");
-  assert.equal(mossCharger.value, 2);
-  assert.deepEqual(mossCharger.sourceReferences, [
-    {
-      field: "EnemyJournalKillData",
-      kind: "playerData",
-    },
-  ]);
-
-  assert.equal(bellBeast.status, "done");
-  assert.equal(bellBeast.value, 5);
-  assert.equal(missingEntry.status, "missing");
-  assert.equal(missingEntry.value, 0);
+  assertSnapshotItem(snapshot, "moss-charger", {
+    sourceReferences: [
+      {
+        field: "EnemyJournalKillData",
+        kind: "playerData",
+      },
+    ],
+    status: "accepted",
+    value: 2,
+  });
+  assertSnapshotItem(snapshot, "bell-beast-journal", {
+    status: "done",
+    value: 5,
+  });
+  assertSnapshotItem(snapshot, "missing-entry", {
+    status: "missing",
+    value: 0,
+  });
 });
 
 test("createSemanticSnapshot maps relic, materium, and device states to semantic item status", () => {
@@ -410,38 +507,79 @@ test("createSemanticSnapshot maps relic, materium, and device states to semantic
 
   const snapshot = createSemanticSnapshot(
     decodedSave,
-    createRelicMateriumDeviceMapping(),
+    createMapping(
+      [
+        relicItem(
+          "choral-commandment",
+          "Choral Commandment",
+          "Choral Commandment",
+        ),
+        relicItem("rune-harp", "Rune Harp", "Rune Harp"),
+        materiumItem(
+          "far-fields-materium",
+          "Far Fields Materium",
+          "Far Fields Materium",
+        ),
+        materiumItem(
+          "deposited-materium",
+          "Deposited Materium",
+          "Deposited Materium",
+        ),
+        deviceItem("collected-device", "Collected Device", {
+          flag: "Device Pickup",
+          relatedFlag: "otherDepositedDevice",
+          scene: "Device_Room",
+        }),
+        deviceItem("deposited-device", "Deposited Device", {
+          flag: "Missing Device Pickup",
+          relatedFlag: "depositedDevice",
+          scene: "Device_Room",
+        }),
+      ],
+      {
+        categoryId: "relics",
+        categoryLabel: "Relics",
+        sectionId: "completion",
+        sectionLabel: "Completion",
+      },
+    ),
   );
-  const depositedRelic = findSnapshotItem(snapshot, "choral-commandment");
-  const collectedRelic = findSnapshotItem(snapshot, "rune-harp");
-  const collectedMaterium = findSnapshotItem(snapshot, "far-fields-materium");
-  const depositedMaterium = findSnapshotItem(snapshot, "deposited-materium");
-  const collectedDevice = findSnapshotItem(snapshot, "collected-device");
-  const depositedDevice = findSnapshotItem(snapshot, "deposited-device");
 
-  assert.equal(depositedRelic.status, "done");
-  assert.equal(depositedRelic.value, "deposited");
-  assert.equal(collectedRelic.status, "accepted");
-  assert.equal(collectedRelic.value, "collected");
-  assert.equal(collectedMaterium.status, "accepted");
-  assert.equal(collectedMaterium.value, "collected");
-  assert.equal(depositedMaterium.status, "done");
-  assert.equal(depositedMaterium.value, "deposited");
-  assert.equal(collectedDevice.status, "accepted");
-  assert.equal(collectedDevice.value, "collected");
-  assert.deepEqual(collectedDevice.sourceReferences, [
-    {
-      field: "otherDepositedDevice",
-      kind: "playerData",
-    },
-    {
-      kind: "sceneFlag",
-      flag: "Device Pickup",
-      scene: "Device_Room",
-    },
-  ]);
-  assert.equal(depositedDevice.status, "done");
-  assert.equal(depositedDevice.value, "deposited");
+  assertSnapshotItem(snapshot, "choral-commandment", {
+    status: "done",
+    value: "deposited",
+  });
+  assertSnapshotItem(snapshot, "rune-harp", {
+    status: "accepted",
+    value: "collected",
+  });
+  assertSnapshotItem(snapshot, "far-fields-materium", {
+    status: "accepted",
+    value: "collected",
+  });
+  assertSnapshotItem(snapshot, "deposited-materium", {
+    status: "done",
+    value: "deposited",
+  });
+  assertSnapshotItem(snapshot, "collected-device", {
+    sourceReferences: [
+      {
+        field: "otherDepositedDevice",
+        kind: "playerData",
+      },
+      {
+        kind: "sceneFlag",
+        flag: "Device Pickup",
+        scene: "Device_Room",
+      },
+    ],
+    status: "accepted",
+    value: "collected",
+  });
+  assertSnapshotItem(snapshot, "deposited-device", {
+    status: "done",
+    value: "deposited",
+  });
 });
 
 test("createSemanticSnapshot maps sceneVisited entries to semantic item status", () => {
@@ -453,22 +591,29 @@ test("createSemanticSnapshot maps sceneVisited entries to semantic item status",
 
   const snapshot = createSemanticSnapshot(
     decodedSave,
-    createSceneVisitedMapping(),
+    createMapping(
+      [
+        sceneVisitedItem("crawl-02", "Crawl 02", "Crawl_02"),
+        sceneVisitedItem("song-09", "Song 09", "Song_09"),
+      ],
+      { categoryId: "scenes", categoryLabel: "Scenes", sectionId: "scenes" },
+    ),
   );
-  const visitedScene = findSnapshotItem(snapshot, "crawl-02");
-  const unvisitedScene = findSnapshotItem(snapshot, "song-09");
 
-  assert.equal(visitedScene.status, "done");
-  assert.equal(visitedScene.value, true);
-  assert.deepEqual(visitedScene.sourceReferences, [
-    {
-      field: "scenesVisited",
-      kind: "playerData",
-    },
-  ]);
-
-  assert.equal(unvisitedScene.status, "missing");
-  assert.equal(unvisitedScene.value, false);
+  assertSnapshotItem(snapshot, "crawl-02", {
+    sourceReferences: [
+      {
+        field: "scenesVisited",
+        kind: "playerData",
+      },
+    ],
+    status: "done",
+    value: true,
+  });
+  assertSnapshotItem(snapshot, "song-09", {
+    status: "missing",
+    value: false,
+  });
 });
 
 test("createSemanticSnapshot maps quill entries to semantic item status", () => {
@@ -479,25 +624,35 @@ test("createSemanticSnapshot maps quill entries to semantic item status", () => 
     },
   };
 
-  const snapshot = createSemanticSnapshot(decodedSave, createQuillMapping());
-  const activeQuillEntry = findSnapshotItem(snapshot, "QuillState_2");
-  const inactiveQuillEntry = findSnapshotItem(snapshot, "QuillState_3");
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createMapping(
+      [
+        quillItem("QuillState_2", "Quill Entry 2", "QuillState"),
+        quillItem("QuillState_3", "Quill Entry 3", "QuillState"),
+      ],
+      { categoryId: "quill", categoryLabel: "Quill" },
+    ),
+  );
 
-  assert.equal(activeQuillEntry.status, "done");
-  assert.equal(activeQuillEntry.value, 2);
-  assert.deepEqual(activeQuillEntry.sourceReferences, [
-    {
-      field: "hasQuill",
-      kind: "playerData",
-    },
-    {
-      field: "QuillState",
-      kind: "playerData",
-    },
-  ]);
-
-  assert.equal(inactiveQuillEntry.status, "missing");
-  assert.equal(inactiveQuillEntry.value, 2);
+  assertSnapshotItem(snapshot, "QuillState_2", {
+    sourceReferences: [
+      {
+        field: "hasQuill",
+        kind: "playerData",
+      },
+      {
+        field: "QuillState",
+        kind: "playerData",
+      },
+    ],
+    status: "done",
+    value: 2,
+  });
+  assertSnapshotItem(snapshot, "QuillState_3", {
+    status: "missing",
+    value: 2,
+  });
 });
 
 test("createSemanticSnapshot maps anyOf entries to semantic item status", () => {
@@ -516,26 +671,68 @@ test("createSemanticSnapshot maps anyOf entries to semantic item status", () => 
     },
   };
 
-  const snapshot = createSemanticSnapshot(decodedSave, createAnyOfMapping());
-  const toolPouch = findSnapshotItem(snapshot, "tool-pouch-2");
-  const missingUpgrade = findSnapshotItem(snapshot, "missing-upgrade");
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createMapping(
+      [
+        {
+          type: "anyOf",
+          anyOf: [
+            {
+              type: "level",
+              flag: "pinGalleriesCompleted",
+              required: 1,
+            },
+            {
+              type: "sceneBool",
+              flag: "Ladybug Craft Pickup",
+              scene: "Bone_12",
+            },
+          ],
+          id: "tool-pouch-2",
+          label: "Tool Pouch Upgrade #2",
+        },
+        {
+          type: "anyOf",
+          anyOf: [
+            {
+              type: "level",
+              flag: "pinGalleriesCompleted",
+              required: 1,
+            },
+            {
+              type: "sceneBool",
+              flag: "Missing Pickup",
+              scene: "Bone_12",
+            },
+          ],
+          id: "missing-upgrade",
+          label: "Missing Upgrade",
+        },
+      ],
+      { categoryId: "tool-pouch", categoryLabel: "Tool Pouch" },
+    ),
+  );
 
-  assert.equal(toolPouch.status, "done");
-  assert.deepEqual(toolPouch.value, [0, true]);
-  assert.deepEqual(toolPouch.sourceReferences, [
-    {
-      field: "pinGalleriesCompleted",
-      kind: "playerData",
-    },
-    {
-      kind: "sceneFlag",
-      flag: "Ladybug Craft Pickup",
-      scene: "Bone_12",
-    },
-  ]);
-
-  assert.equal(missingUpgrade.status, "missing");
-  assert.deepEqual(missingUpgrade.value, [0, false]);
+  assertSnapshotItem(snapshot, "tool-pouch-2", {
+    sourceReferences: [
+      {
+        field: "pinGalleriesCompleted",
+        kind: "playerData",
+      },
+      {
+        kind: "sceneFlag",
+        flag: "Ladybug Craft Pickup",
+        scene: "Bone_12",
+      },
+    ],
+    status: "done",
+    value: [0, true],
+  });
+  assertSnapshotItem(snapshot, "missing-upgrade", {
+    status: "missing",
+    value: [0, false],
+  });
 });
 
 test("createSemanticSnapshot supports Shell Fossil Mimic scene numeric entries", () => {
@@ -556,18 +753,45 @@ test("createSemanticSnapshot supports Shell Fossil Mimic scene numeric entries",
 
   const snapshot = createSemanticSnapshot(
     decodedSave,
-    createShellFossilMimicMapping(),
+    createMapping(
+      [
+        sceneBoolItem("visible-mimic", "Visible Mimic", {
+          flag: "Shell Fossil Mimic",
+          required: 2,
+          scene: "Fossil_Room",
+        }),
+        sceneBoolItem("wrong-mimic-variant", "Wrong Mimic Variant", {
+          flag: "Shell Fossil Mimic",
+          required: 3,
+          scene: "Fossil_Room",
+        }),
+        sceneBoolItem("missing-mimic", "Missing Mimic", {
+          flag: "Shell Fossil Mimic AppearVariant",
+          required: 1,
+          scene: "Fossil_Room",
+        }),
+      ],
+      {
+        categoryId: "special",
+        categoryLabel: "Special",
+        sectionId: "completion",
+        sectionLabel: "Completion",
+      },
+    ),
   );
-  const visibleMimic = findSnapshotItem(snapshot, "visible-mimic");
-  const wrongMimicVariant = findSnapshotItem(snapshot, "wrong-mimic-variant");
-  const missingMimic = findSnapshotItem(snapshot, "missing-mimic");
 
-  assert.equal(visibleMimic.status, "done");
-  assert.equal(visibleMimic.value, true);
-  assert.equal(wrongMimicVariant.status, "missing");
-  assert.equal(wrongMimicVariant.value, false);
-  assert.equal(missingMimic.status, "missing");
-  assert.equal(missingMimic.value, false);
+  assertSnapshotItem(snapshot, "visible-mimic", {
+    status: "done",
+    value: true,
+  });
+  assertSnapshotItem(snapshot, "wrong-mimic-variant", {
+    status: "missing",
+    value: false,
+  });
+  assertSnapshotItem(snapshot, "missing-mimic", {
+    status: "missing",
+    value: false,
+  });
 });
 
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
@@ -642,26 +866,31 @@ test("getBuiltinMappingData exposes the current Web mapping tables", () => {
   assert.ok(snapshot.items.some((item) => item.sectionId === "scenes"));
 });
 
-function createSceneBoolMapping(): MappingData {
+function createMapping(
+  items: readonly MappingItem[],
+  options: {
+    readonly categoryId?: string;
+    readonly categoryLabel?: string;
+    readonly sectionId?: string;
+    readonly sectionLabel?: string;
+  } = {},
+): MappingData {
+  const sectionId = options.sectionId ?? "main";
+  const sectionLabel = options.sectionLabel ?? "Main";
+  const categoryId = options.categoryId ?? "items";
+  const categoryLabel = options.categoryLabel ?? "Items";
+
   return {
     version: "fixture-v1",
     sections: [
       {
-        id: "main",
-        label: "Main",
+        id: sectionId,
+        label: sectionLabel,
         categories: [
           {
-            id: "mask-shards",
-            label: "Mask Shards",
-            items: [
-              {
-                type: "sceneBool",
-                flag: "Heart Piece",
-                scene: "Crawl_02",
-                id: "mask-shard-2",
-                label: "Mask Shard #2",
-              },
-            ],
+            id: categoryId,
+            label: categoryLabel,
+            items,
           },
         ],
       },
@@ -676,478 +905,196 @@ function createEmptyMapping(): MappingData {
   };
 }
 
-function createDirectPlayerDataBooleanMapping(): MappingData {
+function sceneBoolItem(
+  id: string,
+  label: string,
+  item: {
+    readonly flag: string;
+    readonly required?: number;
+    readonly scene: string;
+  },
+): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "bosses",
-        label: "Bosses",
-        categories: [
-          {
-            id: "bosses",
-            label: "Bosses",
-            items: [
-              {
-                type: "flag",
-                flag: "defeatedBellBeast",
-                id: "bell-beast",
-                label: "Bell Beast",
-              },
-              {
-                type: "boss",
-                flag: "defeatedMoorwing",
-                id: "moorwing",
-                label: "Moorwing",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "sceneBool",
+    id,
+    label,
+    ...item,
   };
 }
 
-function createKeyMapping(): MappingData {
+function flagItem(id: string, label: string, flag: string): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "essentials",
-        label: "Essentials",
-        categories: [
-          {
-            id: "keys",
-            label: "Keys",
-            items: [
-              {
-                type: "key",
-                flag: "hasCityKey",
-                id: "city-key",
-                label: "City Key",
-              },
-              {
-                type: "key",
-                flags: ["hasSimpleKeyA", "hasSimpleKeyB"],
-                id: "simple-key",
-                label: "Simple Key",
-              },
-              {
-                type: "key",
-                flag: "hasUnusedKey",
-                id: "unused-key",
-                label: "Unused Key",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "flag",
+    flag,
+    id,
+    label,
   };
 }
 
-function createNumericThresholdMapping(): MappingData {
+function bossItem(id: string, label: string, flag: string): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "main",
-        label: "Main",
-        categories: [
-          {
-            id: "needle-upgrades",
-            label: "Needle Upgrades",
-            items: [
-              {
-                type: "level",
-                flag: "nailUpgrades",
-                id: "base-needle",
-                label: "Base Needle",
-                required: 0,
-              },
-              {
-                type: "level",
-                flag: "nailUpgrades",
-                id: "shining-needle",
-                label: "Shining Needle",
-                required: 2,
-              },
-              {
-                type: "level",
-                flag: "nailUpgrades",
-                id: "hivesteel-needle",
-                label: "Hivesteel Needle",
-                required: 3,
-              },
-              {
-                type: "flagInt",
-                flag: "bellKeyCount",
-                id: "bell-key",
-                label: "Bell Key",
-              },
-              {
-                type: "flagInt",
-                flag: "simpleKeyCount",
-                id: "simple-key-count",
-                label: "Simple Key Count",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "boss",
+    flag,
+    id,
+    label,
   };
 }
 
-function createSavedDataMapping(): MappingData {
+function keyItem(
+  id: string,
+  label: string,
+  key: { readonly flag: string } | { readonly flags: readonly string[] },
+): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "main",
-        label: "Main",
-        categories: [
-          {
-            id: "items",
-            label: "Items",
-            items: [
-              {
-                type: "collectable",
-                flag: "Mossberry",
-                id: "mossberry",
-                label: "Mossberry",
-              },
-              {
-                type: "collectable",
-                flag: "Memory Locket",
-                id: "memory-locket",
-                label: "Memory Locket",
-              },
-              {
-                type: "tool",
-                flag: "Straight Pin",
-                id: "straight-pin",
-                label: "Straight Pin",
-              },
-              {
-                type: "tool",
-                flag: "Compass",
-                id: "compass",
-                label: "Compass",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "key",
+    id,
+    label,
+    ...key,
   };
 }
 
-function createQuestMapping(): MappingData {
+function levelItem(
+  id: string,
+  label: string,
+  flag: string,
+  required: number,
+): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "wishes",
-        label: "Wishes",
-        categories: [
-          {
-            id: "wishes",
-            label: "Wishes",
-            items: [
-              {
-                type: "quest",
-                flag: "Citadel   Seeker",
-                id: "citadel-seeker",
-                label: "Citadel Seeker",
-              },
-              {
-                type: "quest",
-                flag: "Lost Merchant",
-                id: "lost-merchant",
-                label: "Lost Merchant",
-              },
-              {
-                type: "quest",
-                flag: "Quiet Wish",
-                id: "quiet-wish",
-                label: "Quiet Wish",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "level",
+    flag,
+    id,
+    label,
+    required,
   };
 }
 
-function createJournalMapping(): MappingData {
+function flagIntItem(id: string, label: string, flag: string): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "journal",
-        label: "Journal",
-        categories: [
-          {
-            id: "journal",
-            label: "Journal",
-            items: [
-              {
-                type: "journal",
-                flag: "Moss Charger",
-                id: "moss-charger",
-                label: "Moss Charger",
-                required: 5,
-              },
-              {
-                type: "journal",
-                flag: "Bell Beast",
-                id: "bell-beast-journal",
-                label: "Bell Beast",
-                required: 5,
-              },
-              {
-                type: "journal",
-                flag: "Missing Entry",
-                id: "missing-entry",
-                label: "Missing Entry",
-                required: 1,
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "flagInt",
+    flag,
+    id,
+    label,
   };
 }
 
-function createRelicMateriumDeviceMapping(): MappingData {
+function collectableItem(id: string, label: string, flag: string): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "completion",
-        label: "Completion",
-        categories: [
-          {
-            id: "relics",
-            label: "Relics",
-            items: [
-              {
-                type: "relic",
-                flag: "Choral Commandment",
-                id: "choral-commandment",
-                label: "Choral Commandment",
-              },
-              {
-                type: "relic",
-                flag: "Rune Harp",
-                id: "rune-harp",
-                label: "Rune Harp",
-              },
-              {
-                type: "materium",
-                flag: "Far Fields Materium",
-                id: "far-fields-materium",
-                label: "Far Fields Materium",
-              },
-              {
-                type: "materium",
-                flag: "Deposited Materium",
-                id: "deposited-materium",
-                label: "Deposited Materium",
-              },
-              {
-                type: "device",
-                flag: "Device Pickup",
-                id: "collected-device",
-                label: "Collected Device",
-                relatedFlag: "otherDepositedDevice",
-                scene: "Device_Room",
-              },
-              {
-                type: "device",
-                flag: "Missing Device Pickup",
-                id: "deposited-device",
-                label: "Deposited Device",
-                relatedFlag: "depositedDevice",
-                scene: "Device_Room",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "collectable",
+    flag,
+    id,
+    label,
   };
 }
 
-function createSceneVisitedMapping(): MappingData {
+function toolItem(id: string, label: string, flag: string): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "scenes",
-        label: "Scenes",
-        categories: [
-          {
-            id: "scenes",
-            label: "Scenes",
-            items: [
-              {
-                type: "sceneVisited",
-                id: "crawl-02",
-                label: "Crawl 02",
-                scene: "Crawl_02",
-              },
-              {
-                type: "sceneVisited",
-                id: "song-09",
-                label: "Song 09",
-                scene: "Song_09",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "tool",
+    flag,
+    id,
+    label,
   };
 }
 
-function createQuillMapping(): MappingData {
+function questItem(id: string, label: string, flag: string): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "main",
-        label: "Main",
-        categories: [
-          {
-            id: "quill",
-            label: "Quill",
-            items: [
-              {
-                type: "quill",
-                flag: "QuillState",
-                id: "QuillState_2",
-                label: "Quill Entry 2",
-              },
-              {
-                type: "quill",
-                flag: "QuillState",
-                id: "QuillState_3",
-                label: "Quill Entry 3",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "quest",
+    flag,
+    id,
+    label,
   };
 }
 
-function createAnyOfMapping(): MappingData {
+function journalItem(
+  id: string,
+  label: string,
+  flag: string,
+  required: number,
+): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "main",
-        label: "Main",
-        categories: [
-          {
-            id: "tool-pouch",
-            label: "Tool Pouch",
-            items: [
-              {
-                type: "anyOf",
-                anyOf: [
-                  {
-                    type: "level",
-                    flag: "pinGalleriesCompleted",
-                    required: 1,
-                  },
-                  {
-                    type: "sceneBool",
-                    flag: "Ladybug Craft Pickup",
-                    scene: "Bone_12",
-                  },
-                ],
-                id: "tool-pouch-2",
-                label: "Tool Pouch Upgrade #2",
-              },
-              {
-                type: "anyOf",
-                anyOf: [
-                  {
-                    type: "level",
-                    flag: "pinGalleriesCompleted",
-                    required: 1,
-                  },
-                  {
-                    type: "sceneBool",
-                    flag: "Missing Pickup",
-                    scene: "Bone_12",
-                  },
-                ],
-                id: "missing-upgrade",
-                label: "Missing Upgrade",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "journal",
+    flag,
+    id,
+    label,
+    required,
   };
 }
 
-function createShellFossilMimicMapping(): MappingData {
+function relicItem(id: string, label: string, flag: string): MappingItem {
   return {
-    version: "fixture-v1",
-    sections: [
-      {
-        id: "completion",
-        label: "Completion",
-        categories: [
-          {
-            id: "special",
-            label: "Special",
-            items: [
-              {
-                type: "sceneBool",
-                flag: "Shell Fossil Mimic",
-                id: "visible-mimic",
-                label: "Visible Mimic",
-                required: 2,
-                scene: "Fossil_Room",
-              },
-              {
-                type: "sceneBool",
-                flag: "Shell Fossil Mimic",
-                id: "wrong-mimic-variant",
-                label: "Wrong Mimic Variant",
-                required: 3,
-                scene: "Fossil_Room",
-              },
-              {
-                type: "sceneBool",
-                flag: "Shell Fossil Mimic AppearVariant",
-                id: "missing-mimic",
-                label: "Missing Mimic",
-                required: 1,
-                scene: "Fossil_Room",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    type: "relic",
+    flag,
+    id,
+    label,
   };
 }
 
-function findSnapshotItem(snapshot: SemanticSnapshot, id: string) {
+function materiumItem(id: string, label: string, flag: string): MappingItem {
+  return {
+    type: "materium",
+    flag,
+    id,
+    label,
+  };
+}
+
+function deviceItem(
+  id: string,
+  label: string,
+  item: {
+    readonly flag: string;
+    readonly relatedFlag: string;
+    readonly scene: string;
+  },
+): MappingItem {
+  return {
+    type: "device",
+    id,
+    label,
+    ...item,
+  };
+}
+
+function sceneVisitedItem(
+  id: string,
+  label: string,
+  scene: string,
+): MappingItem {
+  return {
+    type: "sceneVisited",
+    id,
+    label,
+    scene,
+  };
+}
+
+function quillItem(id: string, label: string, flag: string): MappingItem {
+  return {
+    type: "quill",
+    flag,
+    id,
+    label,
+  };
+}
+
+function assertSnapshotItem(
+  snapshot: SemanticSnapshot,
+  id: string,
+  expected: {
+    readonly sourceReferences?: readonly SourceReference[];
+    readonly status: SemanticSnapshotItemStatus;
+    readonly value?: unknown;
+  },
+) {
   const item = snapshot.items.find((candidate) => candidate.id === id);
 
   assert.ok(item, `Expected snapshot item '${id}' to exist.`);
+  assert.equal(item.status, expected.status);
 
-  return item;
+  if ("value" in expected) {
+    assert.deepEqual(item.value, expected.value);
+  }
+
+  if (expected.sourceReferences !== undefined) {
+    assert.deepEqual(item.sourceReferences, expected.sourceReferences);
+  }
 }
