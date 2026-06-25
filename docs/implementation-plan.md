@@ -152,14 +152,14 @@ Verification:
 - `pnpm format`: passed
 - `pnpm lint`: passed
 - `pnpm build`: passed
-- `pnpm start -- --host 127.0.0.1`: started Vite at `http://127.0.0.1:5173/silksong-tracker`; stopped with SIGINT after verification.
+- `pnpm start -- --host 127.0.0.1`: started Vite at the then-current base path; stopped with SIGINT after verification.
 
 Notes:
 
 - Added `pnpm-workspace.yaml` with `apps/*` and `packages/*`.
 - Added package manifests for `apps/web`, `apps/cli`, `packages/core`, and `packages/history`.
 - Moved the existing Vite Web app into `apps/web` without changing semantic mapping code.
-- Kept root scripts as repository-level entry points that delegate Web build/start/preview to `@silksong-tracker/web`.
+- Kept root scripts as repository-level entry points that delegate Web build/start/preview to `@silksong-git/web`.
 - Replaced the npm lock with `pnpm-lock.yaml`.
 
 ## P3 Core Semantic Module

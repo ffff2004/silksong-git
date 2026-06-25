@@ -101,6 +101,6 @@
     }
   },
   "required": ["$schema", "categories"],
-  "title": "Silksong Tracker - Bosses or Journal Category File",
+  "title": "Silksong Git - Bosses or Journal Category File",
   "type": "object"
 }

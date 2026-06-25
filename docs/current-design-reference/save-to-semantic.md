@@ -2,7 +2,7 @@
 
 This document describes the current Web UI's save decoding and semantic mapping path. It is reference material for extracting `packages/core`, not the future architecture design. For the planned save-history architecture, read `../save-history-design.md`; for the current Web app overview, read `overview.md`.
 
-This document describes how `<save>.dat` in Silksong Tracker is decoded, parsed, and semantically mapped into the `done`, `accepted`, `locked`, `unobtainable`, and related states shown in the user interface.
+This document describes how `<save>.dat` in Silksong Git is decoded, parsed, and semantically mapped into the `done`, `accepted`, `locked`, `unobtainable`, and related states shown in the user interface.
 
 After the P2 workspace migration, old `src/...` references in this document correspond to `apps/web/src/...` unless a path explicitly says otherwise.
 
@@ -1636,7 +1636,7 @@ If code or data is copied from the original project, its license should be check
 
 ## 18. Summary
 
-Semantic mapping in Silksong Tracker does not eagerly convert the raw save JSON into one new fully semantic object. Instead, each item is interpreted on demand at render time:
+Semantic mapping in Silksong Git does not eagerly convert the raw save JSON into one new fully semantic object. Instead, each item is interpreted on demand at render time:
 
 ```txt
 raw save value + item definition -> item state -> UI state

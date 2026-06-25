@@ -4,14 +4,14 @@ This document describes the current Web UI. It is reference material for refacto
 
 ## Overview
 
-Silksong Tracker is a browser-based web application that analyzes and visualizes save files from _Hollow Knight: Silksong_. It decodes encrypted `.dat` files locally in the browser, extracts progression data, and displays it in an interactive interface. All operations occur locally, ensuring privacy and data safety.
+Silksong Git is a browser-based web application that analyzes and visualizes save files from _Hollow Knight: Silksong_. It decodes encrypted `.dat` files locally in the browser, extracts progression data, and displays it in an interactive interface. All operations occur locally, ensuring privacy and data safety.
 
 ## Architecture
 
 The project is entirely client-side, structured as follows:
 
 ```txt
-silksong-tracker/
+silksong-git/
 │
 ├── apps/
 │   └── web/

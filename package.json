@@ -1,13 +1,13 @@
 {
-  "name": "silksong-tracker",
+  "name": "silksong-git",
   "private": true,
-  "homepage": "https://github.com/th3r3dfox/silksong-tracker#readme",
+  "homepage": "https://github.com/ffff2004/silksong-git#readme",
   "bugs": {
-    "url": "https://github.com/th3r3dfox/silksong-tracker/issues"
+    "url": "https://github.com/ffff2004/silksong-git/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/th3r3dfox/silksong-tracker.git"
+    "url": "git+https://github.com/ffff2004/silksong-git.git"
   },
   "license": "MIT",
   "type": "module",
@@ -16,11 +16,11 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "pnpm --filter @silksong-tracker/web build",
+    "build": "pnpm --filter @silksong-git/web build",
     "format": "tsx ./scripts/format.ts",
     "lint": "tsx ./scripts/lint.ts",
-    "preview": "pnpm --filter @silksong-tracker/web preview",
-    "start": "pnpm --filter @silksong-tracker/web start"
+    "preview": "pnpm --filter @silksong-git/web preview",
+    "start": "pnpm --filter @silksong-git/web start"
   },
   "devDependencies": {
     "@eslint/json": "2.0.0",
