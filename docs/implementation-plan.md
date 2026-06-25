@@ -245,7 +245,7 @@ TDD Vertical Slices:
 - [x] `savedData` quantity and unlocked entries map to semantic item status.
 - [x] Quest states map to semantic item status.
 - [x] Journal progress maps to semantic item status.
-- [ ] Relic, materium, and device states map to semantic item status.
+- [x] Relic, materium, and device states map to semantic item status.
 - [ ] `sceneVisited` entries map to semantic item status.
 - [ ] `quill` entries map to semantic item status.
 - [ ] `anyOf` entries map to semantic item status.
@@ -254,7 +254,7 @@ TDD Vertical Slices:
 
 Latest slice verification:
 
-- Journal progress: `pnpm --filter @silksong-git/core test`: passed
+- Relic, materium, and device states: `pnpm --filter @silksong-git/core test`: passed
 - `pnpm format`: passed
 - `pnpm lint`: passed
 

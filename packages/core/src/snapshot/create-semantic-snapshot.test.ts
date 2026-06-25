@@ -356,6 +356,94 @@ test("createSemanticSnapshot maps journal progress to semantic item status", () 
   assert.equal(missingEntry.value, 0);
 });
 
+test("createSemanticSnapshot maps relic, materium, and device states to semantic item status", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {
+      MateriumCollected: {
+        savedData: [
+          {
+            Name: "Far Fields Materium",
+            Data: {
+              IsCollected: true,
+            },
+          },
+          {
+            Name: "Deposited Materium",
+            Data: {
+              HasSeenInRelicBoard: true,
+            },
+          },
+        ],
+      },
+      MementosDeposited: {
+        savedData: [
+          {
+            Name: "Choral Commandment",
+            Data: {
+              IsDeposited: true,
+            },
+          },
+        ],
+      },
+      Relics: {
+        savedData: [
+          {
+            Name: "Rune Harp",
+            Data: {
+              IsCollected: true,
+            },
+          },
+        ],
+      },
+      depositedDevice: true,
+    },
+    sceneState: {
+      serializedList: [
+        {
+          ID: "Device Pickup",
+          SceneName: "Device_Room",
+          Value: true,
+        },
+      ],
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createRelicMateriumDeviceMapping(),
+  );
+  const depositedRelic = findSnapshotItem(snapshot, "choral-commandment");
+  const collectedRelic = findSnapshotItem(snapshot, "rune-harp");
+  const collectedMaterium = findSnapshotItem(snapshot, "far-fields-materium");
+  const depositedMaterium = findSnapshotItem(snapshot, "deposited-materium");
+  const collectedDevice = findSnapshotItem(snapshot, "collected-device");
+  const depositedDevice = findSnapshotItem(snapshot, "deposited-device");
+
+  assert.equal(depositedRelic.status, "done");
+  assert.equal(depositedRelic.value, "deposited");
+  assert.equal(collectedRelic.status, "accepted");
+  assert.equal(collectedRelic.value, "collected");
+  assert.equal(collectedMaterium.status, "accepted");
+  assert.equal(collectedMaterium.value, "collected");
+  assert.equal(depositedMaterium.status, "done");
+  assert.equal(depositedMaterium.value, "deposited");
+  assert.equal(collectedDevice.status, "accepted");
+  assert.equal(collectedDevice.value, "collected");
+  assert.deepEqual(collectedDevice.sourceReferences, [
+    {
+      field: "otherDepositedDevice",
+      kind: "playerData",
+    },
+    {
+      kind: "sceneFlag",
+      flag: "Device Pickup",
+      scene: "Device_Room",
+    },
+  ]);
+  assert.equal(depositedDevice.status, "done");
+  assert.equal(depositedDevice.value, "deposited");
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -672,6 +760,66 @@ function createJournalMapping(): MappingData {
                 id: "missing-entry",
                 label: "Missing Entry",
                 required: 1,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createRelicMateriumDeviceMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "completion",
+        label: "Completion",
+        categories: [
+          {
+            id: "relics",
+            label: "Relics",
+            items: [
+              {
+                type: "relic",
+                flag: "Choral Commandment",
+                id: "choral-commandment",
+                label: "Choral Commandment",
+              },
+              {
+                type: "relic",
+                flag: "Rune Harp",
+                id: "rune-harp",
+                label: "Rune Harp",
+              },
+              {
+                type: "materium",
+                flag: "Far Fields Materium",
+                id: "far-fields-materium",
+                label: "Far Fields Materium",
+              },
+              {
+                type: "materium",
+                flag: "Deposited Materium",
+                id: "deposited-materium",
+                label: "Deposited Materium",
+              },
+              {
+                type: "device",
+                flag: "Device Pickup",
+                id: "collected-device",
+                label: "Collected Device",
+                relatedFlag: "otherDepositedDevice",
+                scene: "Device_Room",
+              },
+              {
+                type: "device",
+                flag: "Missing Device Pickup",
+                id: "deposited-device",
+                label: "Deposited Device",
+                relatedFlag: "depositedDevice",
+                scene: "Device_Room",
               },
             ],
           },

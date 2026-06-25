@@ -28,7 +28,10 @@ export type MappingItem =
   | NumericThresholdMappingItem
   | SavedDataMappingItem
   | QuestMappingItem
-  | JournalMappingItem;
+  | JournalMappingItem
+  | RelicMappingItem
+  | MateriumMappingItem
+  | DeviceMappingItem;
 
 interface MappingItemBase {
   readonly id: string;
@@ -73,6 +76,23 @@ interface JournalMappingItem extends MappingItemBase {
   readonly type: "journal";
   readonly flag: string;
   readonly required: number;
+}
+
+interface RelicMappingItem extends MappingItemBase {
+  readonly type: "relic";
+  readonly flag: string;
+}
+
+interface MateriumMappingItem extends MappingItemBase {
+  readonly type: "materium";
+  readonly flag: string;
+}
+
+interface DeviceMappingItem extends MappingItemBase {
+  readonly type: "device";
+  readonly flag: string;
+  readonly relatedFlag: string;
+  readonly scene: string;
 }
 
 export interface SnapshotOptions {

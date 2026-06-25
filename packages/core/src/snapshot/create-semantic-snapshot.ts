@@ -143,6 +143,54 @@ function readItemValue(decodedSave: DecodedSave, item: MappingItem): unknown {
       );
     }
 
+    case "relic": {
+      const data =
+        findSavedDataEntryData(decodedSave.playerData["Relics"], item.flag, {
+          normalizeName: false,
+        })
+        ?? findSavedDataEntryData(
+          decodedSave.playerData["MementosDeposited"],
+          item.flag,
+          { normalizeName: false },
+        );
+
+      return getRelicState(data);
+    }
+
+    case "materium": {
+      const data = findSavedDataEntryData(
+        decodedSave.playerData["MateriumCollected"],
+        item.flag,
+        { normalizeName: false },
+      );
+
+      if (data?.["HasSeenInRelicBoard"] === true) {
+        return "deposited";
+      }
+
+      if (data?.["IsCollected"] === true) {
+        return "collected";
+      }
+
+      return false;
+    }
+
+    case "device": {
+      if (decodedSave.playerData[item.relatedFlag] === true) {
+        return "deposited";
+      }
+
+      const sceneFlags = getSceneFlags(decodedSave);
+      const normalizedScene = normalizeStringWithUnderscores(item.scene);
+      const normalizedFlag = normalizeStringWithUnderscores(item.flag);
+
+      if (sceneFlags[normalizedScene]?.[normalizedFlag] === true) {
+        return "collected";
+      }
+
+      return false;
+    }
+
     case "sceneBool": {
       const sceneFlags = getSceneFlags(decodedSave);
       const normalizedScene = normalizeStringWithUnderscores(item.scene);
@@ -221,6 +269,38 @@ function createSourceReferences(item: MappingItem): readonly SourceReference[] {
       ];
     }
 
+    case "relic": {
+      return ["Relics", "MementosDeposited"].map((field) => ({
+        kind: "savedData",
+        field,
+        name: item.flag,
+      }));
+    }
+
+    case "materium": {
+      return [
+        {
+          kind: "savedData",
+          field: "MateriumCollected",
+          name: item.flag,
+        },
+      ];
+    }
+
+    case "device": {
+      return [
+        {
+          kind: "playerData",
+          field: item.relatedFlag,
+        },
+        {
+          kind: "sceneFlag",
+          scene: item.scene,
+          flag: item.flag,
+        },
+      ];
+    }
+
     case "sceneBool": {
       return [
         {
@@ -266,6 +346,16 @@ function getItemStatus(
       }
 
       return numberValue > 0 ? "accepted" : "missing";
+    }
+
+    case "relic":
+    case "materium":
+    case "device": {
+      if (value === "deposited") {
+        return "done";
+      }
+
+      return value === "collected" ? "accepted" : "missing";
     }
 
     default: {
@@ -338,6 +428,21 @@ function findJournalKills(journalData: unknown, name: string): number {
   }
 
   return getNumber(entry["Record"]["Kills"]) ?? 0;
+}
+
+function getRelicState(data: Record<string, unknown> | undefined) {
+  if (data?.["IsDeposited"] === true) {
+    return "deposited";
+  }
+
+  if (
+    data?.["HasSeenInRelicBoard"] === true
+    || data?.["IsCollected"] === true
+  ) {
+    return "collected";
+  }
+
+  return false;
 }
 
 function getSceneFlags(root: unknown): Record<string, Record<string, boolean>> {
