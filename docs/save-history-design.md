@@ -374,31 +374,35 @@ CLI history/diff/search/restore commands can also run as Offline Commands that r
 
 ## CLI Command Set
 
+ADR-0010 decides that the first CLI is object-grouped and lifecycle-oriented. The command grammar below is the implementation map for that decision.
+
 First-version commands:
 
+| Group     | Command                                                                     | User-facing object        | Responsibility                                                    |
+| --------- | --------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------- |
+| `repo`    | `silksong-git repo init --save <save.dat> --repo <history-repo>`            | Save History Repository   | Create a single-save Save History Repository and Project Config.  |
+| `save`    | `silksong-git save snapshot --save <save.dat> --json`                       | Encoded Save              | Decode and map one save without writing Git history.              |
+| `watch`   | `silksong-git watch start [--repo <history-repo>]`                          | Local History Process     | Start watching the Watched Save and updating history.             |
+| `history` | `silksong-git history list [--repo <history-repo>]`                         | Semantic Events           | Show Semantic Event history and optionally raw observations.      |
+| `history` | `silksong-git history diff <from> <to> [--repo <history-repo>]`             | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                   |
+| `history` | `silksong-git history search [--repo <history-repo>] --event <text>`        | Semantic Events           | Find events and corresponding commits.                            |
+| `history` | `silksong-git history restore <commit> --to <path> [--repo <history-repo>]` | Encoded Save restore      | Write a commit's `save.dat` to an explicit Restore Target.        |
+| `history` | `silksong-git history rebuild [--repo <history-repo>]`                      | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations. |
+| `ui`      | `silksong-git ui open [--repo <history-repo>]`                              | Local History Web Mode    | Start or connect to the local Web UI.                             |
+
+Default aliases can exist for low-risk interactive commands:
+
 ```txt
-silksong-git init --save path/to/save.dat --repo path/to/history-repo
-silksong-git watch --repo path/to/history-repo
-silksong-git snapshot --save path/to/save.dat --json
-silksong-git history --repo path/to/history-repo
-silksong-git diff --repo path/to/history-repo <from> <to>
-silksong-git search --repo path/to/history-repo --event "Mask Shard #2"
-silksong-git restore --repo path/to/history-repo <commit> --to path
-silksong-git rebuild --repo path/to/history-repo
-silksong-git ui --repo path/to/history-repo
+silksong-git history
+  -> silksong-git history list
+
+silksong-git ui
+  -> silksong-git ui open
 ```
 
-Command responsibilities:
+Do not add implicit defaults for high-risk writes. Restore must remain explicit.
 
-- `init` creates a single-save Save History Repository and Project Config.
-- `watch` starts the Local History Process.
-- `snapshot` decodes and maps one save without writing Git history.
-- `history` shows Semantic Event history and optionally raw observations.
-- `diff` compares two commits through Semantic Snapshots.
-- `search` finds events and corresponding commits.
-- `restore` writes a commit's `save.dat` to an explicit Restore Target.
-- `rebuild` rebuilds SQLite from Git raw observations.
-- `ui` starts or connects to the local Web UI.
+The groups are user-facing operation objects, not internal packages. Avoid CLI groups such as `core`, `read-model`, or `process` even when those names match implementation Modules.
 
 Default command output is human-readable text. `--json` provides stable machine-readable output for scripts and tests.
 
@@ -413,9 +417,34 @@ Default command output is human-readable text. `--json` provides stable machine-
 
 `--event` free-text search is a convenience for interactive use, not the stable programmatic Interface.
 
+## Repo Context Resolution
+
+Repository-scoped commands resolve the Save History Repository in this order:
+
+```txt
+--repo <history-repo>
+cwd is inside a Save History Repository
+error: repository path required
+```
+
+`repo init` always requires `--repo` because the target Save History Repository may not exist yet.
+
+## CLI Safety Classes
+
+Commands should make side effects visible in their names, arguments, and confirmation behavior:
+
+| Safety class           | Commands                                                          | Requirements                                                               |
+| ---------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Read-only              | `save snapshot`, `history list`, `history diff`, `history search` | No writes to Git, SQLite, or user save files.                              |
+| Repository creation    | `repo init`                                                       | Requires explicit `--save` and `--repo`.                                   |
+| Read-model mutation    | `history rebuild`                                                 | May rewrite the SQLite Semantic Read Model; does not rewrite Git history.  |
+| Process start          | `watch start`, `ui open`                                          | May start the Local History Process or local Web UI.                       |
+| Filesystem write       | `history restore <commit> --to <path>`                            | Requires an explicit Restore Target.                                       |
+| High-risk save rewrite | `history restore <commit> --in-place`                             | Requires explicit in-place intent and must create a backup before writing. |
+
 ## CLI Error Behavior
 
-`snapshot --save` behavior:
+`save snapshot --save` behavior:
 
 ```txt
 success:
@@ -439,13 +468,13 @@ History-oriented commands should report rebuild-required or stale-read-model cas
 Restore defaults to an explicit Restore Target:
 
 ```txt
-silksong-git restore --repo path <commit> --to path
+silksong-git history restore <commit> --to <path> [--repo <history-repo>]
 ```
 
 Overwriting the Watched Save requires explicit in-place restore:
 
 ```txt
-silksong-git restore --repo path <commit> --in-place
+silksong-git history restore <commit> --in-place [--repo <history-repo>]
 ```
 
 In-place restore must:
@@ -531,7 +560,7 @@ history semantic index:
   -> event maps to expected commit
 
 CLI snapshot:
-  snapshot --save fixture --json
+  save snapshot --save fixture --json
   -> SemanticSnapshot JSON
 
 Web current save:

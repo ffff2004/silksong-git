@@ -8,7 +8,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 - Current phase: P3 Core Semantic Module
 - Next task: P3-T1 Core Snapshot Tracer Bullet
-- Last updated: 2026-06-24
+- Last updated: 2026-06-25
 
 ## Phase Overview
 
@@ -18,7 +18,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 | P2 Workspace Skeleton                 | complete | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                       |
 | P3 Core Semantic Module               | pending  | P2         | `packages/core` exposes snapshot and diff behavior through a small public Interface.       |
 | P4 History Module                     | pending  | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`. |
-| P5 CLI                                | pending  | P3, P4     | First CLI command set works through core/history Interfaces.                               |
+| P5 CLI                                | pending  | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                |
 | P6 Web Integration                    | pending  | P3, P4     | Web UI uses core and supports static and local history modes.                              |
 
 ## Task Rules
@@ -335,7 +335,7 @@ Verification:
 
 ## P5 CLI
 
-### P5-T1 Implement `snapshot --save --json`
+### P5-T1 Implement `save snapshot --save --json`
 
 Status: pending
 
@@ -355,7 +355,8 @@ Relevant docs and ADRs:
 
 Acceptance criteria:
 
-- `snapshot --save <path> --json` prints a Semantic Snapshot.
+- `save snapshot --save <path> --json` prints a Semantic Snapshot.
+- Command syntax matches `docs/save-history-design.md`.
 - Decode failure exits 2.
 - Unknown schema exits 3 by default and supports raw debugging behavior as designed.
 - Output JSON is stable enough for tests.
@@ -386,9 +387,10 @@ Relevant docs and ADRs:
 
 Acceptance criteria:
 
-- First-version command set exists: `init`, `watch`, `history`, `diff`, `search`, `restore`, `rebuild`, `ui`.
+- First-version object-grouped command set matches `docs/save-history-design.md`.
 - Commands call `packages/history` rather than Git or SQLite directly.
-- `history`, `diff`, and `search` default to readable text and support stable `--json`.
+- `history list`, `history diff`, and `history search` default to readable text and support stable `--json`.
+- Repository-scoped commands follow the documented repo context resolution order.
 
 Verification:
 
