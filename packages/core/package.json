@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test --test-reporter=dot src/**/*.test.ts",
+    "test:verbose": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "complete-common": "2.29.0"
