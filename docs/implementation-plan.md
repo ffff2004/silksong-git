@@ -246,7 +246,7 @@ TDD Vertical Slices:
 - [x] Quest states map to semantic item status.
 - [x] Journal progress maps to semantic item status.
 - [x] Relic, materium, and device states map to semantic item status.
-- [ ] `sceneVisited` entries map to semantic item status.
+- [x] `sceneVisited` entries map to semantic item status.
 - [ ] `quill` entries map to semantic item status.
 - [ ] `anyOf` entries map to semantic item status.
 - [ ] Special scene numeric branch supports Shell Fossil Mimic-style entries.
@@ -254,7 +254,7 @@ TDD Vertical Slices:
 
 Latest slice verification:
 
-- Relic, materium, and device states: `pnpm --filter @silksong-git/core test`: passed
+- `sceneVisited` entries: `pnpm --filter @silksong-git/core test`: passed
 - `pnpm format`: passed
 - `pnpm lint`: passed
 

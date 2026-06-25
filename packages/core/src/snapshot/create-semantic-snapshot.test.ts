@@ -444,6 +444,33 @@ test("createSemanticSnapshot maps relic, materium, and device states to semantic
   assert.equal(depositedDevice.value, "deposited");
 });
 
+test("createSemanticSnapshot maps sceneVisited entries to semantic item status", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {
+      scenesVisited: ["Crawl_02", "Dock_08"],
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createSceneVisitedMapping(),
+  );
+  const visitedScene = findSnapshotItem(snapshot, "crawl-02");
+  const unvisitedScene = findSnapshotItem(snapshot, "song-09");
+
+  assert.equal(visitedScene.status, "done");
+  assert.equal(visitedScene.value, true);
+  assert.deepEqual(visitedScene.sourceReferences, [
+    {
+      field: "scenesVisited",
+      kind: "playerData",
+    },
+  ]);
+
+  assert.equal(unvisitedScene.status, "missing");
+  assert.equal(unvisitedScene.value, false);
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -820,6 +847,38 @@ function createRelicMateriumDeviceMapping(): MappingData {
                 label: "Deposited Device",
                 relatedFlag: "depositedDevice",
                 scene: "Device_Room",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createSceneVisitedMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "scenes",
+        label: "Scenes",
+        categories: [
+          {
+            id: "scenes",
+            label: "Scenes",
+            items: [
+              {
+                type: "sceneVisited",
+                id: "crawl-02",
+                label: "Crawl 02",
+                scene: "Crawl_02",
+              },
+              {
+                type: "sceneVisited",
+                id: "song-09",
+                label: "Song 09",
+                scene: "Song_09",
               },
             ],
           },

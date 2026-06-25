@@ -31,7 +31,8 @@ export type MappingItem =
   | JournalMappingItem
   | RelicMappingItem
   | MateriumMappingItem
-  | DeviceMappingItem;
+  | DeviceMappingItem
+  | SceneVisitedMappingItem;
 
 interface MappingItemBase {
   readonly id: string;
@@ -92,6 +93,11 @@ interface DeviceMappingItem extends MappingItemBase {
   readonly type: "device";
   readonly flag: string;
   readonly relatedFlag: string;
+  readonly scene: string;
+}
+
+interface SceneVisitedMappingItem extends MappingItemBase {
+  readonly type: "sceneVisited";
   readonly scene: string;
 }
 

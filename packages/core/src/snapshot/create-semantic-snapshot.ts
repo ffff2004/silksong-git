@@ -191,6 +191,12 @@ function readItemValue(decodedSave: DecodedSave, item: MappingItem): unknown {
       return false;
     }
 
+    case "sceneVisited": {
+      const { scenesVisited } = decodedSave.playerData;
+
+      return isArray(scenesVisited) && scenesVisited.includes(item.scene);
+    }
+
     case "sceneBool": {
       const sceneFlags = getSceneFlags(decodedSave);
       const normalizedScene = normalizeStringWithUnderscores(item.scene);
@@ -297,6 +303,15 @@ function createSourceReferences(item: MappingItem): readonly SourceReference[] {
           kind: "sceneFlag",
           scene: item.scene,
           flag: item.flag,
+        },
+      ];
+    }
+
+    case "sceneVisited": {
+      return [
+        {
+          kind: "playerData",
+          field: "scenesVisited",
         },
       ];
     }
