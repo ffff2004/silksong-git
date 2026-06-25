@@ -1,3 +1,4 @@
+import { isArray } from "complete-common";
 import { execFile, spawn } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -70,10 +71,7 @@ function parseEslintResults(stdout: string): readonly EslintResult[] {
 function formatEslintMessages(results: readonly EslintResult[]): string {
   return results
     .flatMap((result) => {
-      if (
-        typeof result.filePath !== "string"
-        || !Array.isArray(result.messages)
-      ) {
+      if (typeof result.filePath !== "string" || !isArray(result.messages)) {
         return [];
       }
 

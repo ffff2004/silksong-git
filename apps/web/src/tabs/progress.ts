@@ -1,4 +1,4 @@
-import { assertArray } from "complete-common";
+import { assertArray, isArray } from "complete-common";
 import { getStoredActFilter } from "../components/acts-dropdown.ts";
 import { showOnlyMissing } from "../components/show-only-missing.ts";
 import { showSpoilers } from "../components/show-spoilers.ts";
@@ -32,6 +32,17 @@ import type { Item } from "../types/Item.ts";
 let tocObserver: IntersectionObserver | undefined;
 let isManualScroll = false; // prevent observer interference
 
+function getProgressCategories(categories: unknown): readonly Category[] {
+  // Keep the runtime JSON guard meaningful: assert the imported data before treating it as the
+  // business type, instead of asserting after a type cast.
+  assertArray(
+    categories,
+    "The contents of one of the JSON files was not an array.",
+  );
+
+  return categories as readonly Category[];
+}
+
 export function updateTabProgress(): void {
   initProgressListeners();
   const spoilerOn = showSpoilers.checked;
@@ -40,33 +51,43 @@ export function updateTabProgress(): void {
 
   const allCategories: Array<{
     title: string;
-    categories: Category[];
+    categories: readonly Category[];
   }> = [
-    { title: "Main Progress", categories: mainJSON.categories as Category[] },
+    {
+      title: "Main Progress",
+      categories: getProgressCategories(mainJSON.categories),
+    },
     {
       title: "Essential Items",
-      categories: essentialsJSON.categories as Category[],
+      categories: getProgressCategories(essentialsJSON.categories),
     },
-    { title: "Bosses", categories: bossesJSON.categories as Category[] },
+    {
+      title: "Bosses",
+      categories: getProgressCategories(bossesJSON.categories),
+    },
     {
       title: "Mini-Bosses",
-      categories: miniBossesJSON.categories as Category[],
+      categories: getProgressCategories(miniBossesJSON.categories),
     },
     {
       title: "Completion",
-      categories: completionJSON.categories as Category[],
+      categories: getProgressCategories(completionJSON.categories),
     },
-    { title: "Wishes", categories: wishesJSON.categories as Category[] },
-    { title: "Journal", categories: journalJSON.categories as Category[] },
-    { title: "Rooms", categories: scenesJSON.categories as Category[] },
+    {
+      title: "Wishes",
+      categories: getProgressCategories(wishesJSON.categories),
+    },
+    {
+      title: "Journal",
+      categories: getProgressCategories(journalJSON.categories),
+    },
+    {
+      title: "Rooms",
+      categories: getProgressCategories(scenesJSON.categories),
+    },
   ];
 
   for (const { title, categories } of allCategories) {
-    assertArray(
-      categories,
-      "The contents of one of the JSON files was not an array.",
-    );
-
     const categoryHeader = document.createElement("h2");
     categoryHeader.className = "category-header";
     categoryHeader.textContent = title;
@@ -90,11 +111,13 @@ export function updateTabProgress(): void {
       const obtainedGroups = new Set<string>();
       if (saveData !== undefined) {
         for (const i of items) {
-          if (typeof i.group === "string" && i.group !== "") {
-            const v = getSaveDataValue(saveData, saveDataFlags, i);
-            if (getUnlocked(i, v)) {
-              obtainedGroups.add(i.group);
-            }
+          if (!(typeof i.group === "string" && i.group !== "")) {
+            continue;
+          }
+
+          const v = getSaveDataValue(saveData, saveDataFlags, i);
+          if (getUnlocked(i, v)) {
+            obtainedGroups.add(i.group);
           }
         }
       }
@@ -114,11 +137,7 @@ export function updateTabProgress(): void {
           }
 
           if (item.unobtainable === true && typeof item.group === "string") {
-            if (obtainedGroups.has(item.group)) {
-              return false;
-            }
-
-            return true;
+            return !obtainedGroups.has(item.group);
           }
 
           if (item.type === "collectable") {
@@ -259,7 +278,7 @@ function getUnlocked(item: Item, value: unknown): boolean {
   }
 
   if (item.type === "anyOf") {
-    const anyOfResults: unknown[] = Array.isArray(value) ? value : [];
+    const anyOfResults: readonly unknown[] = isArray(value) ? value : [];
     return item.anyOf.some((check, index) => {
       const someValue = anyOfResults[index];
 
@@ -293,7 +312,7 @@ function getUnlocked(item: Item, value: unknown): boolean {
   if (item.type === "sceneVisited") {
     const visitedScenes = getSaveData()?.playerData.scenesVisited ?? [];
 
-    return Array.isArray(visitedScenes) && visitedScenes.includes(item.scene);
+    return isArray(visitedScenes) && visitedScenes.includes(item.scene);
   }
 
   return value === true || value === "collected" || value === "deposited";
@@ -762,7 +781,7 @@ function renderGenericGrid(
       }
 
       case "anyOf": {
-        const anyOfResults: unknown[] = Array.isArray(value) ? value : [];
+        const anyOfResults: readonly unknown[] = isArray(value) ? value : [];
         isDone = item.anyOf.some((check, index) => {
           const someValue = anyOfResults[index];
 
@@ -799,8 +818,7 @@ function renderGenericGrid(
 
       case "sceneVisited": {
         const visitedScenes = getSaveData()?.playerData.scenesVisited ?? [];
-        isDone =
-          Array.isArray(visitedScenes) && visitedScenes.includes(item.scene);
+        isDone = isArray(visitedScenes) && visitedScenes.includes(item.scene);
         break;
       }
 
@@ -914,7 +932,7 @@ function initScrollSpy() {
   }
 
   const updateTocState = (targetId: string) => {
-    const match = document.querySelector(`a[href="#${targetId}"]`);
+    const match = document.querySelector(`a[href="#${CSS.escape(targetId)}"]`);
     if (!match) {
       return;
     }
@@ -949,10 +967,12 @@ function initScrollSpy() {
       } // Skip updates during manual scroll
 
       for (const entry of entries) {
-        if (entry.isIntersecting) {
-          updateTocState(entry.target.id);
-          break;
+        if (!entry.isIntersecting) {
+          continue;
         }
+
+        updateTocState(entry.target.id);
+        break;
       }
     },
     {
@@ -1167,13 +1187,15 @@ function fuzzyMatch(text: string, pattern: string): boolean {
   let firstMatch = -1;
   let lastMatch = -1;
   for (let ti = 0; ti < t.length && pi < p.length; ti++) {
-    if (t[ti] === p[pi]) {
-      if (firstMatch === -1) {
-        firstMatch = ti;
-      }
-      lastMatch = ti;
-      pi++;
+    if (t[ti] !== p[pi]) {
+      continue;
     }
+
+    if (firstMatch === -1) {
+      firstMatch = ti;
+    }
+    lastMatch = ti;
+    pi++;
   }
   if (pi < p.length) {
     return false;

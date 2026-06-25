@@ -81,10 +81,12 @@ document.addEventListener("DOMContentLoaded", () => {
     fileInput.click();
   });
   dropzone.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      fileInput.click();
+    if (!(e.key === "Enter" || e.key === " ")) {
+      return;
     }
+
+    e.preventDefault();
+    fileInput.click();
   });
 
   for (const type of ["dragenter", "dragover"]) {

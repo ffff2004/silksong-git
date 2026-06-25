@@ -22,6 +22,9 @@
     "module": "esnext",
     "moduleResolution": "bundler",
 
+    // This repository type-checks source files outside a conventional "src" directory.
+    "rootDir": ".",
+
     // Needed to support modern APIs used by project scripts and browser code.
     "target": "ES2023",
     "lib": ["DOM", "ES2023"],

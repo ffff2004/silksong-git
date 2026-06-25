@@ -14,8 +14,6 @@ const config = {
   ignoreDependencies: [
     "ajv-cli", // This is used by the lint script.
     "ajv-formats", // This is used by the lint script.
-    "eslint", // This is provided by "complete-lint".
-    "eslint-config-complete", // This is provided by "complete-lint".
     "complete-lint", // This is a linting meta-package.
   ],
 };

@@ -1,5 +1,5 @@
 import loader from "@monaco-editor/loader";
-import type * as monaco from "monaco-editor";
+import type * as monaco from "monaco-editor/esm/vs/editor/editor.api";
 import { getHTMLElement } from "../elements.ts";
 import { getSaveData } from "../save-data.ts";
 import { showToast } from "../utils.ts";
@@ -62,7 +62,7 @@ async function ensureEditorInitialized() {
       const monacoInstance = await loader.init();
       editor = monacoInstance.editor.create(rawSaveDataOutput, {
         value: "",
-        language: "javascript", // using javascript for JSON syntax highlighting - for some reason folding doesn't work with json
+        language: "javascript", // using JavaScript for JSON syntax highlighting - for some reason folding doesn't work with JSON
         minimap: { enabled: false },
         theme: "vs-dark",
         fontSize: 14,

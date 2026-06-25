@@ -33,7 +33,7 @@ export async function checkWebJSONSchemas(): Promise<void> {
   const jsonFilePaths = await getWebDataJSONFilePaths();
 
   const schemaChecks = jsonFilePaths.map(async (jsonFilePath) => {
-    const { name, dir } = path.parse(jsonFilePath);
+    const { dir, name } = path.parse(jsonFilePath);
     const schemaFilePath = path.join(dir, `${name}.schema.json`);
 
     try {

@@ -3,4 +3,7 @@ import { BASE_PATH } from "./src/constants.ts"; // eslint-disable-line @typescri
 
 export default defineConfig({
   base: BASE_PATH,
+  build: {
+    chunkSizeWarningLimit: 700,
+  },
 });

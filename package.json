@@ -23,15 +23,19 @@
     "start": "pnpm --filter @silksong-tracker/web start"
   },
   "devDependencies": {
-    "@eslint/json": "0.13.2",
+    "@eslint/json": "2.0.0",
     "ajv-cli": "5.0.0",
     "ajv-formats": "3.0.1",
-    "complete-common": "2.8.0",
-    "complete-lint": "4.2.7",
-    "complete-node": "12.2.1",
-    "globby": "15.0.0",
-    "stylelint": "16.25.0",
-    "tsx": "4.20.6"
+    "complete-common": "2.29.0",
+    "complete-lint": "5.20.0",
+    "complete-node": "17.0.0",
+    "complete-tsconfig": "1.7.0",
+    "eslint": "10.5.0",
+    "eslint-config-complete": "4.16.0",
+    "globby": "16.2.0",
+    "stylelint": "17.13.0",
+    "tsx": "4.22.4",
+    "typescript": "6.0.3"
   },
   "packageManager": "pnpm@11.1.2",
   "pnpm": {

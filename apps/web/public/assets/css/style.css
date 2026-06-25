@@ -5,6 +5,7 @@
   src: url("../fonts/TrajanPro-Regular.ttf") format("truetype");
   font-weight: normal;
   font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
@@ -12,6 +13,7 @@
   src: url("../fonts/TrajanPro-Bold.otf") format("opentype");
   font-weight: bold;
   font-style: normal;
+  font-display: swap;
 }
 
 main {
@@ -1378,10 +1380,6 @@ input[type="checkbox"]:hover {
   .home-content h1 {
     font-size: 1.8rem;
   }
-}
-
-html {
-  font-display: swap;
 }
 
 .overlay:not(.hidden) {

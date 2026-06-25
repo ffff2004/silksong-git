@@ -157,7 +157,7 @@ export function getSaveDataValue(
         return matchingElement;
       }
 
-      const { Tools, ToolEquips } = playerData;
+      const { ToolEquips, Tools } = playerData;
       const entry = findIn(Tools) ?? findIn(ToolEquips);
       if (entry === undefined) {
         return undefined;
@@ -194,7 +194,7 @@ export function getSaveDataValue(
 
     // Mask Shards, Heart Pieces etc.
     case "sceneBool": {
-      const { scene, flag, required } = item;
+      const { flag, scene, required } = item;
 
       const normalizedScene = normalizeStringWithUnderscores(scene);
       const normalizedFlag = normalizeStringWithUnderscores(flag);
@@ -276,7 +276,7 @@ export function getSaveDataValue(
     }
 
     case "relic": {
-      const { Relics, MementosDeposited } = playerData;
+      const { MementosDeposited, Relics } = playerData;
 
       const combinedList = [
         ...Relics.savedData,

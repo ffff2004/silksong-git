@@ -13,6 +13,11 @@
   "compilerOptions": {
     // Scripts run through tsx, so TypeScript source imports can point at ".ts" files directly.
     "allowImportingTsExtensions": true,
+
+    // The shared Node config assumes scripts live under "src" and includes lib names that
+    // @typescript-eslint does not recognize yet; this repository keeps scripts at this level.
+    "rootDir": ".",
+    "lib": ["ES2024"],
   },
 
   "include": ["./**/*.ts"],

@@ -14,8 +14,9 @@ const objectWithSavedData = z.object({
 
 // We use `interface` over a `type` for cleaner type hovers.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface ObjectWithSavedData
-  extends z.infer<typeof objectWithSavedData> {}
+export interface ObjectWithSavedData extends z.infer<
+  typeof objectWithSavedData
+> {}
 
 const silksongSaveSchema = z.object({
   playerData: z
