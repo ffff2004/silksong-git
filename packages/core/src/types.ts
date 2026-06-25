@@ -36,16 +36,28 @@ interface SceneBoolMappingItem extends MappingItemBase {
 }
 
 export interface SnapshotOptions {
+  readonly saveSchemaVersion?: string;
+  readonly gameVersion?: string;
+  readonly platform?: string;
+  readonly platformBuildId?: string;
   readonly semanticCoreVersion?: string;
+  readonly configHash?: string;
 }
 
 export interface SemanticSnapshot {
   readonly items: readonly SemanticSnapshotItem[];
   readonly summary: SaveSummaryMetrics;
-  readonly version: {
-    readonly mappingDataVersion?: string;
-    readonly semanticCoreVersion?: string;
-  };
+  readonly version: SemanticSnapshotVersion;
+}
+
+interface SemanticSnapshotVersion {
+  readonly saveSchemaVersion?: string;
+  readonly gameVersion?: string;
+  readonly platform?: string;
+  readonly platformBuildId?: string;
+  readonly mappingDataVersion?: string;
+  readonly semanticCoreVersion?: string;
+  readonly configHash?: string;
 }
 
 export interface SemanticSnapshotItem {

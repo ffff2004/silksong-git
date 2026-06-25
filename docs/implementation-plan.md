@@ -258,6 +258,11 @@ Latest slice verification:
 - `pnpm format`: passed
 - `pnpm lint`: passed
 
+Review follow-ups:
+
+- Semantic Snapshot Version Stamps include `saveSchemaVersion`, `gameVersion`, `platform`, `platformBuildId`, `mappingDataVersion`, `semanticCoreVersion`, and `configHash`.
+- Save Summary Metrics use semantic names in `packages/core`: raw `geo` maps to `rosaries`, and raw `ShellShards` maps to `shellShards`.
+
 Verification:
 
 - core test command: pending

@@ -32,8 +32,13 @@ export function createSemanticSnapshot(
     items,
     summary: createSummaryMetrics(decodedSave),
     version: {
+      saveSchemaVersion: options.saveSchemaVersion,
+      gameVersion: options.gameVersion,
+      platform: options.platform,
+      platformBuildId: options.platformBuildId,
       mappingDataVersion: mappingData.version,
       semanticCoreVersion: options.semanticCoreVersion,
+      configHash: options.configHash,
     },
   };
 }

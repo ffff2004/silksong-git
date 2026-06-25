@@ -172,9 +172,19 @@ They also include Save Summary Metrics:
 ```txt
 completionPercentage
 playTime
-geo
-ShellShards
+rosaries
+shellShards
 permadeathMode
+```
+
+Raw `playerData` fields map into semantic Save Summary Metrics:
+
+```txt
+completionPercentage -> completionPercentage
+playTime             -> playTime
+geo                  -> rosaries
+ShellShards          -> shellShards
+permadeathMode       -> permadeathMode
 ```
 
 A Semantic Event is an item-level state transition between two Semantic Snapshots, not a raw field diff. Events can include Source References back to Decoded Save fields and mapping data for debugging.
@@ -237,12 +247,15 @@ decoderVersion
 saveSchemaVersion
 gameVersion?
 platform?
+platformBuildId?
 mappingDataVersion
 semanticCoreVersion
 configHash
 ```
 
-`saveSchemaVersion` is the primary branch point for parser and mapping behavior. `gameVersion` is useful context when available, but may not exist in the save. `configHash` captures the Effective Config relevant to display filtering and query behavior.
+`saveSchemaVersion` is the primary branch point for parser and mapping behavior. It is the tool-recognized Decoded Save shape, not the in-game version or a store build number. `gameVersion` records the in-game displayed version when available, such as `1.0.30000`. `platform` records the distribution platform when known, such as `steam`. `platformBuildId` records platform-specific build provenance when known, such as Steam build ID `22479045`. `configHash` captures the Effective Config relevant to display filtering and query behavior.
+
+Parser and mapper selection should branch on `saveSchemaVersion` first. `gameVersion` and `platformBuildId` can help identify or explain a schema, but neither should replace `saveSchemaVersion`.
 
 These stamps let rebuilds detect stale SQLite data and explain why the same raw observation may produce different events under a newer mapper.
 

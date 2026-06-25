@@ -50,6 +50,11 @@ test("createSemanticSnapshot marks a scene-scoped collected item as done", () =>
   };
 
   const snapshot = createSemanticSnapshot(decodedSave, mappingData, {
+    configHash: "config-hash",
+    gameVersion: "1.0.30000",
+    platform: "steam",
+    platformBuildId: "22479045",
+    saveSchemaVersion: "silksong-save-v1",
     semanticCoreVersion: "test-core",
   });
 
@@ -65,8 +70,20 @@ test("createSemanticSnapshot marks a scene-scoped collected item as done", () =>
     },
   ]);
   assert.equal(snapshot.summary.completionPercentage, 12);
-  assert.equal(snapshot.version.mappingDataVersion, "fixture-v1");
-  assert.equal(snapshot.version.semanticCoreVersion, "test-core");
+  assert.equal(snapshot.summary.playTime, 56);
+  assert.equal(snapshot.summary.rosaries, 34);
+  assert.equal(snapshot.summary.shellShards, 7);
+  assert.equal("geo" in snapshot.summary, false);
+  assert.equal("ShellShards" in snapshot.summary, false);
+  assert.deepEqual(snapshot.version, {
+    configHash: "config-hash",
+    gameVersion: "1.0.30000",
+    mappingDataVersion: "fixture-v1",
+    platform: "steam",
+    platformBuildId: "22479045",
+    saveSchemaVersion: "silksong-save-v1",
+    semanticCoreVersion: "test-core",
+  });
 });
 
 test("createSemanticSnapshot marks an untriggered scene-scoped item as missing", () => {

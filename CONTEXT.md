@@ -17,7 +17,7 @@ The full set of recognized user-meaningful item, boss, quest, journal, scene, an
 _Avoid_: Raw JSON, UI state
 
 **Save Summary Metric**:
-A high-level value from the Decoded Save that summarizes the whole save rather than one mapped item, such as completion percentage, play time, rosaries, shell shards, or permadeath mode.
+A high-level value from the Decoded Save that summarizes the whole save rather than one mapped item, such as completion percentage, play time, rosaries, shell shards, or permadeath mode. Save Summary Metrics use semantic names rather than raw Decoded Save field names.
 _Avoid_: Semantic item, raw field diff
 
 **Semantic Event**:
@@ -49,7 +49,7 @@ The metadata committed with a Raw Save Observation, including observation time, 
 _Avoid_: Semantic event, config
 
 **Version Stamp**:
-A recorded version or hash that explains which game/save schema, platform, decoder, mapping data, semantic core, and effective config produced a Decoded Save, Semantic Snapshot, or Semantic Event.
+A recorded version or hash that explains which game, distribution build, save schema, platform, decoder, mapping data, semantic core, and effective config produced a Decoded Save, Semantic Snapshot, or Semantic Event.
 _Avoid_: Display label
 
 **Save Schema Version**:
@@ -57,8 +57,12 @@ The tool-recognized version of the Decoded Save shape. It is used to choose pars
 _Avoid_: Game version, decoder version
 
 **Game Version**:
-The game build/version that wrote an Encoded Save, when the save exposes it or the user provides it. It is useful context but may be unavailable.
-_Avoid_: Save schema version
+The in-game displayed version of Silksong that wrote an Encoded Save, when the save exposes it or the user provides it. It is useful context but may be unavailable.
+_Avoid_: Save schema version, distribution build ID
+
+**Distribution Build ID**:
+The platform-specific build identifier for the distributed game package, such as a Steam build ID. It is useful provenance for platform-specific installs but is not the same as the in-game Game Version.
+_Avoid_: Game version, save schema version
 
 **Capture Policy**:
 The rules that decide which stable Raw Save Observations are committed to the Save History Repository. It controls raw history fidelity and is separate from semantic display filtering.
