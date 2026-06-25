@@ -6,21 +6,9 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 ## Current Status
 
-Phase: P1 Documentation / Repository Hygiene
-Status: complete
-
-Latest state:
-
-- `AGENTS.md` has been rewritten as an agent/maintainer entry point.
-- `CONTEXT.md`, `docs/save-history-design.md`, and ADR-0001 through ADR-0017 exist.
-- Current-system reference docs live under `docs/current-design-reference/`.
-- `docs/current-design-reference/save-to-semantic.md` is English and ASCII-only.
-- `scripts/decode-save.ts` was removed by the user after causing unrelated lint failures.
-
-Latest verification:
-
-- `npm run format`: passed after adding this implementation plan.
-- `npm run lint`: passed after adding this implementation plan.
+- Current phase: P2 Workspace Skeleton
+- Next task: P2-T1 Create Workspace Layout Without Behavior Change
+- Last updated: 2026-06-24
 
 ## Phase Overview
 
@@ -92,6 +80,14 @@ Verification:
 
 - `npm run format`: passed
 - `npm run lint`: passed
+
+Notes:
+
+- `AGENTS.md` has been rewritten as an agent/maintainer entry point.
+- `CONTEXT.md`, `docs/save-history-design.md`, and ADR-0001 through ADR-0017 exist.
+- Current-system reference docs live under `docs/current-design-reference/`.
+- `docs/current-design-reference/save-to-semantic.md` is English and ASCII-only.
+- `scripts/decode-save.ts` was removed by the user after causing unrelated lint failures.
 
 ## P2 Workspace Skeleton
 
