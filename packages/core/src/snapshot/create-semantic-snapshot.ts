@@ -136,6 +136,13 @@ function readItemValue(decodedSave: DecodedSave, item: MappingItem): unknown {
       return false;
     }
 
+    case "journal": {
+      return findJournalKills(
+        decodedSave.playerData["EnemyJournalKillData"],
+        item.flag,
+      );
+    }
+
     case "sceneBool": {
       const sceneFlags = getSceneFlags(decodedSave);
       const normalizedScene = normalizeStringWithUnderscores(item.scene);
@@ -205,6 +212,15 @@ function createSourceReferences(item: MappingItem): readonly SourceReference[] {
       ];
     }
 
+    case "journal": {
+      return [
+        {
+          kind: "playerData",
+          field: "EnemyJournalKillData",
+        },
+      ];
+    }
+
     case "sceneBool": {
       return [
         {
@@ -240,6 +256,16 @@ function getItemStatus(
       }
 
       return value === "accepted" ? "accepted" : "missing";
+    }
+
+    case "journal": {
+      const numberValue = typeof value === "number" ? value : 0;
+
+      if (numberValue >= item.required) {
+        return "done";
+      }
+
+      return numberValue > 0 ? "accepted" : "missing";
     }
 
     default: {
@@ -296,6 +322,22 @@ function findSavedDataEntryData(
   }
 
   return entry["Data"];
+}
+
+function findJournalKills(journalData: unknown, name: string): number {
+  if (!isRecord(journalData) || !isArray(journalData["list"])) {
+    return 0;
+  }
+
+  const entry = journalData["list"].find(
+    (element) => isRecord(element) && element["Name"] === name,
+  );
+
+  if (!isRecord(entry) || !isRecord(entry["Record"])) {
+    return 0;
+  }
+
+  return getNumber(entry["Record"]["Kills"]) ?? 0;
 }
 
 function getSceneFlags(root: unknown): Record<string, Record<string, boolean>> {

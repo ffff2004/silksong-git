@@ -314,6 +314,48 @@ test("createSemanticSnapshot maps quest states to semantic item status", () => {
   assert.equal(quietWish.value, false);
 });
 
+test("createSemanticSnapshot maps journal progress to semantic item status", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {
+      EnemyJournalKillData: {
+        list: [
+          {
+            Name: "Moss Charger",
+            Record: {
+              Kills: 2,
+            },
+          },
+          {
+            Name: "Bell Beast",
+            Record: {
+              Kills: 5,
+            },
+          },
+        ],
+      },
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(decodedSave, createJournalMapping());
+  const mossCharger = findSnapshotItem(snapshot, "moss-charger");
+  const bellBeast = findSnapshotItem(snapshot, "bell-beast-journal");
+  const missingEntry = findSnapshotItem(snapshot, "missing-entry");
+
+  assert.equal(mossCharger.status, "accepted");
+  assert.equal(mossCharger.value, 2);
+  assert.deepEqual(mossCharger.sourceReferences, [
+    {
+      field: "EnemyJournalKillData",
+      kind: "playerData",
+    },
+  ]);
+
+  assert.equal(bellBeast.status, "done");
+  assert.equal(bellBeast.value, 5);
+  assert.equal(missingEntry.status, "missing");
+  assert.equal(missingEntry.value, 0);
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -589,6 +631,47 @@ function createQuestMapping(): MappingData {
                 flag: "Quiet Wish",
                 id: "quiet-wish",
                 label: "Quiet Wish",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createJournalMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "journal",
+        label: "Journal",
+        categories: [
+          {
+            id: "journal",
+            label: "Journal",
+            items: [
+              {
+                type: "journal",
+                flag: "Moss Charger",
+                id: "moss-charger",
+                label: "Moss Charger",
+                required: 5,
+              },
+              {
+                type: "journal",
+                flag: "Bell Beast",
+                id: "bell-beast-journal",
+                label: "Bell Beast",
+                required: 5,
+              },
+              {
+                type: "journal",
+                flag: "Missing Entry",
+                id: "missing-entry",
+                label: "Missing Entry",
+                required: 1,
               },
             ],
           },

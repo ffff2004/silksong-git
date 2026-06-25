@@ -27,7 +27,8 @@ export type MappingItem =
   | KeyMappingItem
   | NumericThresholdMappingItem
   | SavedDataMappingItem
-  | QuestMappingItem;
+  | QuestMappingItem
+  | JournalMappingItem;
 
 interface MappingItemBase {
   readonly id: string;
@@ -66,6 +67,12 @@ interface SavedDataMappingItem extends MappingItemBase {
 interface QuestMappingItem extends MappingItemBase {
   readonly type: "quest";
   readonly flag: string;
+}
+
+interface JournalMappingItem extends MappingItemBase {
+  readonly type: "journal";
+  readonly flag: string;
+  readonly required: number;
 }
 
 export interface SnapshotOptions {
