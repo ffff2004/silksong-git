@@ -84,7 +84,7 @@ Git Save History Repository
   save.dat
   decoded-save.json
   observation.json
-  .silksong-history/config.json
+  .silksong-git/config.json
 
 SQLite Semantic Read Model
   rebuildable semantic index
@@ -107,12 +107,12 @@ history-repo/
   decoded-save.json
   observation.json
   .gitignore
-  .silksong-history/
+  .silksong-git/
     config.json
     read-model.sqlite
 ```
 
-`save.dat`, `decoded-save.json`, `observation.json`, and `.silksong-history/config.json` are committed. `read-model.sqlite` is ignored by Git because it is rebuildable.
+`save.dat`, `decoded-save.json`, `observation.json`, and `.silksong-git/config.json` are committed. `read-model.sqlite` is ignored by Git because it is rebuildable.
 
 `save.dat` is the canonical restore artifact. `decoded-save.json` is raw decoded JSON for inspection and semantic rebuilds. `observation.json` stores Observation Metadata such as observation time, source path, hashes, previous commit, decoder version, and save/game schema context.
 
@@ -258,10 +258,10 @@ Recommended locations:
 
 ```txt
 User Config:
-  ~/.config/silksong-history/config.json
+  ~/.config/silksong-git/config.json
 
 Project Config:
-  history-repo/.silksong-history/config.json
+  history-repo/.silksong-git/config.json
 ```
 
 First-version Project Config fields:
@@ -377,15 +377,15 @@ CLI history/diff/search/restore commands can also run as Offline Commands that r
 First-version commands:
 
 ```txt
-silksong-history init --save path/to/save.dat --repo path/to/history-repo
-silksong-history watch --repo path/to/history-repo
-silksong-history snapshot --save path/to/save.dat --json
-silksong-history history --repo path/to/history-repo
-silksong-history diff --repo path/to/history-repo <from> <to>
-silksong-history search --repo path/to/history-repo --event "Mask Shard #2"
-silksong-history restore --repo path/to/history-repo <commit> --to path
-silksong-history rebuild --repo path/to/history-repo
-silksong-history ui --repo path/to/history-repo
+silksong-git init --save path/to/save.dat --repo path/to/history-repo
+silksong-git watch --repo path/to/history-repo
+silksong-git snapshot --save path/to/save.dat --json
+silksong-git history --repo path/to/history-repo
+silksong-git diff --repo path/to/history-repo <from> <to>
+silksong-git search --repo path/to/history-repo --event "Mask Shard #2"
+silksong-git restore --repo path/to/history-repo <commit> --to path
+silksong-git rebuild --repo path/to/history-repo
+silksong-git ui --repo path/to/history-repo
 ```
 
 Command responsibilities:
@@ -439,13 +439,13 @@ History-oriented commands should report rebuild-required or stale-read-model cas
 Restore defaults to an explicit Restore Target:
 
 ```txt
-silksong-history restore --repo path <commit> --to path
+silksong-git restore --repo path <commit> --to path
 ```
 
 Overwriting the Watched Save requires explicit in-place restore:
 
 ```txt
-silksong-history restore --repo path <commit> --in-place
+silksong-git restore --repo path <commit> --in-place
 ```
 
 In-place restore must:
