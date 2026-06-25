@@ -23,6 +23,7 @@ pull.rebase=true
 # cloning the repository.
 *.mp3 binary
 *.png binary
+*.dat binary
 *.wav binary
 
 # Specify the file type for some files that GitHub will not automatically characterize properly.

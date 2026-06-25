@@ -20,7 +20,7 @@ const ALLOWED_UNICODE_MAP = new ReadonlyMap<string, readonly string[]>([
 ]);
 
 export async function checkForIllegalCharacters(): Promise<void> {
-  const ignoredExtensions = ["otf", "png", "svg", "ttf", "woff2", "dll"];
+  const ignoredExtensions = ["dat", "dll", "otf", "png", "svg", "ttf", "woff2"];
   const ignoredExtensionsGlob = ignoredExtensions.map(
     (extension) => `**/*.${extension}`,
   );

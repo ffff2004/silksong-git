@@ -1,0 +1,45 @@
+{
+  "playerData": {
+    "Collectables": {
+      "savedData": []
+    },
+    "completionPercentage": 39,
+    "EnemyJournalKillData": {
+      "list": []
+    },
+    "MateriumCollected": {
+      "savedData": []
+    },
+    "MementosDeposited": {
+      "savedData": []
+    },
+    "geo": 731,
+    "permadeathMode": "Off",
+    "playTime": 87137.12,
+    "QuestCompletionData": {
+      "savedData": []
+    },
+    "Relics": {
+      "savedData": []
+    },
+    "scenesVisited": ["Crawl_02"],
+    "ShellShards": 76,
+    "ToolEquips": {
+      "savedData": []
+    },
+    "Tools": {
+      "savedData": []
+    },
+    "PurchasedBonebottomFaithToken": false,
+    "CollectedDustCageKey": false,
+    "MerchantEnclaveSimpleKey": false,
+    "BallowGivenKey": false,
+    "collectedWardKey": false,
+    "collectedWardBossKey": false,
+    "HasSlabKeyC": false,
+    "HasSlabKeyA": false,
+    "HasSlabKeyB": false,
+    "PurchasedArchitectKey": false
+  },
+  "sceneData": {}
+}

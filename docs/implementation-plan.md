@@ -7,19 +7,19 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P3 Core Semantic Module
-- Next task: P3-T3 Core Semantic Diff
+- Next task: P3-T4 Core Semantic Diff
 - Last updated: 2026-06-25
 
 ## Phase Overview
 
-| Phase                                 | Status      | Depends On | Goal                                                                                       |
-| ------------------------------------- | ----------- | ---------- | ------------------------------------------------------------------------------------------ |
-| P1 Documentation / Repository Hygiene | complete    | none       | Documentation is coherent, old references are moved, and validation passes.                |
-| P2 Workspace Skeleton                 | complete    | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                       |
-| P3 Core Semantic Module               | in progress | P2         | `packages/core` exposes snapshot and diff behavior through a small public Interface.       |
-| P4 History Module                     | pending     | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`. |
-| P5 CLI                                | pending     | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                |
-| P6 Web Integration                    | pending     | P3, P4     | Web UI uses core and supports static and local history modes.                              |
+| Phase                                 | Status      | Depends On | Goal                                                                                                 |
+| ------------------------------------- | ----------- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| P1 Documentation / Repository Hygiene | complete    | none       | Documentation is coherent, old references are moved, and validation passes.                          |
+| P2 Workspace Skeleton                 | complete    | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                                 |
+| P3 Core Semantic Module               | in progress | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface. |
+| P4 History Module                     | pending     | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.           |
+| P5 CLI                                | pending     | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                          |
+| P6 Web Integration                    | pending     | P3, P4     | Web UI uses core and supports static and local history modes.                                        |
 
 ## Task Rules
 
@@ -275,13 +275,69 @@ Notes:
 - `getBuiltinMappingData` exposes copied current Web mapping tables from `packages/core/src/data/`.
 - Tests cover behavior through public `packages/core` exports.
 
-### P3-T3 Core Semantic Diff
+### P3-T3 Core Encoded Save Decode And Parse
+
+Status: complete
+
+Depends on:
+
+- P3-T2
+
+Owned files or likely files:
+
+- `packages/core/`
+- encoded save decoder/parser tests and fixtures
+
+Relevant docs and ADRs:
+
+- ADR-0015
+- ADR-0012
+- ADR-0016
+- `docs/current-design-reference/overview.md`
+- `docs/current-design-reference/save-to-semantic.md`
+
+Acceptance criteria:
+
+- `packages/core` exports `decodeEncodedSave` for encoded `.dat` save bytes.
+- `packages/core` exports `parseDecodedSave` for validating decoded save objects as `DecodedSave`.
+- The core decoder and parser match the current Web implementation's decoded output and schema expectations.
+- Tests cover decoding through the public core Interface using an encoded fixture; if a real save cannot be committed, use a minimal encrypted fixture generated from the same codec.
+- Tests cover JSON-upload style parsing by calling `parseDecodedSave` without `decodeEncodedSave`.
+- Decode failures remain distinct from successfully decoded but unrecognized save shapes.
+- `apps/web` behavior is not changed in this task; routing Web through the core decoder/parser remains P6-T1 work.
+
+TDD Vertical Slices:
+
+- [x] Fixture tracer setup: add a committed minimal decoded-save JSON fixture, a generated encoded `.dat` fixture, and a committed generator script used only to regenerate fixtures, not by default tests.
+- [x] Public decode tracer bullet: `decodeEncodedSave` decodes the encoded fixture through the public `packages/core` Interface and returns an object with `playerData`.
+- [x] Public parse slice: `parseDecodedSave` validates the decoded fixture through the public `packages/core` Interface and exposes summary fields such as `completionPercentage`, `playTime`, `geo`, and `ShellShards`.
+- [x] JSON upload slice: `parseDecodedSave` accepts a decoded JSON-style fixture without requiring `decodeEncodedSave`.
+- [x] Core end-to-end slice: `decodeEncodedSave -> parseDecodedSave -> createSemanticSnapshot(getBuiltinMappingData())` produces semantic summary metrics from the encoded fixture.
+- [x] Failure classification slice: invalid or truncated encoded bytes produce a decode failure, while successfully decoded but unsupported save shapes produce an unrecognized-schema/parse failure.
+- [x] Optional local smoke slice: document or provide a gitignored command for testing real local saves through the same public core Interface using `SILKSONG_SAVE_DIR`, without committing personal `user*.dat` files.
+
+Verification:
+
+- `pnpm --filter @silksong-git/core test`: passed
+- `pnpm --filter @silksong-git/core fixtures:generate`: passed; regenerated fixture hash stayed stable.
+- `SILKSONG_SAVE_DIR=/home/fym/.config/unity3d/Team Cherry/Hollow Knight Silksong/1225542096 pnpm --filter @silksong-git/core smoke:local-saves`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
+
+Notes:
+
+- Added `decodeEncodedSave`, `parseDecodedSave`, `DecodeEncodedSaveError`, and `UnrecognizedSaveSchemaError` to the public `packages/core` Interface.
+- Added a generated minimal encoded save fixture plus decoded JSON source and committed generator script.
+- Added `smoke:local-saves` as an opt-in local command; it reads real local `user*.dat` files through core but does not commit personal saves.
+- `apps/web` behavior remains unchanged; routing Web through the core decoder/parser remains P6-T1 work.
+
+### P3-T4 Core Semantic Diff
 
 Status: pending
 
 Depends on:
 
-- P3-T2
+- P3-T3
 
 Owned files or likely files:
 
@@ -315,7 +371,7 @@ Status: pending
 
 Depends on:
 
-- P3-T2
+- P3-T3
 
 Owned files or likely files:
 
@@ -351,7 +407,7 @@ Status: pending
 Depends on:
 
 - P4-T1
-- P3-T3
+- P3-T4
 
 Owned files or likely files:
 
@@ -386,7 +442,7 @@ Status: pending
 
 Depends on:
 
-- P3-T2
+- P3-T3
 
 Owned files or likely files:
 
@@ -451,7 +507,7 @@ Status: pending
 
 Depends on:
 
-- P3-T2
+- P3-T3
 
 Owned files or likely files:
 

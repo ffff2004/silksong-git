@@ -3,10 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "fixtures:generate": "tsx src/decode/fixtures/generate-fixtures.ts",
+    "smoke:local-saves": "tsx src/decode/smoke-local-saves.ts",
     "test": "tsx --test --test-reporter=dot src/**/*.test.ts",
     "test:verbose": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "complete-common": "2.29.0"
+    "complete-common": "2.29.0",
+    "crypto-js": "4.2.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/crypto-js": "4.2.2"
   }
 }
