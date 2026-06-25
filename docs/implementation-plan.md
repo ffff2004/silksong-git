@@ -206,7 +206,7 @@ Notes:
 
 ### P3-T2 Core Snapshot Current Mapping Coverage
 
-Status: pending
+Status: in progress
 
 Depends on:
 
@@ -233,7 +233,30 @@ Acceptance criteria:
 - `getBuiltinMappingData` loads or exposes the current Web mapping tables: `main`, `essentials`, `bosses`, `mini-bosses`, `completion`, `wishes`, `journal`, and `scenes`.
 - Tests verify behavior through `createSemanticSnapshot` and `getBuiltinMappingData`, not internal helpers such as scene flag scanning, item value lookup, or status normalization.
 - Web presentation concerns such as DOM rendering, CSS classes, spoiler display, missing filters, map pin rendering, toasts, and browser global state stay outside `packages/core`.
-- TDD proceeds in vertical slices. At minimum, add one behavior test at a time in this order: sceneBool missing, direct playerData booleans, key flags, numeric thresholds, savedData quantity/unlocked entries, quest states, journal progress, relic/materium/device states, sceneVisited, quill, anyOf, special scene numeric branch, and built-in mapping data smoke coverage.
+- TDD proceeds in vertical slices. Add one behavior test at a time through public Interfaces, then implement only enough code to make that slice pass.
+
+TDD Vertical Slices:
+
+- [x] P3-T1 tracer bullet: `sceneBool` collected item is marked `done`.
+- [x] `sceneBool` missing item is marked `missing`.
+- [ ] Direct `playerData` booleans map to semantic item status.
+- [ ] Key flags map to semantic item status.
+- [ ] Numeric thresholds map to semantic item status.
+- [ ] `savedData` quantity and unlocked entries map to semantic item status.
+- [ ] Quest states map to semantic item status.
+- [ ] Journal progress maps to semantic item status.
+- [ ] Relic, materium, and device states map to semantic item status.
+- [ ] `sceneVisited` entries map to semantic item status.
+- [ ] `quill` entries map to semantic item status.
+- [ ] `anyOf` entries map to semantic item status.
+- [ ] Special scene numeric branch supports Shell Fossil Mimic-style entries.
+- [ ] Built-in mapping data smoke coverage verifies `getBuiltinMappingData`.
+
+Latest slice verification:
+
+- `sceneBool` missing item: `pnpm --filter @silksong-git/core test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
 
 Verification:
 

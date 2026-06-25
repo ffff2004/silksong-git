@@ -68,3 +68,57 @@ test("createSemanticSnapshot marks a scene-scoped collected item as done", () =>
   assert.equal(snapshot.version.mappingDataVersion, "fixture-v1");
   assert.equal(snapshot.version.semanticCoreVersion, "test-core");
 });
+
+test("createSemanticSnapshot marks an untriggered scene-scoped item as missing", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {},
+    sceneData: {},
+    sceneState: {
+      serializedList: [
+        {
+          ID: "Other Pickup",
+          SceneName: "Crawl_02",
+          Value: true,
+        },
+      ],
+    },
+  };
+
+  const mappingData: MappingData = {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "main",
+        label: "Main",
+        categories: [
+          {
+            id: "mask-shards",
+            label: "Mask Shards",
+            items: [
+              {
+                type: "sceneBool",
+                flag: "Heart Piece",
+                scene: "Crawl_02",
+                id: "mask-shard-2",
+                label: "Mask Shard #2",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  const snapshot = createSemanticSnapshot(decodedSave, mappingData);
+  const item = snapshot.items.find(({ id }) => id === "mask-shard-2");
+
+  assert.equal(item?.status, "missing");
+  assert.equal(item.value, false);
+  assert.deepEqual(item.sourceReferences, [
+    {
+      flag: "Heart Piece",
+      kind: "sceneFlag",
+      scene: "Crawl_02",
+    },
+  ]);
+});
