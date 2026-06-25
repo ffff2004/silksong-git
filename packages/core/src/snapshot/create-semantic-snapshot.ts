@@ -9,6 +9,7 @@ import type {
   SemanticSnapshotItem,
   SemanticSnapshotItemStatus,
   SnapshotOptions,
+  SourceReference,
 } from "../types.ts";
 
 export function createSemanticSnapshot(
@@ -60,22 +61,49 @@ function createSnapshotItem(
     type: item.type,
     status,
     value,
-    sourceReferences: [
-      {
-        kind: "sceneFlag",
-        scene: item.scene,
-        flag: item.flag,
-      },
-    ],
+    sourceReferences: createSourceReferences(item),
   };
 }
 
 function readItemValue(decodedSave: DecodedSave, item: MappingItem): boolean {
-  const sceneFlags = getSceneFlags(decodedSave);
-  const normalizedScene = normalizeStringWithUnderscores(item.scene);
-  const normalizedFlag = normalizeStringWithUnderscores(item.flag);
+  switch (item.type) {
+    case "flag":
+    case "boss": {
+      return decodedSave.playerData[item.flag] === true;
+    }
 
-  return sceneFlags[normalizedScene]?.[normalizedFlag] ?? false;
+    case "sceneBool": {
+      const sceneFlags = getSceneFlags(decodedSave);
+      const normalizedScene = normalizeStringWithUnderscores(item.scene);
+      const normalizedFlag = normalizeStringWithUnderscores(item.flag);
+
+      return sceneFlags[normalizedScene]?.[normalizedFlag] ?? false;
+    }
+  }
+}
+
+function createSourceReferences(item: MappingItem): readonly SourceReference[] {
+  switch (item.type) {
+    case "flag":
+    case "boss": {
+      return [
+        {
+          kind: "playerData",
+          field: item.flag,
+        },
+      ];
+    }
+
+    case "sceneBool": {
+      return [
+        {
+          kind: "sceneFlag",
+          scene: item.scene,
+          flag: item.flag,
+        },
+      ];
+    }
+  }
 }
 
 function getItemStatus(value: boolean): SemanticSnapshotItemStatus {

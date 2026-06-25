@@ -239,7 +239,7 @@ TDD Vertical Slices:
 
 - [x] P3-T1 tracer bullet: `sceneBool` collected item is marked `done`.
 - [x] `sceneBool` missing item is marked `missing`.
-- [ ] Direct `playerData` booleans map to semantic item status.
+- [x] Direct `playerData` booleans map to semantic item status.
 - [ ] Key flags map to semantic item status.
 - [ ] Numeric thresholds map to semantic item status.
 - [ ] `savedData` quantity and unlocked entries map to semantic item status.
@@ -254,7 +254,7 @@ TDD Vertical Slices:
 
 Latest slice verification:
 
-- `sceneBool` missing item: `pnpm --filter @silksong-git/core test`: passed
+- Direct `playerData` booleans: `pnpm --filter @silksong-git/core test`: passed
 - `pnpm format`: passed
 - `pnpm lint`: passed
 

@@ -68,6 +68,39 @@ test("createSemanticSnapshot marks an untriggered scene-scoped item as missing",
   ]);
 });
 
+test("createSemanticSnapshot maps direct playerData booleans to semantic item status", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {
+      defeatedBellBeast: true,
+      defeatedMoorwing: false,
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createDirectPlayerDataBooleanMapping(),
+  );
+  const defeatedBellBeast = findSnapshotItem(snapshot, "bell-beast");
+  const defeatedMoorwing = findSnapshotItem(snapshot, "moorwing");
+
+  assert.equal(defeatedBellBeast.status, "done");
+  assert.equal(defeatedBellBeast.value, true);
+  assert.deepEqual(defeatedBellBeast.sourceReferences, [
+    {
+      field: "defeatedBellBeast",
+      kind: "playerData",
+    },
+  ]);
+  assert.equal(defeatedMoorwing.status, "missing");
+  assert.equal(defeatedMoorwing.value, false);
+  assert.deepEqual(defeatedMoorwing.sourceReferences, [
+    {
+      field: "defeatedMoorwing",
+      kind: "playerData",
+    },
+  ]);
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -144,6 +177,38 @@ function createEmptyMapping(): MappingData {
   return {
     version: "fixture-v1",
     sections: [],
+  };
+}
+
+function createDirectPlayerDataBooleanMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "bosses",
+        label: "Bosses",
+        categories: [
+          {
+            id: "bosses",
+            label: "Bosses",
+            items: [
+              {
+                type: "flag",
+                flag: "defeatedBellBeast",
+                id: "bell-beast",
+                label: "Bell Beast",
+              },
+              {
+                type: "boss",
+                flag: "defeatedMoorwing",
+                id: "moorwing",
+                label: "Moorwing",
+              },
+            ],
+          },
+        ],
+      },
+    ],
   };
 }
 

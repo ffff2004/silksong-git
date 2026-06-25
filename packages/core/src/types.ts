@@ -21,7 +21,9 @@ interface MappingCategory {
   readonly items: readonly MappingItem[];
 }
 
-export type MappingItem = SceneBoolMappingItem;
+export type MappingItem =
+  | SceneBoolMappingItem
+  | DirectPlayerDataBooleanMappingItem;
 
 interface MappingItemBase {
   readonly id: string;
@@ -33,6 +35,11 @@ interface SceneBoolMappingItem extends MappingItemBase {
   readonly type: "sceneBool";
   readonly flag: string;
   readonly scene: string;
+}
+
+interface DirectPlayerDataBooleanMappingItem extends MappingItemBase {
+  readonly type: "flag" | "boss";
+  readonly flag: string;
 }
 
 export interface SnapshotOptions {
@@ -73,10 +80,19 @@ export interface SemanticSnapshotItem {
 
 export type SemanticSnapshotItemStatus = "done" | "missing" | "unknown";
 
-export interface SourceReference {
+export type SourceReference =
+  | SceneFlagSourceReference
+  | PlayerDataSourceReference;
+
+interface SceneFlagSourceReference {
   readonly kind: "sceneFlag";
   readonly scene: string;
   readonly flag: string;
+}
+
+interface PlayerDataSourceReference {
+  readonly kind: "playerData";
+  readonly field: string;
 }
 
 export interface SaveSummaryMetrics {
