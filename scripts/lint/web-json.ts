@@ -8,15 +8,26 @@ import {
 import { getFilePathsInDirectory, readFile } from "complete-node";
 import { execFile } from "node:child_process";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import { WEB_APP_ROOT } from "./paths.ts";
-
-const execFileAsync = promisify(execFile);
 
 interface CommandErrorOutput {
   readonly stderr?: unknown;
   readonly stdout?: unknown;
+}
+
+async function execFileAsync(file: string, args: readonly string[]) {
+  await new Promise<void>((resolve, reject) => {
+    execFile(file, [...args], (error, stdout, stderr) => {
+      if (error === null) {
+        resolve();
+        return;
+      }
+
+      const commandError: Error = Object.assign(error, { stderr, stdout });
+      reject(commandError);
+    });
+  });
 }
 
 async function getWebDataJSONFilePaths(): Promise<readonly string[]> {

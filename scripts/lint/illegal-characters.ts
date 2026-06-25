@@ -10,13 +10,13 @@ import { REPO_ROOT } from "./paths.ts";
  * allowed to have non-ASCII characters.
  */
 const ALLOWED_UNICODE_MAP = new ReadonlyMap<string, readonly string[]>([
-  ["index.html", ["✕"]],
-  ["main.ts", ["📋", "❌"]],
-  ["overview.md", ["│", "├", "└", "─"]],
-  ["progress.ts", ["✕", "↑", "🔒"]],
-  ["raw-save.ts", ["📋", "❌"]],
-  ["save-data.ts", ["✅", "❌"]],
-  ["WhatDidIPickUp.cs", ["’"]],
+  ["index.html", ["\u{2715}"]],
+  ["main.ts", ["\u{1F4CB}", "\u{274C}"]],
+  ["overview.md", ["\u{2502}", "\u{251C}", "\u{2514}", "\u{2500}"]],
+  ["progress.ts", ["\u{2715}", "\u{2191}", "\u{1F512}"]],
+  ["raw-save.ts", ["\u{1F4CB}", "\u{274C}"]],
+  ["save-data.ts", ["\u{2705}", "\u{274C}"]],
+  ["WhatDidIPickUp.cs", ["\u{2019}"]],
 ]);
 
 export async function checkForIllegalCharacters(): Promise<void> {

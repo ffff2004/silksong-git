@@ -1,9 +1,7 @@
 import { isArray } from "complete-common";
 import { execFile, spawn } from "node:child_process";
 import path from "node:path";
-import { promisify } from "node:util";
 
-const execFileAsync = promisify(execFile);
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 
 interface EslintResult {
@@ -24,6 +22,23 @@ type CommandOutputError = Error & {
   readonly stderr?: unknown;
   readonly stdout?: unknown;
 };
+
+async function execFileAsync(
+  file: string,
+  args: readonly string[],
+): Promise<{ readonly stderr: string; readonly stdout: string }> {
+  return await new Promise((resolve, reject) => {
+    execFile(file, [...args], (error, stdout, stderr) => {
+      if (error === null) {
+        resolve({ stderr, stdout });
+        return;
+      }
+
+      const commandError: Error = Object.assign(error, { stderr, stdout });
+      reject(commandError);
+    });
+  });
+}
 
 async function getEslintFixableFilePaths(): Promise<readonly string[]> {
   const results = await runEslintDryRun();

@@ -7,6 +7,7 @@ import { completeConfigBase } from "eslint-config-complete";
 import { defineConfig } from "eslint/config";
 
 export default defineConfig(...completeConfigBase, {
+  files: ["apps/web/**/*.ts"],
   rules: {
     // By default, the upstream "n/file-extension-in-import" rule is enabled to lint for ".js" file
     // extensions, which is standard practice when writing TypeScript with ECMAScript modules that
