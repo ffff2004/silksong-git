@@ -7,7 +7,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P3 Core Semantic Module
-- Next task: P3-T2 Core Snapshot Current Mapping Coverage
+- Next task: P3-T3 Core Semantic Diff
 - Last updated: 2026-06-25
 
 ## Phase Overview
@@ -206,7 +206,7 @@ Notes:
 
 ### P3-T2 Core Snapshot Current Mapping Coverage
 
-Status: in progress
+Status: complete
 
 Depends on:
 
@@ -265,9 +265,15 @@ Review follow-ups:
 
 Verification:
 
-- core test command: pending
-- `pnpm format`: pending
-- `pnpm lint`: pending
+- `pnpm --filter @silksong-git/core test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
+
+Notes:
+
+- `createSemanticSnapshot` now covers every current Web mapping item type listed in the acceptance criteria.
+- `getBuiltinMappingData` exposes copied current Web mapping tables from `packages/core/src/data/`.
+- Tests cover behavior through public `packages/core` exports.
 
 ### P3-T3 Core Semantic Diff
 
