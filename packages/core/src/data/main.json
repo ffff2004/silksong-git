@@ -1,0 +1,2568 @@
+{
+  "$schema": "./main.schema.json",
+  "categories": [
+    {
+      "description": "Upgrades to Hornet's primary weapon, the Needle.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Long sewing tool, uniquely balanced for combat. The blade is marked by time and use.",
+          "flag": "nailUpgrades",
+          "icon": "icons/1_Needle.png",
+          "id": "nail0",
+          "label": "Base Needle",
+          "link": "https://hollowknight.wiki/w/Needle",
+          "mapCategory": "needle-upgrades",
+          "required": 0,
+          "type": "level"
+        },
+        {
+          "act": 1,
+          "cost": "Free",
+          "description": "The blade is honed to a fine edge.",
+          "flag": "nailUpgrades",
+          "icon": "icons/2_Sharpened_Needle.png",
+          "id": "nail1",
+          "label": "Sharpened Needle",
+          "link": "https://hollowknight.wiki/w/Needle",
+          "mapCategory": "needle-upgrades",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.436,
+            "y": 0.6,
+            "zoom": 2.0
+          },
+          "obtain": "The Needle can be upgraded by Pinmaster Plinney",
+          "required": 1,
+          "showOnMap": true,
+          "type": "level"
+        },
+        {
+          "act": 2,
+          "cost": "Pale Oil x1",
+          "description": "The blade gleams sharper than ever before.",
+          "flag": "nailUpgrades",
+          "icon": "icons/3_Shining_Needle.png",
+          "id": "nail2",
+          "label": "Shining Needle",
+          "link": "https://hollowknight.wiki/w/Needle",
+          "mapCategory": "needle-upgrades",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.436,
+            "y": 0.6,
+            "zoom": 2.0
+          },
+          "obtain": "The Needle can be upgraded by Pinmaster Plinney",
+          "required": 2,
+          "showOnMap": true,
+          "type": "level"
+        },
+        {
+          "act": 2,
+          "cost": "450 Rosaries + Pale Oil x1",
+          "description": "The highly refined blade reveals its hivesteel banding.",
+          "flag": "nailUpgrades",
+          "icon": "icons/4_Hivesteel_Needle.png",
+          "id": "nail3",
+          "label": "Hivesteel Needle",
+          "link": "https://hollowknight.wiki/w/Needle",
+          "mapCategory": "needle-upgrades",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.436,
+            "y": 0.6,
+            "zoom": 2.0
+          },
+          "obtain": "The Needle can be upgraded by Pinmaster Plinney",
+          "required": 3,
+          "showOnMap": true,
+          "type": "level"
+        },
+        {
+          "act": 3,
+          "cost": "680 Rosaries + Pale Oil x1",
+          "description": "The Hivesteel blade has been sharpened to its ultimate form.",
+          "flag": "nailUpgrades",
+          "icon": "icons/5_Pale_Steel_Needle.png",
+          "id": "nail4",
+          "label": "Pale Steel Needle",
+          "link": "https://hollowknight.wiki/w/Needle",
+          "mapCategory": "needle-upgrades",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.436,
+            "y": 0.6,
+            "zoom": 2.0
+          },
+          "obtain": "The Needle can be upgraded by Pinmaster Plinney",
+          "required": 4,
+          "showOnMap": true,
+          "type": "level"
+        }
+      ],
+      "label": "Needle Upgrades"
+    },
+    {
+      "description": "Fragments that increase Hornet's maximum health when collected.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Can be bought from Pebb for 300 Rosaries. If the mask shard is not bought from Pebb before Act 3 begins, the shard will be moved to Grindle's shop in Blasted Steps for 320 Rosaries.",
+          "flag": "PurchasedBonebottomHeartPiece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-1",
+          "label": "Mask Shard #1",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.242,
+            "y": 0.72,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "description": "In lower Wormways, accessed through Mosshome. Behind a breakable wall, just in front of the door requiring a Simple Key.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-2",
+          "label": "Mask Shard #2",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.156,
+            "y": 0.68,
+            "zoom": 2.0
+          },
+          "scene": "Crawl_02",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "In a passageway between the Marrow and Deep Docks. Accessed from The Marrow. Cling Grip recommended.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-3",
+          "label": "Mask Shard #3",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.475,
+            "y": 0.715,
+            "zoom": 2.0
+          },
+          "scene": "Dock_08",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "In the area above Seamstress's home in Far Fields. Requires Drifter's Cloak.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-4",
+          "label": "Mask Shard #4",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.723,
+            "y": 0.732,
+            "zoom": 2.0
+          },
+          "scene": "Bone_East_20",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "In centre of Shellwood. At the end of a platforming challenge behind a breakable wall.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-5",
+          "label": "Mask Shard #5",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.347,
+            "y": 0.564,
+            "zoom": 2.0
+          },
+          "scene": "Shellwood_14",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "In east Weavenest Atla. Requires Cling Grip. Behind breakable wall.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-6",
+          "label": "Mask Shard #6",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.338,
+            "y": 0.758,
+            "zoom": 2.0
+          },
+          "scene": "Weave_05b",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "Sold by Jubilana in Songclave for 750 Rosaries. Complete The Wandering Merchant wish.",
+          "flag": "MerchantEnclaveShellFragment",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-7",
+          "label": "Mask Shard #7",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.614,
+            "y": 0.254,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "description": "In west Cogwork Core past an enemy gauntlet. Accessible after defeating the Cogwork Dancers.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-8",
+          "label": "Mask Shard #8",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.465,
+            "y": 0.269,
+            "zoom": 2.0
+          },
+          "scene": "Song_09",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "Behind moving box puzzle in central Whispering Vaults.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-9",
+          "label": "Mask Shard #9",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.636,
+            "y": 0.306,
+            "zoom": 2.0
+          },
+          "scene": "Library_05",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "Reward for completing the Savage Beastfly wish. Defeat Fourth Chorus and Savage Beastfly in Hunter's March and enter Songclave.",
+          "flag": "Beastfly Hunt",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-10",
+          "label": "Mask Shard #10",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.425,
+            "y": 0.588,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "quest"
+        },
+        {
+          "act": 2,
+          "description": "Inside bone building in east Far Fields. Requires Clawline and Drifter's Cloak.",
+          "flag": "Heart Piece (1)",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-11",
+          "label": "Mask Shard #11",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.823,
+            "y": 0.748,
+            "zoom": 2.0
+          },
+          "scene": "Bone_East_LavaChallenge",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In southwest Mount Fay. West of the bench. Requires Faydown Cloak.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-12",
+          "label": "Mask Shard #12",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.069,
+            "y": 0.288,
+            "zoom": 2.0
+          },
+          "scene": "Peak_04c",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In the northeast part of the Slab. Requires Key of Apostate and Faydown Cloak. Challenge can be skipped with Silk Soar.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-13",
+          "label": "Mask Shard #13",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.295,
+            "y": 0.228,
+            "zoom": 2.0
+          },
+          "scene": "Slab_17",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In east Bilewater, in a hallway filled with Slubberlugs.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-14",
+          "label": "Mask Shard #14",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.84,
+            "y": 0.359,
+            "zoom": 2.0
+          },
+          "scene": "Shadow_13",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In east Wisp Thicket. Requires Faydown Cloak.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-15",
+          "label": "Mask Shard #15",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.595,
+            "y": 0.492,
+            "zoom": 2.0
+          },
+          "scene": "Wisp_07",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In west Blasted Steps. Requires Clawline and Faydown Cloak. Challenge can be skipped with Silk Soar.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-16",
+          "label": "Mask Shard #16",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.129,
+            "y": 0.515,
+            "zoom": 2.0
+          },
+          "scene": "Coral_19b",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 3,
+          "description": "In Brightvein. Requires Silk Soar.",
+          "flag": "Heart Piece",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-17",
+          "label": "Mask Shard #17",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.194,
+            "y": 0.23,
+            "zoom": 2.0
+          },
+          "scene": "Peak_06",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 3,
+          "description": "In east Far Fields. Reward from the Sprintmaster Fastest in Pharloom wish.",
+          "flag": "Sprintmaster Race",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-18",
+          "label": "Mask Shard #18",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.878,
+            "y": 0.662,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "quest"
+        },
+        {
+          "act": 3,
+          "description": "In Bellhart Wishwall. Reward from Dark Hearts wish.",
+          "flag": "Destroy Thread Cores",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-19",
+          "label": "Mask Shard #19",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.413,
+            "y": 0.576,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "quest"
+        },
+        {
+          "act": 3,
+          "description": "In Bellhart Wishwall. Reward from The Hidden Hunter wish.",
+          "flag": "Ant Trapper",
+          "icon": "icons/MaskShard.png",
+          "id": "mask-shard-20",
+          "label": "Mask Shard #20",
+          "link": "https://hollowknight.wiki/w/Mask_Shard_(Silksong)",
+          "mapCategory": "mask-shards",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.416,
+            "y": 0.592,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "quest"
+        }
+      ],
+      "label": "Mask Shards"
+    },
+    {
+      "description": "Fragments that increase Hornet's Silk capacity.",
+      "items": [
+        {
+          "act": 1,
+          "description": "In Bone Bottom.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-1",
+          "label": "Spool Fragment #1",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.259,
+            "y": 0.69,
+            "zoom": 2.0
+          },
+          "scene": "Bone_11b",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "In the central section of Deep Docks. Take the southwest exit from Forge Daughter's location.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-2",
+          "label": "Spool Fragment #2",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.532,
+            "y": 0.764,
+            "zoom": 2.0
+          },
+          "scene": "Bone_East_13",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "In Greymoor, above Shakra's bench.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-3",
+          "label": "Spool Fragment #3",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.708,
+            "y": 0.524,
+            "zoom": 2.0
+          },
+          "scene": "Greymoor_02",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "After completing the My Missing Courier wish, Frey in Bellhart sells this for 270 Rosaries.",
+          "flag": "PurchasedBelltownSpoolSegment",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-4",
+          "label": "Spool Fragment #4",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.428,
+            "y": 0.6,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "description": "In a passage in Weavenest Atla.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-5",
+          "label": "Spool Fragment #5",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.245,
+            "y": 0.767,
+            "zoom": 2.0
+          },
+          "scene": "Weave_11",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "In The Slab.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-6",
+          "label": "Spool Fragment #6",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.244,
+            "y": 0.281,
+            "zoom": 2.0
+          },
+          "scene": "Peak_01",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "At the top of the Grand Gate.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-7",
+          "label": "Spool Fragment #7",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.33,
+            "y": 0.392,
+            "zoom": 2.0
+          },
+          "scene": "Song_19_entrance",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In the central section of the Underworks.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-8",
+          "label": "Spool Fragment #8",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.475,
+            "y": 0.448,
+            "zoom": 2.0
+          },
+          "scene": "Under_10",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "Given by the Flea Caravan upon their ascent to the Grand Gate. (Requires 12 fleas and Last Judge defeated.)",
+          "flag": "CaravanTroupeLocation",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-9",
+          "label": "Spool Fragment #9",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.276,
+            "y": 0.428,
+            "zoom": 2.0
+          },
+          "required": 3,
+          "showOnMap": true,
+          "type": "level"
+        },
+        {
+          "act": 2,
+          "description": "In Whiteward.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-10",
+          "label": "Spool Fragment #10",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.475,
+            "y": 0.381,
+            "zoom": 2.0
+          },
+          "scene": "Ward_01",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In the southeast section of the lower Cogwork Core.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-11",
+          "label": "Spool Fragment #11",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.539,
+            "y": 0.314,
+            "zoom": 2.0
+          },
+          "scene": "Cog_07",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In the lower right section of the Underworks.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-12",
+          "label": "Spool Fragment #12",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.566,
+            "y": 0.453,
+            "zoom": 2.0
+          },
+          "scene": "Library_11b",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "Given by Sherma after completing the the Balm For The Wounded wish.",
+          "flag": "Save Sherma",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-13",
+          "label": "Spool Fragment #13",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.519,
+            "y": 0.367,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "quest"
+        },
+        {
+          "act": 2,
+          "description": "Sold by Jubilana for 500 Rosaries after The Lost Merchant wish.",
+          "flag": "MerchantEnclaveSpoolPiece",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-14",
+          "label": "Spool Fragment #14",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.609,
+            "y": 0.244,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "description": "In the southeast section of Deep Docks.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-15",
+          "label": "Spool Fragment #15",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.669,
+            "y": 0.762,
+            "zoom": 2.0
+          },
+          "scene": "Dock_03c",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In High Halls, highest point in the left vertical room.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-16",
+          "label": "Spool Fragment #16",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.432,
+            "y": 0.144,
+            "zoom": 2.0
+          },
+          "scene": "Hang_03_top",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In the western section of the Memorium.",
+          "flag": "Silk Spool",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-17",
+          "label": "Spool Fragment #17",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.53,
+            "y": 0.227,
+            "zoom": 2.0
+          },
+          "scene": "Arborium_09",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "Sold by Grindle for 680 Rosaries.",
+          "flag": "purchasedGrindleSpoolPiece",
+          "icon": "icons/Spool_Fragment.png",
+          "id": "spool-fragment-18",
+          "label": "Spool Fragment #18",
+          "link": "https://hollowknight.wiki/w/Spool_Fragment",
+          "mapCategory": "spool-fragments",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.165,
+            "y": 0.438,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        }
+      ],
+      "label": "Silk Spools"
+    },
+    {
+      "description": "Boss memories that upgrade Hornet's Silk regeneration.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Defeating the Bell Beast in The Marrow area.",
+          "icon": "icons/Silk_Heart.png",
+          "id": "silk-heart-1",
+          "label": "Silk Heart #1",
+          "link": "https://hollowknight.wiki/w/Silk_Heart",
+          "mapCategory": "silk-hearts",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.295,
+            "y": 0.67,
+            "zoom": 2.0
+          },
+          "scene": "Memory_Silk_Heart_BellBeast",
+          "showOnMap": true,
+          "type": "sceneVisited"
+        },
+        {
+          "act": 2,
+          "description": "Defeating the Unravelled in The Whiteward.",
+          "icon": "icons/Silk_Heart.png",
+          "id": "silk-heart-2",
+          "label": "Silk Heart #2",
+          "link": "https://hollowknight.wiki/w/Silk_Heart",
+          "mapCategory": "silk-hearts",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.432,
+            "y": 0.392,
+            "zoom": 2.0
+          },
+          "scene": "Memory_Silk_Heart_WardBoss",
+          "showOnMap": true,
+          "type": "sceneVisited"
+        },
+        {
+          "act": 2,
+          "description": "Defeating Lace in Act Two.",
+          "icon": "icons/Silk_Heart.png",
+          "id": "silk-heart-3",
+          "label": "Silk Heart #3",
+          "link": "https://hollowknight.wiki/w/Silk_Heart",
+          "mapCategory": "silk-hearts",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.504,
+            "y": 0.129,
+            "zoom": 2.0
+          },
+          "scene": "Memory_Silk_Heart_LaceTower",
+          "showOnMap": true,
+          "type": "sceneVisited"
+        }
+      ],
+      "label": "Silk Hearts"
+    },
+    {
+      "description": "Special unique unlocks and hidden upgrades.",
+      "items": [
+        {
+          "act": 3,
+          "description": "Return to the Snail Shamans and complete the memory sequence.",
+          "flag": "White Flower",
+          "icon": "icons/Everbloom.png",
+          "id": "everbloom",
+          "label": "Everbloom",
+          "link": "https://hollowknight.wiki/w/Everbloom",
+          "mapCategory": "miscellaneous",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.162,
+            "y": 0.735,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "collectable"
+        },
+        {
+          "act": 2,
+          "description": "Unlock by binding 6 Crests and using 15 Memory Lockets.",
+          "flag": "HasBoundCrestUpgrader",
+          "icon": "icons/Eva.png",
+          "id": "bind-eva",
+          "label": "Bind Eva",
+          "link": "https://hollowknight.wiki/w/Eva",
+          "mapCategory": "miscellaneous",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.302,
+            "y": 0.784,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        }
+      ],
+      "label": "Miscellaneous"
+    },
+    {
+      "description": "Crests are equipment that allows Hornet to change her moveset.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Stalk prey and attack with lethal strikes.",
+          "flag": "Hunter",
+          "icon": "icons/Hunter_Crest.png",
+          "id": "crest-hunter",
+          "label": "Hunter Crest",
+          "link": "https://hollowknight.wiki/w/Hunter_Crest",
+          "mapCategory": "crests",
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Attack with heavy, arcing slashes and reap additional Silk from enemies.",
+          "flag": "Reaper",
+          "icon": "icons/Reaper_Crest.png",
+          "id": "crest-reaper",
+          "label": "Reaper Crest",
+          "link": "https://hollowknight.wiki/w/Reaper_Crest",
+          "mapCategory": "crests",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.482,
+            "y": 0.575,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Cut swiftly and nimbly with short, precise strikes.",
+          "flag": "Wanderer",
+          "icon": "icons/Wanderer_Crest.png",
+          "id": "crest-wanderer",
+          "label": "Wanderer Crest",
+          "link": "https://hollowknight.wiki/w/Wanderer_Crest",
+          "mapCategory": "crests",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.119,
+            "y": 0.727,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Tear foes with savage slashes. Bind to enter a wild fury and steal life from prey.",
+          "flag": "Warrior",
+          "icon": "icons/Beast_Crest.png",
+          "id": "crest-beast",
+          "label": "Beast Crest",
+          "link": "https://hollowknight.wiki/w/Beast_Crest",
+          "mapCategory": "crests",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.654,
+            "y": 0.661,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Whip the needle in sweeping swings. Leech the life of foes through twisted roots.",
+          "flag": "Witch",
+          "icon": "icons/Witch_Crest.png",
+          "id": "crest-witch",
+          "label": "Witch Crest",
+          "link": "https://hollowknight.wiki/w/Witch_Crest",
+          "mapCategory": "crests",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.47,
+            "y": 0.553,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Spin the needle as a screw, shredding foes. Spend Silk to rapidly craft new tools from shell shards.",
+          "flag": "Toolmaster",
+          "icon": "icons/Architect_Crest.png",
+          "id": "crest-architect",
+          "label": "Architect Crest",
+          "link": "https://hollowknight.wiki/w/Architect_Crest",
+          "mapCategory": "crests",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.515,
+            "y": 0.406,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 3,
+          "description": "Cast the blade forward to empower Silk Skills with powerful runes.",
+          "flag": "Spell",
+          "icon": "icons/Shaman_Crest.png",
+          "id": "crest-shaman",
+          "label": "Shaman Crest",
+          "link": "https://hollowknight.wiki/w/Shaman_Crest",
+          "mapCategory": "crests",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.17,
+            "y": 0.742,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        }
+      ],
+      "label": "Crests"
+    },
+    {
+      "description": "Special combat techniques unlocked through Silk.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Deadly Weaver technique. Throw the needle forward with force amplified by coiled Silk.",
+          "flag": "Silk Spear",
+          "icon": "icons/Silkspear.png",
+          "id": "silkspear",
+          "label": "Silkspear",
+          "link": "https://hollowknight.wiki/w/Silkspear",
+          "mapCategory": "silk-skills",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.252,
+            "y": 0.652,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Deadly Weaver technique. Cast the needle in a whirl of Silk around oneself, lashing foes.",
+          "flag": "Thread Sphere",
+          "icon": "icons/Thread_Storm.png",
+          "id": "thread-storm",
+          "label": "Thread Storm",
+          "link": "https://hollowknight.wiki/w/Thread_Sphere",
+          "mapCategory": "silk-skills",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.768,
+            "y": 0.514,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Deflective technique of a creature spun from thread. Bind Silk around the needle to deflect enemy attacks and instantly strike back.",
+          "flag": "Parry",
+          "icon": "icons/Cross_Stitch.png",
+          "id": "cross-stitch",
+          "label": "Cross Stitch",
+          "link": "https://hollowknight.wiki/w/Cross_Stitch",
+          "mapCategory": "silk-skills",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.637,
+            "y": 0.444,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Deadly Weaver technique. Pierce through enemies in a blur of blade and Silk.",
+          "flag": "Silk Charge",
+          "icon": "icons/Sharpdart.png",
+          "id": "sharpdart",
+          "label": "Sharpdart",
+          "link": "https://hollowknight.wiki/w/Sharpdart",
+          "mapCategory": "silk-skills",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.035,
+            "y": 0.662,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Forgotten Weaver technique. Sew rending runes upon one's enemies.",
+          "flag": "Silk Bomb",
+          "icon": "icons/Rune_Rage.png",
+          "id": "rune-rage",
+          "label": "Rune Rage",
+          "link": "https://hollowknight.wiki/w/Rune_Rage",
+          "mapCategory": "silk-skills",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.305,
+            "y": 0.339,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 3,
+          "description": "Technique taken from the primal source of Silk. Spin talons from thread that seek out enemies.",
+          "flag": "Silk Boss Needle",
+          "icon": "icons/Pale_Nails.png",
+          "id": "pale-nails",
+          "label": "Pale Nails",
+          "link": "https://hollowknight.wiki/w/Pale_Nails",
+          "mapCategory": "silk-skills",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.506,
+            "y": 0.053,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        }
+      ],
+      "label": "Silk Skills"
+    },
+    {
+      "description": "Capacity upgrades for Hornet's tool pouch.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Base tool pouch with minimal capacity.",
+          "flag": "ToolPouchUpgrades",
+          "icon": "icons/Tool_Pouch.png",
+          "id": "tool-pouch-0",
+          "label": "Base Tool Pouch",
+          "link": "https://hollowknight.wiki/w/Tool_Pouch",
+          "mapCategory": "tool-pouch",
+          "required": 0,
+          "type": "level"
+        },
+        {
+          "act": 1,
+          "description": "Bought from Mort in Far Fields for 220 Rosaries (Act 1/2) or from Grindle in Blasted Steps (Act 3).",
+          "flag": "PurchasedPilgrimsRestToolPouch",
+          "icon": "icons/Tool_Pouch.png",
+          "id": "tool-pouch-1",
+          "label": "Tool Pouch Upgrade #1",
+          "link": "https://hollowknight.wiki/w/Tool_Pouch",
+          "mapCategory": "tool-pouch",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.709,
+            "y": 0.678,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "anyOf": [
+            {
+              "flag": "pinGalleriesCompleted",
+              "required": 1,
+              "type": "level"
+            },
+            {
+              "flag": "Ladybug Craft Pickup",
+              "scene": "Bone_12",
+              "type": "sceneBool"
+            }
+          ],
+          "description": "Reward from Loddie in The Marrow for beating his first challenge (Act 1/2) / Found in Loddie's former location (Act 3).",
+          "icon": "icons/Tool_Pouch.png",
+          "id": "tool-pouch-2",
+          "label": "Tool Pouch Upgrade #2",
+          "link": "https://hollowknight.wiki/w/Tool_Pouch",
+          "mapCategory": "tool-pouch",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.426,
+            "y": 0.695,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "anyOf"
+        },
+        {
+          "act": 2,
+          "description": "Reward for completing Nuu's Wish: Bugs of Pharloom.",
+          "flag": "Journal",
+          "icon": "icons/Tool_Pouch.png",
+          "id": "tool-pouch-3",
+          "label": "Tool Pouch Upgrade #3",
+          "link": "https://hollowknight.wiki/w/Tool_Pouch",
+          "mapCategory": "tool-pouch",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.588,
+            "y": 0.558,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "quest"
+        },
+        {
+          "act": 2,
+          "description": "Reward from Mooshka after helping the Flea Caravan move to Putrified Ducts.",
+          "flag": "Caravan Troupe Leader Fleatopia NPC",
+          "icon": "icons/Tool_Pouch.png",
+          "id": "tool-pouch-4",
+          "label": "Tool Pouch Upgrade #4",
+          "link": "https://hollowknight.wiki/w/Tool_Pouch",
+          "mapCategory": "tool-pouch",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.86,
+            "y": 0.269,
+            "zoom": 2.0
+          },
+          "scene": "Aqueduct_05",
+          "showOnMap": true,
+          "type": "sceneBool"
+        }
+      ],
+      "label": "Tool Pouch Upgrades"
+    },
+    {
+      "description": "Capacity upgrades for Hornet's crafting kit.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Base crafting kit.",
+          "flag": "ToolKitUpgrades",
+          "icon": "icons/Crafting_Kit.png",
+          "id": "crafting-kit-0",
+          "label": "Base Crafting Kit",
+          "link": "https://hollowknight.wiki/w/Crafting_Kit",
+          "mapCategory": "crafting-kit",
+          "required": 0,
+          "type": "level"
+        },
+        {
+          "act": 1,
+          "description": "Bought from Forge Daughter in Deep Docks for 180 Rosaries.",
+          "flag": "PurchasedForgeToolKit",
+          "icon": "icons/Crafting_Kit.png",
+          "id": "crafting-kit-1",
+          "label": "Crafting Kit Upgrade #1",
+          "link": "https://hollowknight.wiki/w/Crafting_Kit",
+          "mapCategory": "crafting-kit",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.556,
+            "y": 0.743,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "description": "Reward for completing the Crawbug Clearing wish.",
+          "flag": "Crow Feathers Pre",
+          "icon": "icons/Crafting_Kit.png",
+          "id": "crafting-kit-2",
+          "label": "Crafting Kit Upgrade #2",
+          "link": "https://hollowknight.wiki/w/Crafting_Kit",
+          "mapCategory": "crafting-kit",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.419,
+            "y": 0.578,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "quest"
+        },
+        {
+          "act": 2,
+          "description": "Bought from Twelfth Architect in Underworks for 450 Rosaries.",
+          "flag": "PurchasedArchitectToolKit",
+          "icon": "icons/Crafting_Kit.png",
+          "id": "crafting-kit-3",
+          "label": "Crafting Kit Upgrade #3",
+          "link": "https://hollowknight.wiki/w/Crafting_Kit",
+          "mapCategory": "crafting-kit",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.53,
+            "y": 0.405,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "description": "Bought from Grindle in Blasted Steps for 700 Rosaries.",
+          "flag": "purchasedGrindleToolKit",
+          "icon": "icons/Crafting_Kit.png",
+          "id": "crafting-kit-4",
+          "label": "Crafting Kit Upgrade #4",
+          "link": "https://hollowknight.wiki/w/Crafting_Kit",
+          "mapCategory": "crafting-kit",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.16,
+            "y": 0.437,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        }
+      ],
+      "label": "Crafting Kit Upgrades"
+    },
+    {
+      "description": "Core abilities that grant Hornet new movement and combat options.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Fabled Weaver talent. Dash forward and sprint with unnatural speed, as though gliding upon Silk.",
+          "flag": "hasDash",
+          "icon": "icons/Swift_Step.png",
+          "id": "ability-swift-step",
+          "label": "Swift Step",
+          "link": "https://hollowknight.wiki/w/Swift_Step",
+          "mapCategory": "ability",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.541,
+            "y": 0.696,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "description": "Ancient Weaver technique. Cling to sheer surfaces and leap off to rapidly scale heights.",
+          "flag": "hasWalljump",
+          "icon": "icons/Cling_Grip.png",
+          "id": "ability-cling-grip",
+          "label": "Cling Grip",
+          "link": "https://hollowknight.wiki/w/Cling_Grip",
+          "mapCategory": "ability",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.323,
+            "y": 0.531,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "description": "Holy Weaver talent. Play ancient melodies by stringing Silk along the needle.",
+          "flag": "hasNeedolin",
+          "icon": "icons/Needolin.png",
+          "id": "ability-needolin",
+          "label": "Needolin",
+          "link": "https://hollowknight.wiki/w/Needolin",
+          "mapCategory": "ability",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.439,
+            "y": 0.573,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "description": "Advanced Weaver talent. Throw the Silk-strung needle like a harpoon and charge towards it.",
+          "flag": "hasHarpoonDash",
+          "icon": "icons/Clawline.png",
+          "id": "ability-clawline",
+          "label": "Clawline",
+          "link": "https://hollowknight.wiki/w/Clawline",
+          "mapCategory": "ability",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.515,
+            "y": 0.433,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 3,
+          "description": "Ancient Weaver talent. Throw the needle upward and launch to tremendous heights.",
+          "flag": "hasSuperJump",
+          "icon": "icons/Silk_Soar.png",
+          "id": "ability-silk-soar",
+          "label": "Silk Soar",
+          "link": "https://hollowknight.wiki/w/Silk_Soar",
+          "mapCategory": "ability",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.57,
+            "y": 0.945,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "description": "Charge power in the needle, then release as a deadly attack.",
+          "flag": "hasChargeSlash",
+          "icon": "icons/Needle_Strike.png",
+          "id": "ability-needle-strike",
+          "label": "Needle Strike",
+          "link": "https://hollowknight.wiki/w/Needle_Strike",
+          "mapCategory": "ability",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.107,
+            "y": 0.486,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        }
+      ],
+      "label": "Abilities"
+    },
+    {
+      "description": "Limited use consumable tools that require Shell Shards to be replenished at Benches.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Located in The Marrow inside of Grindle's cell.",
+          "flag": "Straight Pin",
+          "icon": "icons/Straight_Pin.png",
+          "id": "red-straight-pin",
+          "label": "Straight Pin",
+          "link": "https://hollowknight.wiki/w/Straight_Pin",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.431,
+            "y": 0.691,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Located in Greymoor at Craw Lake. In the Secret Room, entered by walking through the wall.",
+          "flag": "Tri Pin",
+          "icon": "icons/Threefold_Pin.png",
+          "id": "red-threefold-pin",
+          "label": "Threefold Pin",
+          "link": "https://hollowknight.wiki/w/Threefold_Pin",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.779,
+            "y": 0.536,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Purchased from Forge Daughter in Deep Docks for 140 Rosaries and 1 Craftmetal.",
+          "flag": "sting shard",
+          "icon": "icons/Sting_Shard.png",
+          "id": "red-sting-shard",
+          "label": "Sting Shard",
+          "link": "https://hollowknight.wiki/w/Sting_Shard",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.561,
+            "y": 0.743,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Reward for completing the Roach Guts wish.",
+          "flag": "Tack",
+          "icon": "icons/Tacks.png",
+          "id": "red-tacks",
+          "label": "Tacks",
+          "link": "https://hollowknight.wiki/w/Tacks",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.687,
+            "y": 0.489,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Reward for completing the Trail's End wish.",
+          "flag": "Shakra Ring",
+          "icon": "icons/Throwing_Ring.png",
+          "id": "red-throwing-ring",
+          "label": "Throwing Ring",
+          "link": "https://hollowknight.wiki/w/Throwing_Ring",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.905,
+            "y": 0.292,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Located in Shellwood above the main entrance to Bellhart, blocked by a Wood Wasp nest.",
+          "flag": "Harpoon",
+          "icon": "icons/Longpin.png",
+          "id": "red-longpin",
+          "label": "Longpin",
+          "link": "https://hollowknight.wiki/w/Longpin",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.405,
+            "y": 0.593,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Purchased from Mottled Skarr in Hunter's March for 140 Rosaries. Alternatively, if Mottled Skarr is dead, it can be found locked behind a gauntlet north of his original location.",
+          "flag": "Curve Claws",
+          "icon": "icons/Curveclaw.png",
+          "id": "red-curveclaw",
+          "label": "Curveclaw",
+          "link": "https://hollowknight.wiki/w/Curveclaw",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.556,
+            "y": 0.638,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 3,
+          "description": "Obtained by giving the Curveclaw to a Mottled Skarr Scout in Act 3, in the target practice room above the Far Fields Bellway station.",
+          "flag": "Curve Claws Upgraded",
+          "icon": "icons/Curvesickle.png",
+          "id": "red-curveclaw-upgrade",
+          "label": "Curvesickle",
+          "link": "https://hollowknight.wiki/w/Curvesickle",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.702,
+            "y": 0.7,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool",
+          "upgradeOf": "red-curveclaw"
+        },
+        {
+          "act": 1,
+          "description": "Crafted in a hidden room in northwest Greymoor for 1 Craftmetal.",
+          "flag": "Pimpilo",
+          "icon": "icons/Pimpillo.png",
+          "id": "red-pimpillo",
+          "label": "Pimpillo",
+          "link": "https://hollowknight.wiki/w/Pimpillo",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.474,
+            "y": 0.532,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Obtained by repairing the Ruined Tool found in Weavenest Murglin. Repairing at Twelfth Architect for 140 Rosaries and 1 Craftmetal provides this variant.",
+          "flag": "WebShot Architect",
+          "group": "Silkshot",
+          "icon": "icons/Silkshot_Architect.png",
+          "id": "red-silkshot-architect",
+          "label": "Silkshot (Architect)",
+          "link": "https://hollowknight.wiki/w/Silkshot",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.535,
+            "y": 0.402,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool",
+          "unobtainable": true
+        },
+        {
+          "act": 2,
+          "description": "Obtained by repairing the Ruined Tool found in Weavenest Murglin. Repairing at Forge Daughter for 240 Rosaries and 1 Craftmetal provides this variant.",
+          "flag": "WebShot Forge",
+          "group": "Silkshot",
+          "icon": "icons/Silkshot_Forge.png",
+          "id": "red-silkshot-forge",
+          "label": "Silkshot (Forge)",
+          "link": "https://hollowknight.wiki/w/Silkshot",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.55,
+            "y": 0.741,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool",
+          "unobtainable": true
+        },
+        {
+          "act": 2,
+          "description": "Obtained by repairing the Ruined Tool found in Weavenest Murglin. Repairing at a room near the peak of Mount Fay for 1 Craftmetal provides this variant.",
+          "flag": "WebShot Weaver",
+          "group": "Silkshot",
+          "icon": "icons/Silkshot_Weaver.png",
+          "id": "red-silkshot-weaver",
+          "label": "Silkshot (Weaver)",
+          "link": "https://hollowknight.wiki/w/Silkshot",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.227,
+            "y": 0.143,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool",
+          "unobtainable": true
+        },
+        {
+          "act": 2,
+          "description": "Found inside the Coral Tower in Sands of Karak.",
+          "flag": "Conch Drill",
+          "icon": "icons/Conchcutter.png",
+          "id": "red-conchcutter",
+          "label": "Conchcutter",
+          "link": "https://hollowknight.wiki/w/Conchcutter",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.095,
+            "y": 0.351,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Found on a crafting table in the southwest of the Underworks.",
+          "flag": "Screw Attack",
+          "icon": "icons/Delver's_Drill.png",
+          "id": "red-delvers-drill",
+          "label": "Delver's Drill",
+          "link": "https://hollowknight.wiki/w/Delver's_Drill",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.409,
+            "y": 0.495,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Purchased at Twelfth Architect for 360 Rosaries and 1 Craftmetal.",
+          "flag": "Cogwork Saw",
+          "icon": "icons/Cogwork_Wheel.png",
+          "id": "red-cogwork-wheel",
+          "label": "Cogwork Wheel",
+          "link": "https://hollowknight.wiki/w/Cogwork_Wheel",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.53,
+            "y": 0.392,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Found behind a hidden wall in the northeast of Memorium.",
+          "flag": "Lightning Rod",
+          "icon": "icons/Voltvessels.png",
+          "id": "red-voltvessels",
+          "label": "Voltvessels",
+          "link": "https://hollowknight.wiki/w/Voltvessels",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.594,
+            "y": 0.189,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Crafted in a room in High Halls for 1 Craftmetal.",
+          "flag": "Cogwork Flier",
+          "icon": "icons/Cogfly.png",
+          "id": "red-cogfly",
+          "label": "CogFly",
+          "link": "https://hollowknight.wiki/w/Cogfly",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.452,
+            "y": 0.194,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Found behind a locked door in High Halls east of the sub-area The Forum.",
+          "flag": "Rosary Cannon",
+          "icon": "icons/Rosary_Cannon.png",
+          "id": "red-rosary-cannon",
+          "label": "Rosary Cannon",
+          "link": "https://hollowknight.wiki/w/Rosary_Cannon",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.454,
+            "y": 0.235,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Found in Deep Docks, beyond the Simple Key door.",
+          "flag": "Flintstone",
+          "icon": "icons/Flintslate.png",
+          "id": "red-flintslate",
+          "label": "Flintslate",
+          "link": "https://hollowknight.wiki/w/Flintslate",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.612,
+            "y": 0.742,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Reward for completing the Alchemist's Assistant wish.",
+          "flag": "Lifeblood Syringe",
+          "icon": "icons/Plasmium_Phial.png",
+          "id": "red-plasmium-phial",
+          "label": "Plasmium Phial",
+          "link": "https://hollowknight.wiki/w/Plasmium_Phial",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.133,
+            "y": 0.63,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Obtained from the Flea Caravan after completing the The Lost Fleas wish.",
+          "flag": "Flea Brew",
+          "icon": "icons/Flea_Brew.png",
+          "id": "red-flea-brew",
+          "label": "Flea Brew",
+          "link": "https://hollowknight.wiki/w/Flea_Brew",
+          "mapCategory": "red-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.486,
+            "y": 0.6,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        }
+      ],
+      "label": "Red Tools"
+    },
+    {
+      "description": "Blue Tools are combat-focused passive tools.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Reward for completing the Berry Picking wish.",
+          "flag": "Mosscreep Tool 1",
+          "icon": "icons/Druids_Eye.png",
+          "id": "blue-druids-eye",
+          "label": "Druid's Eye",
+          "link": "https://hollowknight.wiki/w/Druid's_Eye",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.288,
+            "y": 0.651,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Bring 4 additional Mossberries to Moss Druid after completing the Berry Picking wish. Replaces the Druid's Eye.",
+          "flag": "Mosscreep Tool 2",
+          "icon": "icons/Druid's_Eyes.png",
+          "id": "blue-druids-eye",
+          "label": "Druid's Eyes",
+          "link": "https://hollowknight.wiki/w/Druid's_Eyes",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.294,
+            "y": 0.655,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool",
+          "upgradeOf": "blue-druids-eye"
+        },
+        {
+          "act": 1,
+          "description": "Purchased from Forge Daughter for 110 Rosaries and 1 Craftmetal.",
+          "flag": "Lava Charm",
+          "icon": "icons/Magma_Bell.png",
+          "id": "blue-magma-bell",
+          "label": "Magma Bell",
+          "link": "https://hollowknight.wiki/w/Magma_Bell",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.566,
+            "y": 0.744,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Found on a body in Far Fields.",
+          "flag": "Bell Bind",
+          "icon": "icons/Warding_Bell.png",
+          "id": "blue-warding-bell",
+          "label": "Warding Bell",
+          "link": "https://hollowknight.wiki/w/Warding_Bell",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.673,
+            "y": 0.741,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Reward for completing the Rite of the Pollip wish.",
+          "flag": "Poison Pouch",
+          "icon": "icons/Pollip_Pouch.png",
+          "id": "blue-pollip-pouch",
+          "label": "Pollip Pouch",
+          "link": "https://hollowknight.wiki/w/Pollip_Pouch",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.327,
+            "y": 0.58,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Purchased from Mottled Skarr for 260 Rosaries. Can also be found next to his body if he died before it was purchased.",
+          "flag": "Fractured Mask",
+          "icon": "icons/Fractured_Mask.png",
+          "id": "blue-fractured-mask",
+          "label": "Fractured Mask",
+          "link": "https://hollowknight.wiki/w/Fractured_Mask",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.558,
+            "y": 0.638,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Purchased from Frey for 880 Rosaries after completing the My Missing Courier wish.",
+          "flag": "Multibind",
+          "icon": "icons/Multibinder.png",
+          "id": "blue-multibinder",
+          "label": "Multibinder",
+          "link": "https://hollowknight.wiki/w/Multibinder",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.606,
+            "y": 0.255,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Found in Weavenest Atla after defeating a pair of Moss Mothers.",
+          "flag": "White Ring",
+          "icon": "icons/Weavelight.png",
+          "id": "blue-weavelight",
+          "label": "Weavelight",
+          "link": "https://hollowknight.wiki/w/Weavelight",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.178,
+            "y": 0.778,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Purchased from Twelfth Architect for 230 Rosaries and 1 Craftmetal.",
+          "flag": "Brolly Spike",
+          "icon": "icons/Sawtooth_Circlet.png",
+          "id": "blue-sawtooth-circlet",
+          "label": "Sawtooth Circlet",
+          "link": "https://hollowknight.wiki/w/Sawtooth_Circlet",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.536,
+            "y": 0.404,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Found in Whiteward.",
+          "flag": "Quickbind",
+          "icon": "icons/Injector_Band.png",
+          "id": "blue-injector-band",
+          "label": "Injector Band",
+          "link": "https://hollowknight.wiki/w/Injector_Band",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.512,
+            "y": 0.368,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Bought from Jubilana for 720 Rosaries.",
+          "flag": "Spool Extender",
+          "icon": "icons/Spool_Extender.png",
+          "id": "blue-spool-extender",
+          "label": "Spool Extender",
+          "link": "https://hollowknight.wiki/w/Spool_Extender",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.622,
+            "y": 0.252,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Reward for completing the Final Audience wish.",
+          "flag": "Reserve Bind",
+          "icon": "icons/Reserve_Bind.png",
+          "id": "blue-reserve-bind",
+          "label": "Reserve Bind",
+          "link": "https://hollowknight.wiki/w/Reserve_Bind",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.484,
+            "y": 0.226,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Reward for defeating Trobbio in The Stage.",
+          "flag": "Dazzle Bind",
+          "icon": "icons/Claw_Mirror.png",
+          "id": "blue-claw-mirror",
+          "label": "Claw Mirror",
+          "link": "https://hollowknight.wiki/w/Claw_Mirror",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.574,
+            "y": 0.33,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Found in a hidden room in southwest Mount Fay.",
+          "flag": "Revenge Crystal",
+          "icon": "icons/Memory_Crystal.png",
+          "id": "blue-memory-crystal",
+          "label": "Memory Crystal",
+          "link": "https://hollowknight.wiki/w/Memory_Crystal",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.114,
+            "y": 0.306,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Bought from Grindle for 740 Rosaries.",
+          "flag": "Thief Claw",
+          "icon": "icons/Snitch_Pick.png",
+          "id": "blue-snitch-pick",
+          "label": "Snitch Pick",
+          "link": "https://hollowknight.wiki/w/Snitch_Pick",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.156,
+            "y": 0.442,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Reward for defeating Voltvyrm in Voltnest.",
+          "flag": "Zap Imbuement",
+          "icon": "icons/Volt_Filament.png",
+          "id": "blue-volt-filament",
+          "label": "Volt Filament",
+          "link": "https://hollowknight.wiki/w/Volt_Filament",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.179,
+            "y": 0.333,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Found behind a breakable ceiling in Bilewater.",
+          "flag": "Quick Sling",
+          "icon": "icons/Quick_Sling.png",
+          "id": "blue-quick-sling",
+          "label": "Quick Sling",
+          "link": "https://hollowknight.wiki/w/Quick_Sling",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.752,
+            "y": 0.356,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Found in a secret passage within Putrified Ducts.",
+          "flag": "Maggot Charm",
+          "icon": "icons/Wreath_of_Purity.png",
+          "id": "blue-wreath-of-purity",
+          "label": "Wreath of Purity",
+          "link": "https://hollowknight.wiki/w/Wreath_of_Purity",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.803,
+            "y": 0.251,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Reward for completing the Broodfeast wish or the Runtfeast wish.",
+          "flag": "Longneedle",
+          "icon": "icons/Longclaw.png",
+          "id": "blue-longclaw",
+          "label": "Longclaw",
+          "link": "https://hollowknight.wiki/w/Longclaw",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.71,
+            "y": 0.269,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Reward for defeating Father of the Flame in Wisp Thicket.",
+          "flag": "Wisp Lantern",
+          "icon": "icons/Wispfire_Lantern.png",
+          "id": "blue-wispfire-lantern",
+          "label": "Wispfire Lantern",
+          "link": "https://hollowknight.wiki/w/Wispfire_Lantern",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.423,
+            "y": 0.493,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Reward from Fleamaster Mooshka after finding all 30 Fleas.",
+          "flag": "Flea Charm",
+          "icon": "icons/Egg_of_Flealia.png",
+          "id": "blue-egg-of-flealia",
+          "label": "Egg of Flealia",
+          "link": "https://hollowknight.wiki/w/Egg_of_Flealia",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.85,
+            "y": 0.266,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 3,
+          "description": "Reward for defeating Pinstress.",
+          "flag": "Pinstress Tool",
+          "icon": "icons/Pin_Badge.png",
+          "id": "blue-pin-badge",
+          "label": "Pin Badge",
+          "link": "https://hollowknight.wiki/w/Pin_Badge",
+          "mapCategory": "blue-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.227,
+            "y": 0.184,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        }
+      ],
+      "label": "Blue Tools"
+    },
+    {
+      "description": "Yellow Tools are miscellaneous passive tools, focused on making exploration and resource gathering easier, or generally providing support instead of offence or defence.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Purchased from Shakra for 70 Rosaries.",
+          "flag": "Compass",
+          "icon": "icons/Compass.png",
+          "id": "yellow-compass",
+          "label": "Compass",
+          "link": "https://hollowknight.wiki/w/Compass",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.28,
+            "y": 0.679,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Found in The Marrow.",
+          "flag": "Bone Necklace",
+          "icon": "icons/Shard_Pendant.png",
+          "id": "yellow-shard-pendant",
+          "label": "Shard Pendant",
+          "link": "https://hollowknight.wiki/w/Shard_Pendant",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.329,
+            "y": 0.692,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Purchased from Pebb for 120 Rosaries, or from Grindle for 220 Rosaries during Act 3.",
+          "flag": "Rosary Magnet",
+          "icon": "icons/Magnetite_Brooch.png",
+          "id": "yellow-magnetite-brooch",
+          "label": "Magnetite Brooch",
+          "link": "https://hollowknight.wiki/w/Magnetite_Brooch",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.249,
+            "y": 0.717,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Purchased from Mort for 160 Rosaries. In Act 3 it can be found next to his body if it has not been purchased yet.",
+          "flag": "Weighted Anklet",
+          "icon": "icons/Weighted_Belt.png",
+          "id": "yellow-weighted-belt",
+          "label": "Weighted Belt",
+          "link": "https://hollowknight.wiki/w/Weighted_Belt",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.716,
+            "y": 0.674,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Found in Sinner's Road.",
+          "flag": "Barbed Wire",
+          "icon": "icons/Barbed_Bracelet.png",
+          "id": "yellow-barbed-bracelet",
+          "label": "Barbed Bracelet",
+          "link": "https://hollowknight.wiki/w/Barbed_Bracelet",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.695,
+            "y": 0.541,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Found in the Wormways.",
+          "flag": "Dead Mans Purse",
+          "icon": "icons/Dead_Bugs_Purse.png",
+          "id": "yellow-dead-bugs-purse",
+          "label": "Dead Bug's Purse",
+          "link": "https://hollowknight.wiki/w/Dead_Bug's_Purse",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.176,
+            "y": 0.628,
+            "zoom": 2.0
+          },
+          "mode": "normal",
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Found on a corpse in the northeast portion of the Wormways during Steel Soul mode, replacing the Dead Bug's Purse.",
+          "flag": "Shell Satchel",
+          "icon": "icons/Shell_Satchel.png",
+          "id": "yellow-shell-satchel",
+          "label": "Shell Satchel",
+          "link": "https://hollowknight.wiki/w/Shell_Satchel",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.176,
+            "y": 0.628,
+            "zoom": 2.0
+          },
+          "mode": "steel",
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Act 1: Given by Lumble the Lucky after beating his game 10 times. Act 2: Found beside Lumble the Lucky's corpse in Blasted Steps. Act 3: Purchased from Grindle for 300 Rosaries.",
+          "flag": "Magnetite Dice",
+          "icon": "icons/Magnetite_Dice.png",
+          "id": "yellow-magnetite-dice",
+          "label": "Magnetite Dice",
+          "link": "https://hollowknight.wiki/w/Magnetite_Dice",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.128,
+            "y": 0.464,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Purchased from Twelfth Architect for 140 Rosaries and 1 Craftmetal.",
+          "flag": "Scuttlebrace",
+          "icon": "icons/Scuttlebrace.png",
+          "id": "yellow-scuttlebrace",
+          "label": "Scuttlebrace",
+          "link": "https://hollowknight.wiki/w/Scuttlebrace",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.53,
+            "y": 0.391,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Purchased from Jubilana for 350 Rosaries.",
+          "flag": "Wallcling",
+          "icon": "icons/Ascendants_Grip.png",
+          "id": "yellow-ascendants-grip",
+          "label": "Ascendant's Grip",
+          "link": "https://hollowknight.wiki/w/Ascendant's_Grip",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.613,
+            "y": 0.241,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 2,
+          "description": "Purchased from Jubilana for 320 Rosaries after completing the The Lost Merchant wish.",
+          "flag": "Musician Charm",
+          "icon": "icons/Spider_Strings.png",
+          "id": "yellow-spider-strings",
+          "label": "Spider Strings",
+          "link": "https://hollowknight.wiki/w/Spider_Strings",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.619,
+            "y": 0.242,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Found inside Weavenest Cindril in Far Fields.",
+          "flag": "Sprintmaster",
+          "icon": "icons/Silkspeed_Anklets.png",
+          "id": "yellow-silkspeed-anklets",
+          "label": "Silkspeed Anklets",
+          "link": "https://hollowknight.wiki/w/Silkspeed_Anklets",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.89,
+            "y": 0.758,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        },
+        {
+          "act": 1,
+          "description": "Purchased from Grindle for 350 Rosaries.",
+          "flag": "Thief Charm",
+          "icon": "icons/Thiefs_Mark.png",
+          "id": "yellow-thiefs-mark",
+          "label": "Thief's Mark",
+          "link": "https://hollowknight.wiki/w/Thief's_Mark",
+          "mapCategory": "yellow-tools",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.171,
+            "y": 0.435,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+
+          "type": "tool"
+        }
+      ],
+      "label": "Yellow Tools"
+    }
+  ]
+}

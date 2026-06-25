@@ -1,0 +1,1449 @@
+{
+  "$schema": "./essentials.schema.json",
+  "categories": [
+    {
+      "description": "The Cloak is an equipment item in Hollow Knight: Silksong.",
+      "items": [
+        {
+          "act": 1,
+          "description": "It is Hornet's cloak and the first item available in her inventory.",
+          "flag": "hasBrolly",
+          "icon": "icons/Hunter's_Cloak.png",
+          "id": "ability-hunters-cloak",
+          "label": "Hunter's Cloak",
+          "link": "https://hollowknight.wiki/w/Hunter's_Cloak",
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "description": "The Seamstress in the Far Fields will sew an array of spines into Hornet's cloak as a reward for completing the Flexile Spines wish. Hokers must be attacked in order to collect the 25 necessary Spine Cores.",
+          "flag": "hasBrolly",
+          "icon": "icons/Drifter's_Cloak.png",
+          "id": "ability-drifters-cloak",
+          "label": "Drifter's Cloak",
+          "link": "https://hollowknight.wiki/w/Drifter's_Cloak",
+          "mapCategory": "cloaks",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.752,
+            "y": 0.743,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "description": "The Faydown Cloak can be acquired at the peak of Mount Fay, which involves a series of platforming challenges using the Clawline to cross large gaps, bounce off obstacles, and gain altitude, all while working under the time pressure from the mountain's freezing climate. Upon reaching the peak, Hornet must play her Needolin to call down a Fayforn that will grant her this item.",
+          "flag": "hasDoubleJump",
+          "icon": "icons/Faydown_Drifter's_Cloak.png",
+          "id": "ability-faydown-cloak",
+          "label": "Faydown Cloak",
+          "link": "https://hollowknight.wiki/w/Faydown_Cloak",
+          "mapCategory": "cloaks",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.233,
+            "y": 0.127,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        }
+      ],
+      "label": "Cloaks"
+    },
+    {
+      "description": "Important keys used to unlock special areas and progress in Pharloom.",
+      "items": [
+        {
+          "act": 1,
+          "description": "Bought from Pebb in Bonebottom.",
+          "flag": "PurchasedBonebottomFaithToken",
+          "icon": "icons/Simple_Key.png",
+          "id": "key-simple-1",
+          "label": "Simple Key #1",
+          "link": "https://hollowknight.wiki/w/Simple_Key_(Silksong)",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.243,
+            "y": 0.711,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "key"
+        },
+        {
+          "act": 1,
+          "description": "Found in Sinner's Road.",
+          "flag": "CollectedDustCageKey",
+          "icon": "icons/Simple_Key.png",
+          "id": "key-simple-2",
+          "label": "Simple Key #2",
+          "link": "https://hollowknight.wiki/w/Simple_Key_(Silksong)",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.714,
+            "y": 0.442,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "key"
+        },
+        {
+          "act": 2,
+          "description": "Purchased from Jubilana in Merchant Enclave.",
+          "flag": "MerchantEnclaveSimpleKey",
+          "icon": "icons/Simple_Key.png",
+          "id": "key-simple-3",
+          "label": "Simple Key #3",
+          "link": "https://hollowknight.wiki/w/Simple_Key_(Silksong)",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.627,
+            "y": 0.244,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "key"
+        },
+        {
+          "act": 2,
+          "description": "Found near the Coral Bench.",
+          "flag": "Collectable_Item_Pickup",
+          "icon": "icons/Simple_Key.png",
+          "id": "key-simple-4",
+          "label": "Simple Key #4",
+          "link": "https://hollowknight.wiki/w/Simple_Key_(Silksong)",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.294,
+            "y": 0.389,
+            "zoom": 2.0
+          },
+          "scene": "Bellshrine_Coral",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 3,
+          "description": "Found and used in the Deep Docks.",
+          "flag": "BallowGivenKey",
+          "icon": "icons/Diving_Bell_Key.png",
+          "id": "key-gate",
+          "label": "Diving Bell Key",
+          "link": "https://hollowknight.wiki/w/Diving_Bell_Key#Trivia",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.592,
+            "y": 0.797,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "key"
+        },
+        {
+          "act": 2,
+          "description": "Found at the far right edge of Songclave.",
+          "flags": ["collectedWardKey", "MerchantEnclaveWardKey"],
+          "icon": "icons/White_Key.png",
+          "id": "key-white",
+          "label": "White Key",
+          "link": "https://hollowknight.wiki/w/White_Key",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.628,
+            "y": 0.256,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "key"
+        },
+        {
+          "act": 2,
+          "description": "Found on the corpse of a Surgeon in the Whiteward.",
+          "flag": "collectedWardBossKey",
+          "icon": "icons/Surgeon's_Key.png",
+          "id": "key-surgeon",
+          "label": "Surgeon's Key",
+          "link": "https://hollowknight.wiki/w/Surgeon's_Key",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.524,
+            "y": 0.358,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "key"
+        },
+        {
+          "act": 2,
+          "description": "Found in the Putrified Ducts region.",
+          "flag": "HasSlabKeyC",
+          "icon": "icons/Key_of_Apostate.png",
+          "id": "key-apostate",
+          "label": "Key of Apostate",
+          "link": "https://hollowknight.wiki/w/Key_of_Apostate",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.688,
+            "y": 0.262,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "key"
+        },
+        {
+          "act": 1,
+          "description": "Found and used in the Slab.",
+          "flag": "HasSlabKeyA",
+          "icon": "icons/Key_of_Indolent.png",
+          "id": "key-indolent",
+          "label": "Key of Indolent",
+          "link": "https://hollowknight.wiki/w/Key_of_Indolent",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.259,
+            "y": 0.274,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "key"
+        },
+        {
+          "act": 1,
+          "description": "Found and used in the Slab.",
+          "flag": "HasSlabKeyB",
+          "icon": "icons/Key_of_Heretic.png",
+          "id": "key-heretic",
+          "label": "Key of Heretic",
+          "link": "https://hollowknight.wiki/w/Key_of_Heretic",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.257,
+            "y": 0.244,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "key"
+        },
+        {
+          "act": 2,
+          "description": "Purchased from the Twelfth Architect.",
+          "flag": "PurchasedArchitectKey",
+          "icon": "icons/Architect's_Key.png",
+          "id": "key-architect",
+          "label": "Architect's Key",
+          "link": "https://hollowknight.wiki/w/Architect's_Key",
+          "mapCategory": "keys",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.522,
+            "y": 0.396,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "key"
+        }
+      ],
+      "label": "Keys"
+    },
+    {
+      "description": "Special collectibles found throughout Pharloom that preserve memories of those who came before.",
+      "items": [
+        {
+          "act": 1,
+          "description": "The Marrow, northeast of the Bellway station.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-1",
+          "label": "Memory Locket 1",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.355,
+            "y": 0.643,
+            "zoom": 2.0
+          },
+          "scene": "Bone_18",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "Hunter's March, below the Chapel of the Beast.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-2",
+          "label": "Memory Locket 2",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.643,
+            "y": 0.673,
+            "zoom": 2.0
+          },
+          "scene": "Ant_20",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "Purchased from Mort in Far Fields for 150 Rosaries, or from Grindle in Blasted Steps for 250 Rosaries if not purchased before Act 3 begins.",
+          "flag": "PurchasedPilgrimsRestMemoryLocket",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-3",
+          "label": "Memory Locket 3",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.705,
+            "y": 0.668,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "description": "West of the Greymoor Bellway.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-4",
+          "label": "Memory Locket 4",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.551,
+            "y": 0.595,
+            "zoom": 2.0
+          },
+          "scene": "Greymoor_16",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "Bone Bottom, awarded after completing the Volatile Flintbeetles wish.",
+          "flag": "Rock Rollers",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-5",
+          "label": "Memory Locket 5",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.257,
+            "y": 0.736,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "quest"
+        },
+        {
+          "act": 1,
+          "description": "Purchased from Frey in Bellhart for 330 Rosaries.",
+          "flag": "PurchasedBelltownMemoryLocket",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-6",
+          "label": "Memory Locket 6",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.441,
+            "y": 0.602,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "description": "In Blasted Steps.",
+          "flag": "Collectable Item Pickup (1)",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-7",
+          "label": "Memory Locket 7",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.192,
+            "y": 0.522,
+            "zoom": 2.0
+          },
+          "scene": "Coral_02",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "In southwest Wormways.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-8",
+          "label": "Memory Locket 8",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.12,
+            "y": 0.695,
+            "zoom": 2.0
+          },
+          "scene": "Crawl_09",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "description": "Bilewater, in a hidden room northwest of the Bellway.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-9",
+          "label": "Memory Locket 9",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.645,
+            "y": 0.406,
+            "zoom": 2.0
+          },
+          "scene": "Shadow_20",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "Above the Grand Bellway, accessed from Exhaust Organ.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-10",
+          "label": "Memory Locket 10",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.58,
+            "y": 0.342,
+            "zoom": 2.0
+          },
+          "scene": "Bellway_City",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In Underworks, west of the benches by the confessional.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-11",
+          "label": "Memory Locket 11",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.432,
+            "y": 0.413,
+            "zoom": 2.0
+          },
+          "scene": "Under_08",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In Deep Docks, west of the diving bell.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-12",
+          "label": "Memory Locket 12",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.525,
+            "y": 0.822,
+            "zoom": 2.0
+          },
+          "scene": "Dock_13",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In Whispering Vaults, below the exit to the outside area.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-13",
+          "label": "Memory Locket 13",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.662,
+            "y": 0.289,
+            "zoom": 2.0
+          },
+          "scene": "Library_08",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In the southwest Sands of Karak.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-14",
+          "label": "Memory Locket 14",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.108,
+            "y": 0.421,
+            "zoom": 2.0
+          },
+          "scene": "Coral_23",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "Inside of Halfway Home, above the left-hand door.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-15",
+          "label": "Memory Locket 15",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.584,
+            "y": 0.568,
+            "zoom": 2.0
+          },
+          "scene": "Halfway_01",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In the central area of the Memorium.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-16",
+          "label": "Memory Locket 16",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.552,
+            "y": 0.214,
+            "zoom": 2.0
+          },
+          "scene": "Arborium_05",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "In The Slab, in the shortcut cave between the Bellway area and the upper areas.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-17",
+          "label": "Memory Locket 17",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.293,
+            "y": 0.307,
+            "zoom": 2.0
+          },
+          "scene": "Slab_Cell_Quiet",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "description": "Bilewater, held by a corpse in a breakable cocoon just west of the hidden bench. Not visible until the cocoon is broken.",
+          "flag": "Sack Corpse Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-18",
+          "label": "Memory Locket 18",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.809,
+            "y": 0.345,
+            "zoom": 2.0
+          },
+          "scene": "Shadow_27",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 3,
+          "description": "Bellhart, above the Bellhome.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-19",
+          "label": "Memory Locket 19",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.435,
+            "y": 0.585,
+            "zoom": 2.0
+          },
+          "scene": "Belltown",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 3,
+          "description": "In Far Fields, east of Skarrsinger Karmelita.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Memory_Locket.png",
+          "id": "memory-locket-20",
+          "label": "Memory Locket 20",
+          "link": "https://hollowknight.wiki/w/Memory_Locket",
+          "mapCategory": "memory-lockets",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.827,
+            "y": 0.635,
+            "zoom": 2.0
+          },
+          "scene": "Bone_East_25",
+          "showOnMap": true,
+          "type": "sceneBool"
+        }
+      ],
+      "label": "Memory Lockets"
+    },
+    {
+      "description": "Special refined oils found across Pharloom, often tied to rare quests or hidden vaults.",
+      "items": [
+        {
+          "act": 2,
+          "category": "Pale Oils",
+          "description": "Located in northeast Choral Chambers, accessed through the adjoining room in Whispering Vaults.",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Pale_Oil.png",
+          "id": "pale-oil-vaults",
+          "label": "Vaults Pale Oil",
+          "link": "https://hollowknight.wiki/w/Pale_Oil",
+          "mapCategory": "pale-oils",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.561,
+            "y": 0.289,
+            "zoom": 2.0
+          },
+          "scene": "Library_03",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "category": "Pale Oils",
+          "description": "Reward for completing the Great Taste of Pharloom wish.",
+          "flag": "Great Gourmand",
+          "icon": "icons/Pale_Oil.png",
+          "id": "pale-oil-citadel",
+          "label": "Citadel Pale Oil",
+          "link": "https://hollowknight.wiki/w/Pale_Oil",
+          "mapCategory": "pale-oils",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.482,
+            "y": 0.291,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "quest"
+        },
+        {
+          "act": 3,
+          "category": "Pale Oils",
+          "description": "Reward for completing the Ecstasy of the End wish.",
+          "flag": "Flea Games Pre",
+          "icon": "icons/Pale_Oil.png",
+          "id": "pale-oil-flea-games",
+          "label": "Flea Games Pale Oil",
+          "link": "https://hollowknight.wiki/w/Pale_Oil",
+          "mapCategory": "pale-oils",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.858,
+            "y": 0.259,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "quest"
+        }
+      ],
+      "label": "Pale Oils"
+    },
+    {
+      "description": "Refined metals used for crafting and upgrading tools throughout Pharloom.",
+      "items": [
+        {
+          "act": 1,
+          "category": "Craftmetal",
+          "description": "Bought from Pebb in Bone Bottom for 60 Rosaries.",
+          "flag": "PurchasedBonebottomToolMetal",
+          "icon": "icons/Craft_Metal.png",
+          "id": "craftmetal-bonebottom",
+          "label": "Craftmetal #1",
+          "link": "https://hollowknight.wiki/w/Craftmetal",
+          "mapCategory": "craftmetals",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.235,
+            "y": 0.715,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Craftmetal",
+          "description": "Found by exploding a tunnel of rock in the northeast area of the Marrow, in the large room west of the entrance to Hunter's March.",
+          "flag": "Collectable Item Pickup - Tool Metal",
+          "icon": "icons/Craft_Metal.png",
+          "id": "craftmetal-bone-07",
+          "label": "Craftmetal #2",
+          "link": "https://hollowknight.wiki/w/Craftmetal",
+          "mapCategory": "craftmetals",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.398,
+            "y": 0.683,
+            "zoom": 2.0
+          },
+          "scene": "Bone_07",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "category": "Craftmetal",
+          "description": "Found in a chest behind the locked door in Deep Docks. It is located at the southwest corner of the bottom-most room that connects to Far Fields. (It is closer to the Far Fields Bellway Station than the Deep Docks Bellway Station.)",
+          "flag": "Collectable Item Pickup",
+          "icon": "icons/Craft_Metal.png",
+          "id": "craftmetal-dock-03",
+          "label": "Craftmetal #3",
+          "link": "https://hollowknight.wiki/w/Craftmetal",
+          "mapCategory": "craftmetals",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.631,
+            "y": 0.752,
+            "zoom": 2.0
+          },
+          "scene": "Dock_03",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 1,
+          "category": "Craftmetal",
+          "description": "Found in the Blasted Steps in a hidden area in the room before the Last Judge by falling down a hole at the east side of the room.",
+          "flag": "Collectable Item Pickup - Tool Metal",
+          "icon": "icons/Craft_Metal.png",
+          "id": "craftmetal-coral-32",
+          "label": "Craftmetal #4",
+          "link": "https://hollowknight.wiki/w/Craftmetal",
+          "mapCategory": "craftmetals",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.251,
+            "y": 0.46,
+            "zoom": 2.0
+          },
+          "scene": "Coral_32",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "category": "Craftmetal",
+          "description": "Bought from Jubilana in Songclave for 180 Rosaries after completing the The Lost Merchant wish.",
+          "flag": "MerchantEnclaveToolMetal",
+          "icon": "icons/Craft_Metal.png",
+          "id": "craftmetal-merchant-enclave",
+          "label": "Craftmetal #5",
+          "link": "https://hollowknight.wiki/w/Craftmetal",
+          "mapCategory": "craftmetals",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.605,
+            "y": 0.265,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Craftmetal",
+          "description": "Found behind a breakable ceiling in Wisp Thicket.",
+          "flag": "Collectable Item Pickup - Tool Metal",
+          "icon": "icons/Craft_Metal.png",
+          "id": "craftmetal-wisp-05",
+          "label": "Craftmetal #6",
+          "link": "https://hollowknight.wiki/w/Craftmetal",
+          "mapCategory": "craftmetals",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.491,
+            "y": 0.473,
+            "zoom": 2.0
+          },
+          "scene": "Wisp_05",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "category": "Craftmetal",
+          "description": "Found at the end of a tunnel in the eastern Underworks, directly south of where Clawline can be found.",
+          "flag": "Collectable Item Pickup - Tool Metal",
+          "icon": "icons/Craft_Metal.png",
+          "id": "craftmetal-under-19b",
+          "label": "Craftmetal #7",
+          "link": "https://hollowknight.wiki/w/Craftmetal",
+          "mapCategory": "craftmetals",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.51,
+            "y": 0.448,
+            "zoom": 2.0
+          },
+          "scene": "Under_19b",
+          "showOnMap": true,
+          "type": "sceneBool"
+        },
+        {
+          "act": 2,
+          "category": "Craftmetal",
+          "description": "Found at the far eastern end of the Pale Lake in Putrified Ducts.",
+          "flag": "Collectable Item Pickup - Tool Metal",
+          "icon": "icons/Craft_Metal.png",
+          "id": "craftmetal-aqueduct-05",
+          "label": "Craftmetal #8",
+          "link": "https://hollowknight.wiki/w/Craftmetal",
+          "mapCategory": "craftmetals",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.92,
+            "y": 0.269,
+            "zoom": 2.0
+          },
+          "scene": "Aqueduct_05",
+          "showOnMap": true,
+          "type": "sceneBool"
+        }
+      ],
+      "label": "Craftmetal"
+    },
+    {
+      "description": "Fleas are fluffy bugs scattered throughout most of Pharloom belonging to the Flea Caravan. They can be found caged, stuck, or resting in precarious locations.",
+      "items": [
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "The Marrow. Can be reached after a few platforming from the beginning of the room.",
+          "flag": "SavedFlea_Bone_06",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-1",
+          "label": "Lost Flea #1",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.336,
+            "y": 0.639,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Deep Docks. Behind a breakable wall in the leftside of the Deep Docks bellway station.",
+          "flag": "SavedFlea_Dock_16",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-2",
+          "label": "Lost Flea #2",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.481,
+            "y": 0.731,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Deep Docks. Run left from Swift Step and hit the lever in the upper right corner of the room.",
+          "flag": "SavedFlea_Bone_East_05",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-3",
+          "label": "Lost Flea #3",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.52,
+            "y": 0.688,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Deep Docks.",
+          "flag": "SavedFlea_Dock_03d",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-17",
+          "label": "Lost Flea #4",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.656,
+            "y": 0.758,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Hunter's March. Can be reached after a series of pogo.",
+          "flag": "SavedFlea_Ant_03",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-5",
+          "label": "Lost Flea #5",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.478,
+            "y": 0.66,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Far Fields. The flea is inside a cage. There is a cage trap just in front of the flea.",
+          "flag": "SavedFlea_Bone_East_17b",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-4",
+          "label": "Lost Flea #6",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.667,
+            "y": 0.706,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Far Fields. Can't be accessed through Pilgrim's Rest because of a locked gate, instead the player must access a secret area in Far Fields's Bellway station to reach inside. The locked gate can be opened with a lever, opening the area.",
+          "flag": "SavedFlea_Bone_East_10_Church",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-9",
+          "label": "Lost Flea #7",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.745,
+            "y": 0.679,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Wormways. The Flea is being carried by an Aknid, defeat it to rescue the flea.",
+          "flag": "SavedFlea_Crawl_06",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-14",
+          "label": "Lost Flea #8",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.18,
+            "y": 0.657,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Greymoor. Pogo off of the balloons and hug the rightside wall.",
+          "flag": "SavedFlea_Greymoor_15b",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-6",
+          "label": "Lost Flea #9",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.783,
+            "y": 0.556,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Greymoor. Reach the top of the right tower in Greymoor.",
+          "flag": "SavedFlea_Greymoor_06",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-7",
+          "label": "Lost Flea #10",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.52,
+            "y": 0.54,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Greymoor. This flea is Kratt, who is an NPC rather than a normal lost flea.",
+          "flag": "CaravanLechReturnedToCaravan",
+          "icon": "icons/Kratt.png",
+          "id": "lost-flea-29",
+          "label": "Lost Flea #11 (Kratt)",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.632,
+            "y": 0.54,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Bellhart. Defeat Sister Splinter (Or obtain Cling Grip through a skip otherwise), and head right. Located in the upper most tunnel of the Bellveins in bellhart.",
+          "flag": "SavedFlea_Belltown_04",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-13",
+          "label": "Lost Flea #12",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.419,
+            "y": 0.531,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Shellwood. Located below some platforms with stationary enemies.",
+          "flag": "SavedFlea_Shellwood_03",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-8",
+          "label": "Lost Flea #13",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.309,
+            "y": 0.582,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Blasted Steps. Located at the top of the room to the left of Blasted Steps's bellway station.",
+          "flag": "SavedFlea_Coral_35",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-10",
+          "label": "Lost Flea #14",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.176,
+            "y": 0.413,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Sinner's Road. A Muckroach is wandering around nearby and will attack when Hornet rescuing the flea.",
+          "flag": "SavedFlea_Dust_12",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-11",
+          "label": "Lost Flea #15",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.729,
+            "y": 0.49,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Bilewater. Located behind a breakable wall.",
+          "flag": "SavedFlea_Shadow_28",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-16",
+          "label": "Lost Flea #16",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.775,
+            "y": 0.443,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Bilewater. Located left of the upper entrance to the Exhaust Organ.",
+          "flag": "SavedFlea_Dust_09",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-12",
+          "label": "Lost Flea #17",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.61,
+            "y": 0.436,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "Bilewater. Located above of the secret bench room in Bilewater.",
+          "flag": "SavedFlea_Shadow_10",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-27",
+          "label": "Lost Flea #18",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.8,
+            "y": 0.31,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Underworks. Can't be initially reached from Underworks. Can be reached after passing a passage from Wisp Thicket and a challenging area with saw cubes.",
+          "flag": "SavedFlea_Under_23",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-18",
+          "label": "Lost Flea #19",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.419,
+            "y": 0.461,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Underworks.",
+          "flag": "SavedFlea_Under_21",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-26",
+          "label": "Lost Flea #20",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.471,
+            "y": 0.456,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Choral Chambers.",
+          "flag": "SavedFlea_Song_14",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-20",
+          "label": "Lost Flea #21",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.424,
+            "y": 0.285,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Choral Chambers. Behind a breakable wall.",
+          "flag": "SavedFlea_Song_11",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-24",
+          "label": "Lost Flea #22",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.444,
+            "y": 0.26,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Choral Chambers.",
+          "flag": "SavedFlea_Library_09",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-19",
+          "label": "Lost Flea #23",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.67,
+            "y": 0.241,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Memorium. Huge Flea fight. Must be defeated after being freed.",
+          "flag": "tamedGiantFlea",
+          "icon": "icons/Huge_Flea.png",
+          "id": "lost-flea-28",
+          "label": "Lost Flea #24 (Huge Flea)",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.559,
+            "y": 0.17,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "The Slab.",
+          "flag": "SavedFlea_Slab_Cell",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-15",
+          "label": "Lost Flea #25",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.26,
+            "y": 0.283,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 1,
+          "category": "Fleas",
+          "description": "The Slab.",
+          "flag": "SavedFlea_Slab_06",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-27",
+          "label": "Lost Flea #26",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.274,
+            "y": 0.324,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Mount Fay. The flea is frozen within an ice cube.",
+          "flag": "SavedFlea_Peak_05c",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-22",
+          "label": "Lost Flea #27",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.146,
+            "y": 0.238,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Sands of Karak.",
+          "flag": "SavedFlea_Coral_24",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-21",
+          "label": "Lost Flea #28",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.193,
+            "y": 0.395,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Putrified Ducts. Can be reached after a series of platforming and getting pulled up by several Barnak.",
+          "flag": "MetTroupeHunterWild",
+          "icon": "icons/Vog.png",
+          "id": "lost-flea-30",
+          "label": "Lost Flea #29 (Vog)",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.758,
+            "y": 0.213,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        },
+        {
+          "act": 2,
+          "category": "Fleas",
+          "description": "Whispering Vaults.",
+          "flag": "SavedFlea_Library_01",
+          "icon": "icons/fleas.png",
+          "id": "lost-flea-25",
+          "label": "Lost Flea #30",
+          "link": "https://hollowknight.wiki/w/Flea",
+          "mapCategory": "fleas",
+          "mapViewer": {
+            "src": "assets/ui/labelled_map_act3.png",
+            "x": 0.607,
+            "y": 0.28,
+            "zoom": 2.0
+          },
+          "showOnMap": true,
+          "type": "flag"
+        }
+      ],
+      "label": "Fleas"
+    }
+  ]
+}

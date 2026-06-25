@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import test from "node:test";
 
 import type { DecodedSave, MappingData, SemanticSnapshot } from "../index.ts";
-import { createSemanticSnapshot } from "../index.ts";
+import { createSemanticSnapshot, getBuiltinMappingData } from "../index.ts";
 
 test("createSemanticSnapshot marks a scene-scoped collected item as done", () => {
   const decodedSave: DecodedSave = {
@@ -613,6 +613,33 @@ test("createSemanticSnapshot includes semantic version stamps", () => {
     saveSchemaVersion: "silksong-save-v1",
     semanticCoreVersion: "test-core",
   });
+});
+
+test("getBuiltinMappingData exposes the current Web mapping tables", () => {
+  const mappingData = getBuiltinMappingData();
+  const sectionIds = mappingData.sections.map((section) => section.id);
+
+  assert.deepEqual(sectionIds, [
+    "main",
+    "essentials",
+    "bosses",
+    "mini-bosses",
+    "completion",
+    "wishes",
+    "journal",
+    "scenes",
+  ]);
+
+  const snapshot = createSemanticSnapshot(
+    {
+      playerData: {},
+      sceneData: {},
+    },
+    mappingData,
+  );
+
+  assert.ok(snapshot.items.some((item) => item.id === "mask-shard-1"));
+  assert.ok(snapshot.items.some((item) => item.sectionId === "scenes"));
 });
 
 function createSceneBoolMapping(): MappingData {
