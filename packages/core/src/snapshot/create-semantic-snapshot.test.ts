@@ -101,6 +101,48 @@ test("createSemanticSnapshot maps direct playerData booleans to semantic item st
   ]);
 });
 
+test("createSemanticSnapshot maps key flags to semantic item status", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {
+      hasCityKey: true,
+      hasSimpleKeyA: false,
+      hasSimpleKeyB: true,
+      hasSimpleKeyC: false,
+      hasUnusedKey: false,
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(decodedSave, createKeyMapping());
+  const cityKey = findSnapshotItem(snapshot, "city-key");
+  const simpleKey = findSnapshotItem(snapshot, "simple-key");
+  const unusedKey = findSnapshotItem(snapshot, "unused-key");
+
+  assert.equal(cityKey.status, "done");
+  assert.equal(cityKey.value, true);
+  assert.deepEqual(cityKey.sourceReferences, [
+    {
+      field: "hasCityKey",
+      kind: "playerData",
+    },
+  ]);
+
+  assert.equal(simpleKey.status, "done");
+  assert.equal(simpleKey.value, true);
+  assert.deepEqual(simpleKey.sourceReferences, [
+    {
+      field: "hasSimpleKeyA",
+      kind: "playerData",
+    },
+    {
+      field: "hasSimpleKeyB",
+      kind: "playerData",
+    },
+  ]);
+
+  assert.equal(unusedKey.status, "missing");
+  assert.equal(unusedKey.value, false);
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -203,6 +245,44 @@ function createDirectPlayerDataBooleanMapping(): MappingData {
                 flag: "defeatedMoorwing",
                 id: "moorwing",
                 label: "Moorwing",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createKeyMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "essentials",
+        label: "Essentials",
+        categories: [
+          {
+            id: "keys",
+            label: "Keys",
+            items: [
+              {
+                type: "key",
+                flag: "hasCityKey",
+                id: "city-key",
+                label: "City Key",
+              },
+              {
+                type: "key",
+                flags: ["hasSimpleKeyA", "hasSimpleKeyB"],
+                id: "simple-key",
+                label: "Simple Key",
+              },
+              {
+                type: "key",
+                flag: "hasUnusedKey",
+                id: "unused-key",
+                label: "Unused Key",
               },
             ],
           },

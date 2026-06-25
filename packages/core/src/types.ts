@@ -23,7 +23,8 @@ interface MappingCategory {
 
 export type MappingItem =
   | SceneBoolMappingItem
-  | DirectPlayerDataBooleanMappingItem;
+  | DirectPlayerDataBooleanMappingItem
+  | KeyMappingItem;
 
 interface MappingItemBase {
   readonly id: string;
@@ -40,6 +41,12 @@ interface SceneBoolMappingItem extends MappingItemBase {
 interface DirectPlayerDataBooleanMappingItem extends MappingItemBase {
   readonly type: "flag" | "boss";
   readonly flag: string;
+}
+
+interface KeyMappingItem extends MappingItemBase {
+  readonly type: "key";
+  readonly flag?: string;
+  readonly flags?: readonly string[];
 }
 
 export interface SnapshotOptions {

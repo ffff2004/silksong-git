@@ -72,6 +72,16 @@ function readItemValue(decodedSave: DecodedSave, item: MappingItem): boolean {
       return decodedSave.playerData[item.flag] === true;
     }
 
+    case "key": {
+      if (item.flags !== undefined) {
+        return item.flags.some((flag) => decodedSave.playerData[flag] === true);
+      }
+
+      return (
+        item.flag !== undefined && decodedSave.playerData[item.flag] === true
+      );
+    }
+
     case "sceneBool": {
       const sceneFlags = getSceneFlags(decodedSave);
       const normalizedScene = normalizeStringWithUnderscores(item.scene);
@@ -92,6 +102,15 @@ function createSourceReferences(item: MappingItem): readonly SourceReference[] {
           field: item.flag,
         },
       ];
+    }
+
+    case "key": {
+      const fields = item.flags ?? (item.flag === undefined ? [] : [item.flag]);
+
+      return fields.map((field) => ({
+        kind: "playerData",
+        field,
+      }));
     }
 
     case "sceneBool": {
