@@ -99,13 +99,13 @@ Acceptance criteria:
 - `docs/implementation-plan.md` records phases, dependencies, task rules, and initial backlog.
 - Current-system docs are under `docs/current-design-reference/`.
 - `docs/current-design-reference/save-to-semantic.md` is English and passes the illegal-character check.
-- `npm run format` passes.
-- `npm run lint` passes.
+- `pnpm format` passes.
+- `pnpm lint` passes.
 
 Verification:
 
-- `npm run format`: passed
-- `npm run lint`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
 
 Notes:
 
@@ -149,10 +149,10 @@ Acceptance criteria:
 
 Verification:
 
-- `npm run format`: passed
-- `npm run lint`: passed
-- `npm run build`: passed
-- `npm run start -- --host 127.0.0.1`: started Vite at `http://127.0.0.1:5173/silksong-tracker`; stopped with SIGINT after verification.
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- `pnpm build`: passed
+- `pnpm start -- --host 127.0.0.1`: started Vite at `http://127.0.0.1:5173/silksong-tracker`; stopped with SIGINT after verification.
 
 Notes:
 
@@ -194,8 +194,8 @@ Acceptance criteria:
 Verification:
 
 - core test command: pending
-- `npm run format`: pending
-- `npm run lint`: pending
+- `pnpm format`: pending
+- `pnpm lint`: pending
 
 ### P3-T2 Core Semantic Diff
 
@@ -226,8 +226,8 @@ Acceptance criteria:
 Verification:
 
 - core test command: pending
-- `npm run format`: pending
-- `npm run lint`: pending
+- `pnpm format`: pending
+- `pnpm lint`: pending
 
 ### P3-T3 Define Autonomous Commit Policy
 
@@ -259,8 +259,8 @@ Acceptance criteria:
 
 Verification:
 
-- `npm run format`: pending
-- `npm run lint`: pending
+- `pnpm format`: pending
+- `pnpm lint`: pending
 
 ## P4 History Module
 
@@ -296,8 +296,8 @@ Acceptance criteria:
 Verification:
 
 - history test command: pending
-- `npm run format`: pending
-- `npm run lint`: pending
+- `pnpm format`: pending
+- `pnpm lint`: pending
 
 ### P4-T2 Rebuild And Query Semantic Read Model
 
@@ -330,8 +330,8 @@ Acceptance criteria:
 Verification:
 
 - history test command: pending
-- `npm run format`: pending
-- `npm run lint`: pending
+- `pnpm format`: pending
+- `pnpm lint`: pending
 
 ## P5 CLI
 
@@ -363,8 +363,8 @@ Acceptance criteria:
 Verification:
 
 - CLI test command: pending
-- `npm run format`: pending
-- `npm run lint`: pending
+- `pnpm format`: pending
+- `pnpm lint`: pending
 
 ### P5-T2 Implement History CLI Commands
 
@@ -393,8 +393,8 @@ Acceptance criteria:
 Verification:
 
 - CLI test command: pending
-- `npm run format`: pending
-- `npm run lint`: pending
+- `pnpm format`: pending
+- `pnpm lint`: pending
 
 ## P6 Web Integration
 
@@ -427,8 +427,8 @@ Acceptance criteria:
 Verification:
 
 - Web test/build command: pending
-- `npm run format`: pending
-- `npm run lint`: pending
+- `pnpm format`: pending
+- `pnpm lint`: pending
 
 ### P6-T2 Add Local History Web Mode
 
@@ -461,5 +461,5 @@ Verification:
 
 - Web test/build command: pending
 - local UI smoke test: pending
-- `npm run format`: pending
-- `npm run lint`: pending
+- `pnpm format`: pending
+- `pnpm lint`: pending

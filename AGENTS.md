@@ -98,12 +98,12 @@ When both an ADR and a commit body are needed, the ADR records the durable decis
 After changes, run formatting and linting serially, not in parallel:
 
 ```sh
-npm run format
-npm run lint
+pnpm format
+pnpm lint
 ```
 
-`npm run format` runs ESLint fixes and Prettier. `npm run lint` runs TypeScript, ESLint, JSON schema validation, stylelint, knip, Prettier checks, and custom repository checks.
+`pnpm format` runs ESLint fixes and Prettier. `pnpm lint` runs TypeScript, ESLint, JSON schema validation, stylelint, knip, Prettier checks, and custom repository checks.
 
-`npm run format` mutates files, so running `npm run lint` at the same time can produce stale Prettier failures from files that are being formatted.
+`pnpm format` mutates files, so running `pnpm lint` at the same time can produce stale Prettier failures from files that are being formatted.
 
 If validation fails because of unrelated local files or pre-existing issues, report the exact failing paths and checks.

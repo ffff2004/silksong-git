@@ -40,23 +40,23 @@ This project is written in [TypeScript](https://www.typescriptlang.org/) and use
 - [Clone](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) your fork.
 - Open a new shell/termainal and `cd` to the cloned repository directory.
 - Install the JavaScript/TypeScript dependencies:
-  - `npm ci`
+  - `pnpm install --frozen-lockfile`
 - Start a local version of the website on your computer:
-  - `npm run start`
+  - `pnpm start`
 
 ### Formatting & Linting
 
 This project uses [Prettier](https://prettier.io/), an automatic code formatter, and [ESLint](https://eslint.org/), a code linter. We have a ".vscode/settings.json" file that tells Visual Studio Code to automatically format a file on save. For this to work properly, you have to:
 
 1. Open Visual Studio Code to the repository folder. (File --> Open Folder)
-2. Ensure that you have already installed the JavaScript/TypeScript dependencies with: `npm ci`
+2. Ensure that you have already installed the JavaScript/TypeScript dependencies with: `pnpm install --frozen-lockfile`
 3. Install [the Prettier extension](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode) for Visual Studio Code.
 4. Install [the ESLint extension](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) for Visual Studio Code.
 
 Before submitting [a pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests), please make sure that your updated coded passes our lint checks:
 
 ```sh
-npm run lint
+pnpm lint
 ```
 
 ## Credits

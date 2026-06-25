@@ -8,14 +8,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/workflows/setup
-      - run: npm run build
+      - run: pnpm build
 
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/workflows/setup
-      - run: npm run lint
+      - run: pnpm lint
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/workflows/setup
-      - run: npm run build
+      - run: pnpm build
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
