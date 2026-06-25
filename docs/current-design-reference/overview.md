@@ -1,4 +1,6 @@
-# Silksong Tracker - Technical Overview
+# Current Web App Overview
+
+This document describes the current pre-workspace Web UI. It is reference material for refactoring, not the future save-history architecture. For the planned architecture, read `../save-history-design.md`; for detailed save-to-semantic mapping, read `save-to-semantic.md`.
 
 ## Overview
 

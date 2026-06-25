@@ -1,0 +1,5 @@
+# Resolve config from built-in defaults, user config, project config, and CLI args
+
+We decided that configuration is resolved as an Effective Config with this precedence: CLI args override Project Config, Project Config overrides User Config, and User Config overrides built-in defaults. User Config stores global preferences outside any one Save History Repository, while Project Config lives with a Save History Repository, for example under `.silksong-history/config.json`, so each watched save can define its own capture policy, Display Semantic Event Filters, and restore defaults without losing convenient global defaults.
+
+The first config schema should stay explicit rather than introducing a rule language. It includes the watched save path, capture policy settings such as `debounceWriteMs` and `minCommitIntervalMs`, Display Semantic Event Filter fields such as hidden event types, item types, summary metrics, journal delta thresholds, and currency-only event hiding, restore backup settings, and local UI host/port settings.
