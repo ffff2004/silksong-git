@@ -500,6 +500,44 @@ test("createSemanticSnapshot maps quill entries to semantic item status", () => 
   assert.equal(inactiveQuillEntry.value, 2);
 });
 
+test("createSemanticSnapshot maps anyOf entries to semantic item status", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {
+      pinGalleriesCompleted: 0,
+    },
+    sceneState: {
+      serializedList: [
+        {
+          ID: "Ladybug Craft Pickup",
+          SceneName: "Bone_12",
+          Value: true,
+        },
+      ],
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(decodedSave, createAnyOfMapping());
+  const toolPouch = findSnapshotItem(snapshot, "tool-pouch-2");
+  const missingUpgrade = findSnapshotItem(snapshot, "missing-upgrade");
+
+  assert.equal(toolPouch.status, "done");
+  assert.deepEqual(toolPouch.value, [0, true]);
+  assert.deepEqual(toolPouch.sourceReferences, [
+    {
+      field: "pinGalleriesCompleted",
+      kind: "playerData",
+    },
+    {
+      kind: "sceneFlag",
+      flag: "Ladybug Craft Pickup",
+      scene: "Bone_12",
+    },
+  ]);
+
+  assert.equal(missingUpgrade.status, "missing");
+  assert.deepEqual(missingUpgrade.value, [0, false]);
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -940,6 +978,60 @@ function createQuillMapping(): MappingData {
                 flag: "QuillState",
                 id: "QuillState_3",
                 label: "Quill Entry 3",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createAnyOfMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "main",
+        label: "Main",
+        categories: [
+          {
+            id: "tool-pouch",
+            label: "Tool Pouch",
+            items: [
+              {
+                type: "anyOf",
+                anyOf: [
+                  {
+                    type: "level",
+                    flag: "pinGalleriesCompleted",
+                    required: 1,
+                  },
+                  {
+                    type: "sceneBool",
+                    flag: "Ladybug Craft Pickup",
+                    scene: "Bone_12",
+                  },
+                ],
+                id: "tool-pouch-2",
+                label: "Tool Pouch Upgrade #2",
+              },
+              {
+                type: "anyOf",
+                anyOf: [
+                  {
+                    type: "level",
+                    flag: "pinGalleriesCompleted",
+                    required: 1,
+                  },
+                  {
+                    type: "sceneBool",
+                    flag: "Missing Pickup",
+                    scene: "Bone_12",
+                  },
+                ],
+                id: "missing-upgrade",
+                label: "Missing Upgrade",
               },
             ],
           },

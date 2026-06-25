@@ -4,6 +4,7 @@ import type {
   DecodedSave,
   MappingData,
   MappingItem,
+  MappingItemCheck,
   SaveSummaryMetrics,
   SemanticSnapshot,
   SemanticSnapshotItem,
@@ -205,6 +206,10 @@ function readItemValue(decodedSave: DecodedSave, item: MappingItem): unknown {
       return getNumber(decodedSave.playerData[item.flag]) ?? 0;
     }
 
+    case "anyOf": {
+      return item.anyOf.map((check) => readCheckValue(decodedSave, check));
+    }
+
     case "sceneBool": {
       const sceneFlags = getSceneFlags(decodedSave);
       const normalizedScene = normalizeStringWithUnderscores(item.scene);
@@ -337,6 +342,10 @@ function createSourceReferences(item: MappingItem): readonly SourceReference[] {
       ];
     }
 
+    case "anyOf": {
+      return item.anyOf.flatMap((check) => createCheckSourceReferences(check));
+    }
+
     case "sceneBool": {
       return [
         {
@@ -403,6 +412,15 @@ function getItemStatus(
         : "missing";
     }
 
+    case "anyOf": {
+      const checkValues = isArray(value) ? value : [];
+      const hasDoneCheck = item.anyOf.some((check, index) =>
+        isCheckDone(check, checkValues[index]),
+      );
+
+      return hasDoneCheck ? "done" : "missing";
+    }
+
     default: {
       return value === true ? "done" : "missing";
     }
@@ -419,6 +437,97 @@ function createSummaryMetrics(decodedSave: DecodedSave): SaveSummaryMetrics {
     shellShards: getNumber(playerData["ShellShards"]),
     permadeathMode: playerData["permadeathMode"],
   };
+}
+
+function readCheckValue(
+  decodedSave: DecodedSave,
+  check: MappingItemCheck,
+): unknown {
+  switch (check.type) {
+    case "flag": {
+      return decodedSave.playerData[check.flag] === true;
+    }
+
+    case "flagInt": {
+      return getNumber(decodedSave.playerData[check.flag]) ?? 0;
+    }
+
+    case "level": {
+      return getNumber(decodedSave.playerData[check.flag]) ?? 0;
+    }
+
+    case "sceneBool": {
+      const sceneFlags = getSceneFlags(decodedSave);
+      const normalizedScene = normalizeStringWithUnderscores(check.scene);
+      const normalizedFlag = normalizeStringWithUnderscores(check.flag);
+
+      return sceneFlags[normalizedScene]?.[normalizedFlag] ?? false;
+    }
+
+    case "sceneVisited": {
+      const { scenesVisited } = decodedSave.playerData;
+
+      return isArray(scenesVisited) && scenesVisited.includes(check.scene);
+    }
+  }
+}
+
+function createCheckSourceReferences(
+  check: MappingItemCheck,
+): readonly SourceReference[] {
+  switch (check.type) {
+    case "flag":
+    case "flagInt":
+    case "level": {
+      return [
+        {
+          kind: "playerData",
+          field: check.flag,
+        },
+      ];
+    }
+
+    case "sceneBool": {
+      return [
+        {
+          kind: "sceneFlag",
+          scene: check.scene,
+          flag: check.flag,
+        },
+      ];
+    }
+
+    case "sceneVisited": {
+      return [
+        {
+          kind: "playerData",
+          field: "scenesVisited",
+        },
+      ];
+    }
+  }
+}
+
+function isCheckDone(check: MappingItemCheck, value: unknown): boolean {
+  switch (check.type) {
+    case "flag":
+    case "sceneBool":
+    case "sceneVisited": {
+      return value === true;
+    }
+
+    case "flagInt": {
+      const numberValue = typeof value === "number" ? value : 0;
+
+      return numberValue >= 1;
+    }
+
+    case "level": {
+      const numberValue = typeof value === "number" ? value : 0;
+
+      return numberValue >= check.required;
+    }
+  }
 }
 
 function getNumber(value: unknown): number | undefined {

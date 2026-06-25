@@ -33,7 +33,8 @@ export type MappingItem =
   | MateriumMappingItem
   | DeviceMappingItem
   | SceneVisitedMappingItem
-  | QuillMappingItem;
+  | QuillMappingItem
+  | AnyOfMappingItem;
 
 interface MappingItemBase {
   readonly id: string;
@@ -105,6 +106,45 @@ interface SceneVisitedMappingItem extends MappingItemBase {
 interface QuillMappingItem extends MappingItemBase {
   readonly type: "quill";
   readonly flag: string;
+}
+
+interface AnyOfMappingItem extends MappingItemBase {
+  readonly type: "anyOf";
+  readonly anyOf: readonly MappingItemCheck[];
+}
+
+export type MappingItemCheck =
+  | FlagMappingItemCheck
+  | FlagIntMappingItemCheck
+  | LevelMappingItemCheck
+  | SceneBoolMappingItemCheck
+  | SceneVisitedMappingItemCheck;
+
+interface FlagMappingItemCheck {
+  readonly type: "flag";
+  readonly flag: string;
+}
+
+interface FlagIntMappingItemCheck {
+  readonly type: "flagInt";
+  readonly flag: string;
+}
+
+interface LevelMappingItemCheck {
+  readonly type: "level";
+  readonly flag: string;
+  readonly required: number;
+}
+
+interface SceneBoolMappingItemCheck {
+  readonly type: "sceneBool";
+  readonly flag: string;
+  readonly scene: string;
+}
+
+interface SceneVisitedMappingItemCheck {
+  readonly type: "sceneVisited";
+  readonly scene: string;
 }
 
 export interface SnapshotOptions {

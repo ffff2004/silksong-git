@@ -248,13 +248,13 @@ TDD Vertical Slices:
 - [x] Relic, materium, and device states map to semantic item status.
 - [x] `sceneVisited` entries map to semantic item status.
 - [x] `quill` entries map to semantic item status.
-- [ ] `anyOf` entries map to semantic item status.
+- [x] `anyOf` entries map to semantic item status.
 - [ ] Special scene numeric branch supports Shell Fossil Mimic-style entries.
 - [ ] Built-in mapping data smoke coverage verifies `getBuiltinMappingData`.
 
 Latest slice verification:
 
-- `quill` entries: `pnpm --filter @silksong-git/core test`: passed
+- `anyOf` entries: `pnpm --filter @silksong-git/core test`: passed
 - `pnpm format`: passed
 - `pnpm lint`: passed
 
