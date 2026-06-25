@@ -45,6 +45,7 @@ interface MappingItemBase {
 interface SceneBoolMappingItem extends MappingItemBase {
   readonly type: "sceneBool";
   readonly flag: string;
+  readonly required?: number;
   readonly scene: string;
 }
 

@@ -211,6 +211,10 @@ function readItemValue(decodedSave: DecodedSave, item: MappingItem): unknown {
     }
 
     case "sceneBool": {
+      if (isSpecialSceneNumericItem(item)) {
+        return item.required === findSceneNumericValue(decodedSave, item);
+      }
+
       const sceneFlags = getSceneFlags(decodedSave);
       const normalizedScene = normalizeStringWithUnderscores(item.scene);
       const normalizedFlag = normalizeStringWithUnderscores(item.flag);
@@ -597,6 +601,46 @@ function getRelicState(data: Record<string, unknown> | undefined) {
   }
 
   return false;
+}
+
+function isSpecialSceneNumericItem(
+  item: MappingItem,
+): item is MappingItem & { readonly required: number } {
+  return (
+    item.type === "sceneBool"
+    && (item.flag === "Shell Fossil Mimic"
+      || item.flag === "Shell Fossil Mimic AppearVariant")
+    && typeof item.required === "number"
+  );
+}
+
+function findSceneNumericValue(
+  decodedSave: DecodedSave,
+  item: { readonly flag: string; readonly scene: string },
+): number | undefined {
+  const { sceneData } = decodedSave;
+  if (!isRecord(sceneData) || !isRecord(sceneData["persistentInts"])) {
+    return undefined;
+  }
+
+  const { serializedList } = sceneData["persistentInts"];
+  if (!isArray(serializedList)) {
+    return undefined;
+  }
+
+  const element = serializedList.find(
+    (candidate) =>
+      isRecord(candidate)
+      && candidate["SceneName"] === item.scene
+      && candidate["ID"] === item.flag
+      && typeof candidate["Value"] === "number",
+  );
+
+  if (!isRecord(element)) {
+    return undefined;
+  }
+
+  return getNumber(element["Value"]);
 }
 
 function getSceneFlags(root: unknown): Record<string, Record<string, boolean>> {

@@ -249,12 +249,12 @@ TDD Vertical Slices:
 - [x] `sceneVisited` entries map to semantic item status.
 - [x] `quill` entries map to semantic item status.
 - [x] `anyOf` entries map to semantic item status.
-- [ ] Special scene numeric branch supports Shell Fossil Mimic-style entries.
+- [x] Special scene numeric branch supports Shell Fossil Mimic-style entries.
 - [ ] Built-in mapping data smoke coverage verifies `getBuiltinMappingData`.
 
 Latest slice verification:
 
-- `anyOf` entries: `pnpm --filter @silksong-git/core test`: passed
+- Special scene numeric branch: `pnpm --filter @silksong-git/core test`: passed
 - `pnpm format`: passed
 - `pnpm lint`: passed
 

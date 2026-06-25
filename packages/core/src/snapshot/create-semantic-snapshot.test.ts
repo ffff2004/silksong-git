@@ -538,6 +538,38 @@ test("createSemanticSnapshot maps anyOf entries to semantic item status", () => 
   assert.deepEqual(missingUpgrade.value, [0, false]);
 });
 
+test("createSemanticSnapshot supports Shell Fossil Mimic scene numeric entries", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {},
+    sceneData: {
+      persistentInts: {
+        serializedList: [
+          {
+            ID: "Shell Fossil Mimic",
+            SceneName: "Fossil_Room",
+            Value: 2,
+          },
+        ],
+      },
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createShellFossilMimicMapping(),
+  );
+  const visibleMimic = findSnapshotItem(snapshot, "visible-mimic");
+  const wrongMimicVariant = findSnapshotItem(snapshot, "wrong-mimic-variant");
+  const missingMimic = findSnapshotItem(snapshot, "missing-mimic");
+
+  assert.equal(visibleMimic.status, "done");
+  assert.equal(visibleMimic.value, true);
+  assert.equal(wrongMimicVariant.status, "missing");
+  assert.equal(wrongMimicVariant.value, false);
+  assert.equal(missingMimic.status, "missing");
+  assert.equal(missingMimic.value, false);
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -1032,6 +1064,50 @@ function createAnyOfMapping(): MappingData {
                 ],
                 id: "missing-upgrade",
                 label: "Missing Upgrade",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createShellFossilMimicMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "completion",
+        label: "Completion",
+        categories: [
+          {
+            id: "special",
+            label: "Special",
+            items: [
+              {
+                type: "sceneBool",
+                flag: "Shell Fossil Mimic",
+                id: "visible-mimic",
+                label: "Visible Mimic",
+                required: 2,
+                scene: "Fossil_Room",
+              },
+              {
+                type: "sceneBool",
+                flag: "Shell Fossil Mimic",
+                id: "wrong-mimic-variant",
+                label: "Wrong Mimic Variant",
+                required: 3,
+                scene: "Fossil_Room",
+              },
+              {
+                type: "sceneBool",
+                flag: "Shell Fossil Mimic AppearVariant",
+                id: "missing-mimic",
+                label: "Missing Mimic",
+                required: 1,
+                scene: "Fossil_Room",
               },
             ],
           },
