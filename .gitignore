@@ -164,5 +164,5 @@ Thumbs.db
 .DS_Store
 
 # Ignore local build artifacts
-/public/assets/scenes/desktop.ini
-/public/assets/scenes/*.tmp
+/apps/web/public/assets/scenes/desktop.ini
+/apps/web/public/assets/scenes/*.tmp

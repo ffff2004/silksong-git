@@ -13,6 +13,7 @@ import { globby } from "globby";
 import path from "node:path";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
+const WEB_APP_ROOT = path.join(REPO_ROOT, "apps", "web");
 
 /**
  * In general, we want to keep non-standard characters out of the codebase. Only certain files are
@@ -29,8 +30,7 @@ const ALLOWED_UNICODE_MAP = new ReadonlyMap<string, readonly string[]>([
 ]);
 
 async function getDataJSONFilePaths(): Promise<readonly string[]> {
-  const repoRoot = path.join(import.meta.dirname, "..");
-  const dataPath = path.join(repoRoot, "src", "data");
+  const dataPath = path.join(WEB_APP_ROOT, "src", "data");
   const filePaths = await getFilePathsInDirectory(dataPath);
 
   return filePaths.filter(
@@ -167,7 +167,7 @@ await lintCommands(import.meta.dirname, [
   // Use ESLint to lint the code.
   // - "--max-warnings 0" makes warnings fail, since we set all ESLint errors to warnings.
   "eslint --max-warnings 0 .",
-  "eslint --max-warnings 0 --config eslint.config.json.mjs src/data/*.json",
+  "eslint --max-warnings 0 --config eslint.config.json.mjs apps/web/src/data/*.json",
 
   // Use Prettier to check formatting.
   // - "--log-level=warn" makes it only output errors.
@@ -179,7 +179,7 @@ await lintCommands(import.meta.dirname, [
   "knip --treat-config-hints-as-errors",
 
   // Use stylelint to lint the CSS.
-  "stylelint ./public/assets/css/style.css",
+  "stylelint ./apps/web/public/assets/css/style.css",
 
   // Ensure that the JSON files satisfy their schemas.
   ...CHECK_JSON_SCHEMA_COMMANDS,

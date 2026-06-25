@@ -1,6 +1,6 @@
 # Current Web App Overview
 
-This document describes the current pre-workspace Web UI. It is reference material for refactoring, not the future save-history architecture. For the planned architecture, read `../save-history-design.md`; for detailed save-to-semantic mapping, read `save-to-semantic.md`.
+This document describes the current Web UI. It is reference material for refactoring, not the future save-history architecture. For the planned architecture, read `../save-history-design.md`; for detailed save-to-semantic mapping, read `save-to-semantic.md`.
 
 ## Overview
 
@@ -13,19 +13,19 @@ The project is entirely client-side, structured as follows:
 ```txt
 silksong-tracker/
 │
-├── index.html            # Main UI and layout
+├── apps/
+│   └── web/
+│       ├── index.html    # Main UI and layout
+│       ├── src/
+│       │   ├── main.ts   # Core logic and rendering
+│       │   ├── save-decoder.ts
+│       │   ├── ...
+│       │   └── data/
+│       │       ├── main.json
+│       │       ├── bosses.json
+│       │       └── ...
+│       └── public/       # Files copied to the website build output
 │
-├── src/
-│   ├── main.js           # Core logic and rendering
-│   ├── save-decoder.js   # Binary decoding and AES decryption
-│   ├── ...
-|   |
-|   └── data/
-|       ├── main.json     # Database of items, upgrades, and skills
-|       ├── bosses.json   # Optional boss data
-│       └── ...
-│
-├── public/               # Files copied to the website build output
 └── docs/                 # Documentation
 ```
 

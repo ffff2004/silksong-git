@@ -6,8 +6,8 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 ## Current Status
 
-- Current phase: P2 Workspace Skeleton
-- Next task: P2-T1 Create Workspace Layout Without Behavior Change
+- Current phase: P3 Core Semantic Module
+- Next task: P3-T1 Core Snapshot Tracer Bullet
 - Last updated: 2026-06-24
 
 ## Phase Overview
@@ -15,7 +15,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 | Phase                                 | Status   | Depends On | Goal                                                                                       |
 | ------------------------------------- | -------- | ---------- | ------------------------------------------------------------------------------------------ |
 | P1 Documentation / Repository Hygiene | complete | none       | Documentation is coherent, old references are moved, and validation passes.                |
-| P2 Workspace Skeleton                 | pending  | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                       |
+| P2 Workspace Skeleton                 | complete | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                       |
 | P3 Core Semantic Module               | pending  | P2         | `packages/core` exposes snapshot and diff behavior through a small public Interface.       |
 | P4 History Module                     | pending  | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`. |
 | P5 CLI                                | pending  | P3, P4     | First CLI command set works through core/history Interfaces.                               |
@@ -66,7 +66,7 @@ Use other authoritative docs for non-progress changes:
 - `docs/save-history-design.md`: future architecture or implementation guidance.
 - `CONTEXT.md`: settled or renamed domain terms.
 - `docs/adr/`: durable design decisions.
-- `docs/current-design-reference/`: current pre-workspace behavior clarifications only.
+- `docs/current-design-reference/`: current Web behavior clarifications only.
 - `AGENTS.md`: agent workflow rules.
 
 ## P1 Documentation / Repository Hygiene
@@ -119,7 +119,7 @@ Notes:
 
 ### P2-T1 Create Workspace Layout Without Behavior Change
 
-Status: pending
+Status: complete
 
 Depends on:
 
@@ -149,9 +149,18 @@ Acceptance criteria:
 
 Verification:
 
-- `npm run format`: pending
-- `npm run lint`: pending
-- Web build/start command: pending
+- `npm run format`: passed
+- `npm run lint`: passed
+- `npm run build`: passed
+- `npm run start -- --host 127.0.0.1`: started Vite at `http://127.0.0.1:5173/silksong-tracker`; stopped with SIGINT after verification.
+
+Notes:
+
+- Added `pnpm-workspace.yaml` with `apps/*` and `packages/*`.
+- Added package manifests for `apps/web`, `apps/cli`, `packages/core`, and `packages/history`.
+- Moved the existing Vite Web app into `apps/web` without changing semantic mapping code.
+- Kept root scripts as repository-level entry points that delegate Web build/start/preview to `@silksong-tracker/web`.
+- Replaced the npm lock with `pnpm-lock.yaml`.
 
 ## P3 Core Semantic Module
 

@@ -8,14 +8,14 @@ The design docs have three separate jobs:
 
 - `CONTEXT.md` defines the domain language: terms such as Encoded Save, Decoded Save, Semantic Snapshot, Semantic Event, Save History Repository, and Display Semantic Event Filter.
 - `docs/adr/*.md` records accepted decisions and their rationale.
-- `docs/current-design-reference/*.md` describes the current pre-workspace implementation that will be extracted and refactored.
+- `docs/current-design-reference/*.md` describes the current Web implementation and preserved behavior that will be extracted and refactored.
 - This document connects the terms and decisions into one implementation map for the workspace, core Module, history Module, CLI, Web UI, and TDD order.
 
 When these documents disagree, prefer the ADR for decision rationale and update this design document to match.
 
 ## Current-System References
 
-- `docs/current-design-reference/overview.md` summarizes the current pre-workspace Web app.
+- `docs/current-design-reference/overview.md` summarizes the current Web app and preserved static behavior.
 - `docs/current-design-reference/save-to-semantic.md` details the current save-to-semantic mapping chain used when extracting `packages/core`.
 
 ## Goals

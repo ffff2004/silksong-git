@@ -1,0 +1,5 @@
+{
+  "name": "@silksong-tracker/cli",
+  "private": true,
+  "type": "module"
+}

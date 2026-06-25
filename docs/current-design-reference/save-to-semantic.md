@@ -4,6 +4,8 @@ This document describes the current Web UI's save decoding and semantic mapping 
 
 This document describes how `<save>.dat` in Silksong Tracker is decoded, parsed, and semantically mapped into the `done`, `accepted`, `locked`, `unobtainable`, and related states shown in the user interface.
 
+After the P2 workspace migration, old `src/...` references in this document correspond to `apps/web/src/...` unless a path explicitly says otherwise.
+
 ## Overview
 
 The overall pipeline is:

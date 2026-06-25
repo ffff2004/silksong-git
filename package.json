@@ -1,5 +1,6 @@
 {
   "name": "silksong-tracker",
+  "private": true,
   "homepage": "https://github.com/th3r3dfox/silksong-tracker#readme",
   "bugs": {
     "url": "https://github.com/th3r3dfox/silksong-tracker/issues"
@@ -10,30 +11,33 @@
   },
   "license": "MIT",
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "build": "vite build",
+    "build": "pnpm --filter @silksong-tracker/web build",
     "format": "eslint --fix . && prettier --write . --log-level warn",
     "lint": "tsx ./scripts/lint.ts",
-    "preview": "vite preview",
-    "start": "vite dev"
-  },
-  "dependencies": {
-    "@monaco-editor/loader": "1.6.1",
-    "complete-common": "2.8.0",
-    "crypto-js": "4.2.0",
-    "monaco-editor": "0.54.0",
-    "zod": "4.1.12"
+    "preview": "pnpm --filter @silksong-tracker/web preview",
+    "start": "pnpm --filter @silksong-tracker/web start"
   },
   "devDependencies": {
     "@eslint/json": "0.13.2",
-    "@types/crypto-js": "4.2.2",
     "ajv-cli": "5.0.0",
     "ajv-formats": "3.0.1",
+    "complete-common": "2.8.0",
     "complete-lint": "4.2.7",
     "complete-node": "12.2.1",
     "globby": "15.0.0",
     "stylelint": "16.25.0",
-    "tsx": "4.20.6",
-    "vite": "7.1.11"
+    "tsx": "4.20.6"
+  },
+  "packageManager": "pnpm@11.1.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver"
+    ]
   }
 }

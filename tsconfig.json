@@ -26,4 +26,6 @@
     "target": "ES2022",
     "lib": ["DOM", "ES2022"],
   },
+
+  "include": ["apps/web/*.ts", "apps/web/src/**/*.ts", "scripts/**/*.ts"],
 }
