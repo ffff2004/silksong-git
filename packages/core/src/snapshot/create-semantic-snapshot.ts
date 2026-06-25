@@ -118,6 +118,24 @@ function readItemValue(decodedSave: DecodedSave, item: MappingItem): unknown {
       return data?.["IsUnlocked"] === true;
     }
 
+    case "quest": {
+      const data = findSavedDataEntryData(
+        decodedSave.playerData["QuestCompletionData"],
+        item.flag,
+        { normalizeName: true },
+      );
+
+      if (data?.["IsCompleted"] === true) {
+        return "completed";
+      }
+
+      if (data?.["IsAccepted"] === true) {
+        return "accepted";
+      }
+
+      return false;
+    }
+
     case "sceneBool": {
       const sceneFlags = getSceneFlags(decodedSave);
       const normalizedScene = normalizeStringWithUnderscores(item.scene);
@@ -177,6 +195,16 @@ function createSourceReferences(item: MappingItem): readonly SourceReference[] {
       }));
     }
 
+    case "quest": {
+      return [
+        {
+          kind: "savedData",
+          field: "QuestCompletionData",
+          name: item.flag,
+        },
+      ];
+    }
+
     case "sceneBool": {
       return [
         {
@@ -204,6 +232,14 @@ function getItemStatus(
       const numberValue = typeof value === "number" ? value : 0;
 
       return numberValue > 0 ? "done" : "missing";
+    }
+
+    case "quest": {
+      if (value === "completed" || value === true) {
+        return "done";
+      }
+
+      return value === "accepted" ? "accepted" : "missing";
     }
 
     default: {

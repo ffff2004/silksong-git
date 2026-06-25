@@ -26,7 +26,8 @@ export type MappingItem =
   | DirectPlayerDataBooleanMappingItem
   | KeyMappingItem
   | NumericThresholdMappingItem
-  | SavedDataMappingItem;
+  | SavedDataMappingItem
+  | QuestMappingItem;
 
 interface MappingItemBase {
   readonly id: string;
@@ -59,6 +60,11 @@ interface NumericThresholdMappingItem extends MappingItemBase {
 
 interface SavedDataMappingItem extends MappingItemBase {
   readonly type: "collectable" | "tool";
+  readonly flag: string;
+}
+
+interface QuestMappingItem extends MappingItemBase {
+  readonly type: "quest";
   readonly flag: string;
 }
 
@@ -98,7 +104,11 @@ export interface SemanticSnapshotItem {
   readonly sourceReferences: readonly SourceReference[];
 }
 
-export type SemanticSnapshotItemStatus = "done" | "missing" | "unknown";
+export type SemanticSnapshotItemStatus =
+  | "accepted"
+  | "done"
+  | "missing"
+  | "unknown";
 
 export type SourceReference =
   | SceneFlagSourceReference

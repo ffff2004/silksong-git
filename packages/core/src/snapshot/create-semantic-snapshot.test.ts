@@ -262,6 +262,58 @@ test("createSemanticSnapshot maps savedData quantity and unlocked entries to sem
   assert.equal(compass.value, false);
 });
 
+test("createSemanticSnapshot maps quest states to semantic item status", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {
+      QuestCompletionData: {
+        savedData: [
+          {
+            Name: "Citadel Seeker",
+            Data: {
+              IsAccepted: true,
+              IsCompleted: false,
+            },
+          },
+          {
+            Name: "Lost Merchant",
+            Data: {
+              IsAccepted: true,
+              IsCompleted: true,
+            },
+          },
+          {
+            Name: "Quiet Wish",
+            Data: {
+              IsAccepted: false,
+              IsCompleted: false,
+            },
+          },
+        ],
+      },
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(decodedSave, createQuestMapping());
+  const citadelSeeker = findSnapshotItem(snapshot, "citadel-seeker");
+  const lostMerchant = findSnapshotItem(snapshot, "lost-merchant");
+  const quietWish = findSnapshotItem(snapshot, "quiet-wish");
+
+  assert.equal(citadelSeeker.status, "accepted");
+  assert.equal(citadelSeeker.value, "accepted");
+  assert.deepEqual(citadelSeeker.sourceReferences, [
+    {
+      field: "QuestCompletionData",
+      kind: "savedData",
+      name: "Citadel   Seeker",
+    },
+  ]);
+
+  assert.equal(lostMerchant.status, "done");
+  assert.equal(lostMerchant.value, "completed");
+  assert.equal(quietWish.status, "missing");
+  assert.equal(quietWish.value, false);
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -499,6 +551,44 @@ function createSavedDataMapping(): MappingData {
                 flag: "Compass",
                 id: "compass",
                 label: "Compass",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createQuestMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "wishes",
+        label: "Wishes",
+        categories: [
+          {
+            id: "wishes",
+            label: "Wishes",
+            items: [
+              {
+                type: "quest",
+                flag: "Citadel   Seeker",
+                id: "citadel-seeker",
+                label: "Citadel Seeker",
+              },
+              {
+                type: "quest",
+                flag: "Lost Merchant",
+                id: "lost-merchant",
+                label: "Lost Merchant",
+              },
+              {
+                type: "quest",
+                flag: "Quiet Wish",
+                id: "quiet-wish",
+                label: "Quiet Wish",
               },
             ],
           },
