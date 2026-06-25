@@ -197,6 +197,14 @@ function readItemValue(decodedSave: DecodedSave, item: MappingItem): unknown {
       return isArray(scenesVisited) && scenesVisited.includes(item.scene);
     }
 
+    case "quill": {
+      if (decodedSave.playerData["hasQuill"] !== true) {
+        return 0;
+      }
+
+      return getNumber(decodedSave.playerData[item.flag]) ?? 0;
+    }
+
     case "sceneBool": {
       const sceneFlags = getSceneFlags(decodedSave);
       const normalizedScene = normalizeStringWithUnderscores(item.scene);
@@ -316,6 +324,19 @@ function createSourceReferences(item: MappingItem): readonly SourceReference[] {
       ];
     }
 
+    case "quill": {
+      return [
+        {
+          kind: "playerData",
+          field: "hasQuill",
+        },
+        {
+          kind: "playerData",
+          field: item.flag,
+        },
+      ];
+    }
+
     case "sceneBool": {
       return [
         {
@@ -371,6 +392,15 @@ function getItemStatus(
       }
 
       return value === "collected" ? "accepted" : "missing";
+    }
+
+    case "quill": {
+      const numberValue = typeof value === "number" ? value : 0;
+
+      return item.id === `QuillState_${numberValue}`
+        && [1, 2, 3].includes(numberValue)
+        ? "done"
+        : "missing";
     }
 
     default: {

@@ -32,7 +32,8 @@ export type MappingItem =
   | RelicMappingItem
   | MateriumMappingItem
   | DeviceMappingItem
-  | SceneVisitedMappingItem;
+  | SceneVisitedMappingItem
+  | QuillMappingItem;
 
 interface MappingItemBase {
   readonly id: string;
@@ -99,6 +100,11 @@ interface DeviceMappingItem extends MappingItemBase {
 interface SceneVisitedMappingItem extends MappingItemBase {
   readonly type: "sceneVisited";
   readonly scene: string;
+}
+
+interface QuillMappingItem extends MappingItemBase {
+  readonly type: "quill";
+  readonly flag: string;
 }
 
 export interface SnapshotOptions {

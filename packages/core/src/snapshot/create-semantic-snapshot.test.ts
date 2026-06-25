@@ -471,6 +471,35 @@ test("createSemanticSnapshot maps sceneVisited entries to semantic item status",
   assert.equal(unvisitedScene.value, false);
 });
 
+test("createSemanticSnapshot maps quill entries to semantic item status", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {
+      hasQuill: true,
+      QuillState: 2,
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(decodedSave, createQuillMapping());
+  const activeQuillEntry = findSnapshotItem(snapshot, "QuillState_2");
+  const inactiveQuillEntry = findSnapshotItem(snapshot, "QuillState_3");
+
+  assert.equal(activeQuillEntry.status, "done");
+  assert.equal(activeQuillEntry.value, 2);
+  assert.deepEqual(activeQuillEntry.sourceReferences, [
+    {
+      field: "hasQuill",
+      kind: "playerData",
+    },
+    {
+      field: "QuillState",
+      kind: "playerData",
+    },
+  ]);
+
+  assert.equal(inactiveQuillEntry.status, "missing");
+  assert.equal(inactiveQuillEntry.value, 2);
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -879,6 +908,38 @@ function createSceneVisitedMapping(): MappingData {
                 id: "song-09",
                 label: "Song 09",
                 scene: "Song_09",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createQuillMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "main",
+        label: "Main",
+        categories: [
+          {
+            id: "quill",
+            label: "Quill",
+            items: [
+              {
+                type: "quill",
+                flag: "QuillState",
+                id: "QuillState_2",
+                label: "Quill Entry 2",
+              },
+              {
+                type: "quill",
+                flag: "QuillState",
+                id: "QuillState_3",
+                label: "Quill Entry 3",
               },
             ],
           },
