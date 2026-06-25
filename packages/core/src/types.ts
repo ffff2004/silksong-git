@@ -25,7 +25,8 @@ export type MappingItem =
   | SceneBoolMappingItem
   | DirectPlayerDataBooleanMappingItem
   | KeyMappingItem
-  | NumericThresholdMappingItem;
+  | NumericThresholdMappingItem
+  | SavedDataMappingItem;
 
 interface MappingItemBase {
   readonly id: string;
@@ -54,6 +55,11 @@ interface NumericThresholdMappingItem extends MappingItemBase {
   readonly type: "level" | "flagInt";
   readonly flag: string;
   readonly required?: number;
+}
+
+interface SavedDataMappingItem extends MappingItemBase {
+  readonly type: "collectable" | "tool";
+  readonly flag: string;
 }
 
 export interface SnapshotOptions {
@@ -96,7 +102,8 @@ export type SemanticSnapshotItemStatus = "done" | "missing" | "unknown";
 
 export type SourceReference =
   | SceneFlagSourceReference
-  | PlayerDataSourceReference;
+  | PlayerDataSourceReference
+  | SavedDataSourceReference;
 
 interface SceneFlagSourceReference {
   readonly kind: "sceneFlag";
@@ -107,6 +114,12 @@ interface SceneFlagSourceReference {
 interface PlayerDataSourceReference {
   readonly kind: "playerData";
   readonly field: string;
+}
+
+interface SavedDataSourceReference {
+  readonly kind: "savedData";
+  readonly field: string;
+  readonly name: string;
 }
 
 export interface SaveSummaryMetrics {

@@ -242,7 +242,7 @@ TDD Vertical Slices:
 - [x] Direct `playerData` booleans map to semantic item status.
 - [x] Key flags map to semantic item status.
 - [x] Numeric thresholds map to semantic item status.
-- [ ] `savedData` quantity and unlocked entries map to semantic item status.
+- [x] `savedData` quantity and unlocked entries map to semantic item status.
 - [ ] Quest states map to semantic item status.
 - [ ] Journal progress maps to semantic item status.
 - [ ] Relic, materium, and device states map to semantic item status.
@@ -254,7 +254,7 @@ TDD Vertical Slices:
 
 Latest slice verification:
 
-- Numeric thresholds: `pnpm --filter @silksong-git/core test`: passed
+- `savedData` quantity and unlocked entries: `pnpm --filter @silksong-git/core test`: passed
 - `pnpm format`: passed
 - `pnpm lint`: passed
 

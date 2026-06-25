@@ -181,6 +181,87 @@ test("createSemanticSnapshot maps numeric thresholds to semantic item status", (
   assert.equal(simpleKey.value, false);
 });
 
+test("createSemanticSnapshot maps savedData quantity and unlocked entries to semantic item status", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {
+      Collectables: {
+        savedData: [
+          {
+            Name: "Mossberry",
+            Data: {
+              Amount: 2,
+            },
+          },
+          {
+            Name: "Memory Locket",
+            Data: {
+              Amount: 0,
+            },
+          },
+        ],
+      },
+      ToolEquips: {
+        savedData: [
+          {
+            Name: "Straight  Pin",
+            Data: {
+              IsUnlocked: true,
+            },
+          },
+        ],
+      },
+      Tools: {
+        savedData: [
+          {
+            Name: "Compass",
+            Data: {
+              IsUnlocked: false,
+            },
+          },
+        ],
+      },
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createSavedDataMapping(),
+  );
+  const mossberry = findSnapshotItem(snapshot, "mossberry");
+  const memoryLocket = findSnapshotItem(snapshot, "memory-locket");
+  const straightPin = findSnapshotItem(snapshot, "straight-pin");
+  const compass = findSnapshotItem(snapshot, "compass");
+
+  assert.equal(mossberry.status, "done");
+  assert.equal(mossberry.value, 2);
+  assert.deepEqual(mossberry.sourceReferences, [
+    {
+      field: "Collectables",
+      kind: "savedData",
+      name: "Mossberry",
+    },
+  ]);
+
+  assert.equal(memoryLocket.status, "missing");
+  assert.equal(memoryLocket.value, 0);
+  assert.equal(straightPin.status, "done");
+  assert.equal(straightPin.value, true);
+  assert.deepEqual(straightPin.sourceReferences, [
+    {
+      field: "Tools",
+      kind: "savedData",
+      name: "Straight Pin",
+    },
+    {
+      field: "ToolEquips",
+      kind: "savedData",
+      name: "Straight Pin",
+    },
+  ]);
+  assert.equal(compass.status, "missing");
+  assert.equal(compass.value, false);
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -374,6 +455,50 @@ function createNumericThresholdMapping(): MappingData {
                 flag: "simpleKeyCount",
                 id: "simple-key-count",
                 label: "Simple Key Count",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createSavedDataMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "main",
+        label: "Main",
+        categories: [
+          {
+            id: "items",
+            label: "Items",
+            items: [
+              {
+                type: "collectable",
+                flag: "Mossberry",
+                id: "mossberry",
+                label: "Mossberry",
+              },
+              {
+                type: "collectable",
+                flag: "Memory Locket",
+                id: "memory-locket",
+                label: "Memory Locket",
+              },
+              {
+                type: "tool",
+                flag: "Straight Pin",
+                id: "straight-pin",
+                label: "Straight Pin",
+              },
+              {
+                type: "tool",
+                flag: "Compass",
+                id: "compass",
+                label: "Compass",
               },
             ],
           },

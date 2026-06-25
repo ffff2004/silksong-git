@@ -92,6 +92,32 @@ function readItemValue(decodedSave: DecodedSave, item: MappingItem): unknown {
       return typeof current === "number" ? current >= 1 : false;
     }
 
+    case "collectable": {
+      const data = findSavedDataEntryData(
+        decodedSave.playerData["Collectables"],
+        item.flag,
+        { normalizeName: false },
+      );
+
+      return getNumber(data?.["Amount"]) ?? 0;
+    }
+
+    case "tool": {
+      const data =
+        findSavedDataEntryData(decodedSave.playerData["Tools"], item.flag, {
+          normalizeName: true,
+        })
+        ?? findSavedDataEntryData(
+          decodedSave.playerData["ToolEquips"],
+          item.flag,
+          {
+            normalizeName: true,
+          },
+        );
+
+      return data?.["IsUnlocked"] === true;
+    }
+
     case "sceneBool": {
       const sceneFlags = getSceneFlags(decodedSave);
       const normalizedScene = normalizeStringWithUnderscores(item.scene);
@@ -133,6 +159,24 @@ function createSourceReferences(item: MappingItem): readonly SourceReference[] {
       ];
     }
 
+    case "collectable": {
+      return [
+        {
+          kind: "savedData",
+          field: "Collectables",
+          name: item.flag,
+        },
+      ];
+    }
+
+    case "tool": {
+      return ["Tools", "ToolEquips"].map((field) => ({
+        kind: "savedData",
+        field,
+        name: item.flag,
+      }));
+    }
+
     case "sceneBool": {
       return [
         {
@@ -156,6 +200,12 @@ function getItemStatus(
       return numberValue >= (item.required ?? 0) ? "done" : "missing";
     }
 
+    case "collectable": {
+      const numberValue = typeof value === "number" ? value : 0;
+
+      return numberValue > 0 ? "done" : "missing";
+    }
+
     default: {
       return value === true ? "done" : "missing";
     }
@@ -176,6 +226,40 @@ function createSummaryMetrics(decodedSave: DecodedSave): SaveSummaryMetrics {
 
 function getNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+function findSavedDataEntryData(
+  objectWithSavedData: unknown,
+  name: string,
+  options: { readonly normalizeName: boolean },
+): Record<string, unknown> | undefined {
+  if (!isRecord(objectWithSavedData)) {
+    return undefined;
+  }
+
+  const { savedData } = objectWithSavedData;
+  if (!isArray(savedData)) {
+    return undefined;
+  }
+
+  const normalizedName = normalizeString(name);
+  const entry = savedData.find((element) => {
+    if (!isRecord(element) || typeof element["Name"] !== "string") {
+      return false;
+    }
+
+    if (options.normalizeName) {
+      return normalizeString(element["Name"]) === normalizedName;
+    }
+
+    return element["Name"] === name;
+  });
+
+  if (!isRecord(entry) || !isRecord(entry["Data"])) {
+    return undefined;
+  }
+
+  return entry["Data"];
 }
 
 function getSceneFlags(root: unknown): Record<string, Record<string, boolean>> {
@@ -245,6 +329,29 @@ function normalizeStringWithUnderscores(value: string): string {
   }
 
   return words.join("_");
+}
+
+function normalizeString(value: string): string {
+  const words: string[] = [];
+  let currentWord = "";
+
+  for (const character of value.toLowerCase().trim()) {
+    if (character.trim() === "") {
+      if (currentWord !== "") {
+        words.push(currentWord);
+        currentWord = "";
+      }
+      continue;
+    }
+
+    currentWord += character;
+  }
+
+  if (currentWord !== "") {
+    words.push(currentWord);
+  }
+
+  return words.join(" ");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
