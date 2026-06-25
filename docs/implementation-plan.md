@@ -220,6 +220,39 @@ Verification:
 - `npm run format`: pending
 - `npm run lint`: pending
 
+### P3-T3 Define Autonomous Commit Policy
+
+Status: pending
+
+Depends on:
+
+- P3-T1
+
+Owned files or likely files:
+
+- `AGENTS.md`
+- `docs/implementation-plan.md`
+
+Relevant docs and ADRs:
+
+- `AGENTS.md`
+- `docs/implementation-plan.md`
+- `CONTEXT.md`
+- TDD skill guidance
+
+Acceptance criteria:
+
+- Decide whether agents may commit without an extra user confirmation after a clear, approved, green TDD vertical slice.
+- If accepted, add an `AGENTS.md` rule describing when autonomous commits are allowed and forbidden.
+- The rule must preserve TDD planning constraints: public Interface changes and prioritized behaviors need prior user or documented approval.
+- The rule must forbid autonomous commits for RED tests, failed validation, unrelated user changes, unapproved public Interface changes, unrecorded architecture decisions, ambiguous tasks, and temporary checkpoints.
+- The rule must say documentation and `docs/implementation-plan.md` are updated before committing when task status, verification, or design guidance changes.
+
+Verification:
+
+- `npm run format`: pending
+- `npm run lint`: pending
+
 ## P4 History Module
 
 ### P4-T1 Raw Observation Restore Tracer Bullet
