@@ -43,6 +43,32 @@ blocked
 complete
 ```
 
+## Updating This Plan
+
+When adding a task:
+
+- Add it under the matching phase.
+- Include status, dependencies, owned files, relevant docs and ADRs, acceptance criteria, and verification.
+- Update `## Current Status` if it becomes the next task.
+- Update `## Phase Overview` if phase scope, order, dependencies, or status changes.
+- Add or update ADRs only when the task records a durable design decision.
+
+When completing a task:
+
+- Set the task status to `complete`.
+- Replace pending verification entries with actual commands and results.
+- Add notes for completed facts, deviations, or known follow-up.
+- Update `## Current Status`.
+- Update `## Phase Overview` if a phase status changes.
+
+Use other authoritative docs for non-progress changes:
+
+- `docs/save-history-design.md`: future architecture or implementation guidance.
+- `CONTEXT.md`: settled or renamed domain terms.
+- `docs/adr/`: durable design decisions.
+- `docs/current-design-reference/`: current pre-workspace behavior clarifications only.
+- `AGENTS.md`: agent workflow rules.
+
 ## P1 Documentation / Repository Hygiene
 
 ### P1-T1 Finalize Agent And Design Documentation
