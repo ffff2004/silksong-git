@@ -12,7 +12,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "format": "eslint --fix . && prettier --write .",
+    "format": "eslint --fix . && prettier --write . --log-level warn",
     "lint": "tsx ./scripts/lint.ts",
     "preview": "vite preview",
     "start": "vite dev"
