@@ -1399,7 +1399,7 @@ input[type="checkbox"]:hover {
 
 .sidebar-actions {
   display: grid;
-  grid-template-columns: repeat(2, 1fr); /* 2x2 */
+  grid-template-columns: 1fr;
   gap: 8px;
   justify-content: center;
   align-items: center;
