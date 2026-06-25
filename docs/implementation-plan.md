@@ -241,7 +241,7 @@ TDD Vertical Slices:
 - [x] `sceneBool` missing item is marked `missing`.
 - [x] Direct `playerData` booleans map to semantic item status.
 - [x] Key flags map to semantic item status.
-- [ ] Numeric thresholds map to semantic item status.
+- [x] Numeric thresholds map to semantic item status.
 - [ ] `savedData` quantity and unlocked entries map to semantic item status.
 - [ ] Quest states map to semantic item status.
 - [ ] Journal progress maps to semantic item status.
@@ -254,7 +254,7 @@ TDD Vertical Slices:
 
 Latest slice verification:
 
-- Key flags: `pnpm --filter @silksong-git/core test`: passed
+- Numeric thresholds: `pnpm --filter @silksong-git/core test`: passed
 - `pnpm format`: passed
 - `pnpm lint`: passed
 

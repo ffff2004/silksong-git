@@ -143,6 +143,44 @@ test("createSemanticSnapshot maps key flags to semantic item status", () => {
   assert.equal(unusedKey.value, false);
 });
 
+test("createSemanticSnapshot maps numeric thresholds to semantic item status", () => {
+  const decodedSave: DecodedSave = {
+    playerData: {
+      bellKeyCount: 1,
+      nailUpgrades: 2,
+      simpleKeyCount: 0,
+    },
+  };
+
+  const snapshot = createSemanticSnapshot(
+    decodedSave,
+    createNumericThresholdMapping(),
+  );
+  const baseNeedle = findSnapshotItem(snapshot, "base-needle");
+  const shiningNeedle = findSnapshotItem(snapshot, "shining-needle");
+  const hivesteelNeedle = findSnapshotItem(snapshot, "hivesteel-needle");
+  const bellKey = findSnapshotItem(snapshot, "bell-key");
+  const simpleKey = findSnapshotItem(snapshot, "simple-key-count");
+
+  assert.equal(baseNeedle.status, "done");
+  assert.equal(baseNeedle.value, 2);
+  assert.equal(shiningNeedle.status, "done");
+  assert.equal(shiningNeedle.value, 2);
+  assert.equal(hivesteelNeedle.status, "missing");
+  assert.equal(hivesteelNeedle.value, 2);
+  assert.deepEqual(hivesteelNeedle.sourceReferences, [
+    {
+      field: "nailUpgrades",
+      kind: "playerData",
+    },
+  ]);
+
+  assert.equal(bellKey.status, "done");
+  assert.equal(bellKey.value, true);
+  assert.equal(simpleKey.status, "missing");
+  assert.equal(simpleKey.value, false);
+});
+
 test("createSemanticSnapshot maps raw summary fields to semantic summary metrics", () => {
   const decodedSave: DecodedSave = {
     playerData: {
@@ -283,6 +321,59 @@ function createKeyMapping(): MappingData {
                 flag: "hasUnusedKey",
                 id: "unused-key",
                 label: "Unused Key",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createNumericThresholdMapping(): MappingData {
+  return {
+    version: "fixture-v1",
+    sections: [
+      {
+        id: "main",
+        label: "Main",
+        categories: [
+          {
+            id: "needle-upgrades",
+            label: "Needle Upgrades",
+            items: [
+              {
+                type: "level",
+                flag: "nailUpgrades",
+                id: "base-needle",
+                label: "Base Needle",
+                required: 0,
+              },
+              {
+                type: "level",
+                flag: "nailUpgrades",
+                id: "shining-needle",
+                label: "Shining Needle",
+                required: 2,
+              },
+              {
+                type: "level",
+                flag: "nailUpgrades",
+                id: "hivesteel-needle",
+                label: "Hivesteel Needle",
+                required: 3,
+              },
+              {
+                type: "flagInt",
+                flag: "bellKeyCount",
+                id: "bell-key",
+                label: "Bell Key",
+              },
+              {
+                type: "flagInt",
+                flag: "simpleKeyCount",
+                id: "simple-key-count",
+                label: "Simple Key Count",
               },
             ],
           },

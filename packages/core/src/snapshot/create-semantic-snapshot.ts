@@ -51,7 +51,7 @@ function createSnapshotItem(
   categoryId: string,
 ): SemanticSnapshotItem {
   const value = readItemValue(decodedSave, item);
-  const status = getItemStatus(value);
+  const status = getItemStatus(item, value);
 
   return {
     id: item.id,
@@ -65,7 +65,7 @@ function createSnapshotItem(
   };
 }
 
-function readItemValue(decodedSave: DecodedSave, item: MappingItem): boolean {
+function readItemValue(decodedSave: DecodedSave, item: MappingItem): unknown {
   switch (item.type) {
     case "flag":
     case "boss": {
@@ -80,6 +80,16 @@ function readItemValue(decodedSave: DecodedSave, item: MappingItem): boolean {
       return (
         item.flag !== undefined && decodedSave.playerData[item.flag] === true
       );
+    }
+
+    case "level": {
+      return getNumber(decodedSave.playerData[item.flag]) ?? 0;
+    }
+
+    case "flagInt": {
+      const current = decodedSave.playerData[item.flag];
+
+      return typeof current === "number" ? current >= 1 : false;
     }
 
     case "sceneBool": {
@@ -113,6 +123,16 @@ function createSourceReferences(item: MappingItem): readonly SourceReference[] {
       }));
     }
 
+    case "level":
+    case "flagInt": {
+      return [
+        {
+          kind: "playerData",
+          field: item.flag,
+        },
+      ];
+    }
+
     case "sceneBool": {
       return [
         {
@@ -125,8 +145,21 @@ function createSourceReferences(item: MappingItem): readonly SourceReference[] {
   }
 }
 
-function getItemStatus(value: boolean): SemanticSnapshotItemStatus {
-  return value ? "done" : "missing";
+function getItemStatus(
+  item: MappingItem,
+  value: unknown,
+): SemanticSnapshotItemStatus {
+  switch (item.type) {
+    case "level": {
+      const numberValue = typeof value === "number" ? value : 0;
+
+      return numberValue >= (item.required ?? 0) ? "done" : "missing";
+    }
+
+    default: {
+      return value === true ? "done" : "missing";
+    }
+  }
 }
 
 function createSummaryMetrics(decodedSave: DecodedSave): SaveSummaryMetrics {

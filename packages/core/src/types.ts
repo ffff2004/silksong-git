@@ -24,7 +24,8 @@ interface MappingCategory {
 export type MappingItem =
   | SceneBoolMappingItem
   | DirectPlayerDataBooleanMappingItem
-  | KeyMappingItem;
+  | KeyMappingItem
+  | NumericThresholdMappingItem;
 
 interface MappingItemBase {
   readonly id: string;
@@ -47,6 +48,12 @@ interface KeyMappingItem extends MappingItemBase {
   readonly type: "key";
   readonly flag?: string;
   readonly flags?: readonly string[];
+}
+
+interface NumericThresholdMappingItem extends MappingItemBase {
+  readonly type: "level" | "flagInt";
+  readonly flag: string;
+  readonly required?: number;
 }
 
 export interface SnapshotOptions {
