@@ -22,9 +22,9 @@
     "module": "esnext",
     "moduleResolution": "bundler",
 
-    // Needed to support the `cause` property in the `Error` constructor.
-    "target": "ES2022",
-    "lib": ["DOM", "ES2022"],
+    // Needed to support modern APIs used by project scripts and browser code.
+    "target": "ES2023",
+    "lib": ["DOM", "ES2023"],
   },
 
   "include": ["apps/web/*.ts", "apps/web/src/**/*.ts", "scripts/**/*.ts"],

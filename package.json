@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "build": "pnpm --filter @silksong-tracker/web build",
-    "format": "eslint --fix . && prettier --write . --log-level warn",
+    "format": "tsx ./scripts/format.ts",
     "lint": "tsx ./scripts/lint.ts",
     "preview": "pnpm --filter @silksong-tracker/web preview",
     "start": "pnpm --filter @silksong-tracker/web start"

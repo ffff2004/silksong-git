@@ -10,5 +10,10 @@
     "complete-tsconfig/tsconfig.node.json",
   ],
 
+  "compilerOptions": {
+    // Scripts run through tsx, so TypeScript source imports can point at ".ts" files directly.
+    "allowImportingTsExtensions": true,
+  },
+
   "include": ["./**/*.ts"],
 }

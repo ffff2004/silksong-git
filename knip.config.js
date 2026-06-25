@@ -11,10 +11,6 @@ const config = {
   ignore: [
     "prettier.config.mjs", // Prettier is provided by "complete-lint".
   ],
-  ignoreBinaries: [
-    "eslint", // This is provided by "complete-lint".
-    "prettier", // This is provided by "complete-lint".
-  ],
   ignoreDependencies: [
     "ajv-cli", // This is used by the lint script.
     "ajv-formats", // This is used by the lint script.
