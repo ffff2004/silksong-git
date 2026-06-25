@@ -1,5 +1,11 @@
 {
   "name": "@silksong-git/core",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "complete-common": "2.29.0"
+  }
 }

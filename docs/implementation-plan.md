@@ -7,19 +7,19 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P3 Core Semantic Module
-- Next task: P3-T1 Core Snapshot Tracer Bullet
+- Next task: P3-T2 Core Snapshot Current Mapping Coverage
 - Last updated: 2026-06-25
 
 ## Phase Overview
 
-| Phase                                 | Status   | Depends On | Goal                                                                                       |
-| ------------------------------------- | -------- | ---------- | ------------------------------------------------------------------------------------------ |
-| P1 Documentation / Repository Hygiene | complete | none       | Documentation is coherent, old references are moved, and validation passes.                |
-| P2 Workspace Skeleton                 | complete | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                       |
-| P3 Core Semantic Module               | pending  | P2         | `packages/core` exposes snapshot and diff behavior through a small public Interface.       |
-| P4 History Module                     | pending  | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`. |
-| P5 CLI                                | pending  | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                |
-| P6 Web Integration                    | pending  | P3, P4     | Web UI uses core and supports static and local history modes.                              |
+| Phase                                 | Status      | Depends On | Goal                                                                                       |
+| ------------------------------------- | ----------- | ---------- | ------------------------------------------------------------------------------------------ |
+| P1 Documentation / Repository Hygiene | complete    | none       | Documentation is coherent, old references are moved, and validation passes.                |
+| P2 Workspace Skeleton                 | complete    | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                       |
+| P3 Core Semantic Module               | in progress | P2         | `packages/core` exposes snapshot and diff behavior through a small public Interface.       |
+| P4 History Module                     | pending     | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`. |
+| P5 CLI                                | pending     | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                |
+| P6 Web Integration                    | pending     | P3, P4     | Web UI uses core and supports static and local history modes.                              |
 
 ## Task Rules
 
@@ -166,7 +166,7 @@ Notes:
 
 ### P3-T1 Core Snapshot Tracer Bullet
 
-Status: pending
+Status: complete
 
 Depends on:
 
@@ -193,17 +193,61 @@ Acceptance criteria:
 
 Verification:
 
-- core test command: pending
-- `pnpm format`: pending
-- `pnpm lint`: pending
+- `pnpm --filter @silksong-git/core test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
 
-### P3-T2 Core Semantic Diff
+Notes:
+
+- Added the first public `packages/core` slice through `createSemanticSnapshot`.
+- The tracer bullet uses a decoded save fixture and mapping fixture to mark scene-scoped `Heart Piece` in `Crawl_02` as `done`.
+- The first snapshot output includes item source references, summary metrics, and mapping/core version fields.
+- Only the `sceneBool` path is implemented so far; later item types remain future vertical slices.
+
+### P3-T2 Core Snapshot Current Mapping Coverage
 
 Status: pending
 
 Depends on:
 
 - P3-T1
+
+Owned files or likely files:
+
+- `packages/core/`
+- core snapshot tests and fixtures
+- mapping data imports or copies from `apps/web/src/data/*.json`
+
+Relevant docs and ADRs:
+
+- ADR-0003
+- ADR-0012
+- ADR-0015
+- ADR-0017
+- `docs/current-design-reference/save-to-semantic.md`
+
+Acceptance criteria:
+
+- `createSemanticSnapshot` covers the current Web semantic mapping behavior documented in `docs/current-design-reference/save-to-semantic.md`.
+- Coverage includes `sceneBool` missing behavior, `flag`, `boss`, `key`, `level`, `flagInt`, `collectable`, `tool`, `quest`, `journal`, `relic`, `materium`, `device`, `sceneVisited`, `quill`, `anyOf`, and the special scene numeric branch used by Shell Fossil Mimic-style entries.
+- `getBuiltinMappingData` loads or exposes the current Web mapping tables: `main`, `essentials`, `bosses`, `mini-bosses`, `completion`, `wishes`, `journal`, and `scenes`.
+- Tests verify behavior through `createSemanticSnapshot` and `getBuiltinMappingData`, not internal helpers such as scene flag scanning, item value lookup, or status normalization.
+- Web presentation concerns such as DOM rendering, CSS classes, spoiler display, missing filters, map pin rendering, toasts, and browser global state stay outside `packages/core`.
+- TDD proceeds in vertical slices. At minimum, add one behavior test at a time in this order: sceneBool missing, direct playerData booleans, key flags, numeric thresholds, savedData quantity/unlocked entries, quest states, journal progress, relic/materium/device states, sceneVisited, quill, anyOf, special scene numeric branch, and built-in mapping data smoke coverage.
+
+Verification:
+
+- core test command: pending
+- `pnpm format`: pending
+- `pnpm lint`: pending
+
+### P3-T3 Core Semantic Diff
+
+Status: pending
+
+Depends on:
+
+- P3-T2
 
 Owned files or likely files:
 
@@ -229,7 +273,7 @@ Verification:
 - `pnpm format`: pending
 - `pnpm lint`: pending
 
-### P3-T3 Define Autonomous Commit Policy
+### P3-T4 Define Autonomous Commit Policy
 
 Status: pending
 
@@ -270,7 +314,7 @@ Status: pending
 
 Depends on:
 
-- P3-T1
+- P3-T2
 
 Owned files or likely files:
 
@@ -306,7 +350,7 @@ Status: pending
 Depends on:
 
 - P4-T1
-- P3-T2
+- P3-T3
 
 Owned files or likely files:
 
@@ -341,7 +385,7 @@ Status: pending
 
 Depends on:
 
-- P3-T1
+- P3-T2
 
 Owned files or likely files:
 
@@ -406,7 +450,7 @@ Status: pending
 
 Depends on:
 
-- P3-T1
+- P3-T2
 
 Owned files or likely files:
 

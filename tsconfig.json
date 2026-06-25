@@ -30,5 +30,10 @@
     "lib": ["DOM", "ES2023"],
   },
 
-  "include": ["apps/web/*.ts", "apps/web/src/**/*.ts", "scripts/**/*.ts"],
+  "include": [
+    "apps/web/*.ts",
+    "apps/web/src/**/*.ts",
+    "packages/core/src/**/*.ts",
+    "scripts/**/*.ts",
+  ],
 }
