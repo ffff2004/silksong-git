@@ -1,27 +1,9 @@
-import { isArray } from "complete-common";
 import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
-
-interface EslintResult {
-  readonly filePath?: unknown;
-  readonly messages?: unknown;
-  readonly output?: unknown;
-}
-
-interface EslintMessage {
-  readonly column?: unknown;
-  readonly line?: unknown;
-  readonly message?: unknown;
-  readonly ruleId?: unknown;
-}
-
-type CommandOutputError = Error & {
-  readonly code?: unknown;
-  readonly stderr?: unknown;
-  readonly stdout?: unknown;
-};
 
 async function execFileAsync(
   file: string,
@@ -40,107 +22,6 @@ async function execFileAsync(
   });
 }
 
-async function getEslintFixableFilePaths(): Promise<readonly string[]> {
-  const results = await runEslintDryRun();
-
-  return results
-    .filter(
-      (result): result is EslintResult & { readonly filePath: string } =>
-        typeof result.filePath === "string"
-        && typeof result.output === "string",
-    )
-    .map((result) => result.filePath);
-}
-
-async function runEslintDryRun(): Promise<readonly EslintResult[]> {
-  try {
-    const { stdout } = await execFileAsync("eslint", [
-      "--fix-dry-run",
-      "--format",
-      "json",
-      ".",
-    ]);
-    return parseEslintResults(stdout);
-  } catch (error) {
-    const { stdout } = error as CommandOutputError;
-
-    if (typeof stdout === "string" && stdout.trim() !== "") {
-      const results = parseEslintResults(stdout);
-      const details = formatEslintMessages(results);
-
-      if (details !== "") {
-        throw new Error(`ESLint failed during format dry run:\n${details}`, {
-          cause: error,
-        });
-      }
-    }
-
-    throw error;
-  }
-}
-
-function parseEslintResults(stdout: string): readonly EslintResult[] {
-  return JSON.parse(stdout) as readonly EslintResult[];
-}
-
-function formatEslintMessages(results: readonly EslintResult[]): string {
-  return results
-    .flatMap((result) => {
-      if (typeof result.filePath !== "string" || !isArray(result.messages)) {
-        return [];
-      }
-
-      const filePath = normalizeFilePath(result.filePath);
-      return result.messages
-        .filter(isEslintMessage)
-        .map((message) => formatEslintMessage(filePath, message));
-    })
-    .join("\n");
-}
-
-function isEslintMessage(value: unknown): value is EslintMessage {
-  return typeof value === "object" && value !== null;
-}
-
-function formatEslintMessage(filePath: string, message: EslintMessage): string {
-  const line =
-    typeof message.line === "number" && typeof message.column === "number"
-      ? `${message.line}:${message.column}`
-      : "unknown";
-  const ruleId = typeof message.ruleId === "string" ? ` ${message.ruleId}` : "";
-  const messageText =
-    typeof message.message === "string"
-      ? message.message
-      : "Unknown ESLint error";
-
-  return `- ${filePath}:${line}${ruleId} ${messageText}`;
-}
-
-async function getPrettierDifferentFilePaths(): Promise<readonly string[]> {
-  try {
-    const { stdout } = await execFileAsync("prettier", [
-      "--list-different",
-      ".",
-    ]);
-    return parseFileList(stdout);
-  } catch (error) {
-    const { code, stdout } = error as CommandOutputError;
-
-    if (code === 1 && typeof stdout === "string") {
-      return parseFileList(stdout);
-    }
-
-    throw error;
-  }
-}
-
-function parseFileList(stdout: string): readonly string[] {
-  return stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line !== "");
-}
-
 async function runCommand(command: string, args: readonly string[]) {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
@@ -156,6 +37,71 @@ async function runCommand(command: string, args: readonly string[]) {
       }
     });
   });
+}
+
+async function getGitCandidateFilePaths(): Promise<readonly string[]> {
+  const { stdout } = await execFileAsync("git", [
+    "ls-files",
+    "--cached",
+    "--others",
+    "--exclude-standard",
+    "-z",
+  ]);
+
+  return stdout.split("\0").filter((filePath) => filePath !== "");
+}
+
+async function snapshotFileHashes(
+  filePaths: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+  const entries = await Promise.all(
+    filePaths.map(async (filePath) => {
+      const absoluteFilePath = path.resolve(REPO_ROOT, filePath);
+
+      if (!(await isRegularFile(absoluteFilePath))) {
+        return undefined;
+      }
+
+      const content = await readFile(absoluteFilePath);
+      return [filePath, hashContent(content)] as const;
+    }),
+  );
+
+  return new Map(entries.filter((entry) => entry !== undefined));
+}
+
+async function isRegularFile(filePath: string): Promise<boolean> {
+  try {
+    const fileStats = await stat(filePath);
+    return fileStats.isFile();
+  } catch (error) {
+    if (isNodeErrorWithCode(error, "ENOENT")) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+function isNodeErrorWithCode(error: unknown, code: string): boolean {
+  return (
+    error instanceof Error
+    && "code" in error
+    && (error as NodeJS.ErrnoException).code === code
+  );
+}
+
+function hashContent(content: Buffer): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function getChangedFilePaths(
+  beforeHashes: ReadonlyMap<string, string>,
+  afterHashes: ReadonlyMap<string, string>,
+): readonly string[] {
+  return [...afterHashes]
+    .filter(([filePath, afterHash]) => beforeHashes.get(filePath) !== afterHash)
+    .map(([filePath]) => filePath);
 }
 
 function printFormattedFiles(filePaths: readonly string[]) {
@@ -181,16 +127,14 @@ function normalizeFilePath(filePath: string): string {
 }
 
 async function main() {
-  const eslintFixableFilePaths = await getEslintFixableFilePaths();
-  await runCommand("eslint", ["--fix", "."]);
+  const candidateFilePaths = await getGitCandidateFilePaths();
+  const beforeHashes = await snapshotFileHashes(candidateFilePaths);
 
-  const prettierDifferentFilePaths = await getPrettierDifferentFilePaths();
+  await runCommand("eslint", ["--fix", "."]);
   await runCommand("prettier", ["--write", ".", "--log-level", "warn"]);
 
-  printFormattedFiles([
-    ...eslintFixableFilePaths,
-    ...prettierDifferentFilePaths,
-  ]);
+  const afterHashes = await snapshotFileHashes(candidateFilePaths);
+  printFormattedFiles(getChangedFilePaths(beforeHashes, afterHashes));
 }
 
 try {

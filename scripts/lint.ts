@@ -10,7 +10,7 @@ await lintCommands(import.meta.dirname, [
 
   // Use ESLint to lint the code.
   // - "--max-warnings 0" makes warnings fail, since we set all ESLint errors to warnings.
-  "eslint --max-warnings 0 .",
+  "eslint --cache --cache-location .eslintcache --max-warnings 0 .",
   "eslint --max-warnings 0 --config eslint.config.json.mjs apps/web/src/data/*.json",
 
   // Use Prettier to check formatting.
