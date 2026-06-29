@@ -6,8 +6,8 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 ## Current Status
 
-- Current phase: P3 Core Semantic Module
-- Next task: P3-T4 Core Semantic Diff
+- Current phase: P4 History Module
+- Next task: P4-T1 Raw Observation Restore Tracer Bullet
 - Last updated: 2026-06-29
 
 ## Phase Overview
@@ -16,7 +16,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 | ------------------------------------- | ----------- | ---------- | ---------------------------------------------------------------------------------------------------- |
 | P1 Documentation / Repository Hygiene | complete    | none       | Documentation is coherent, old references are moved, and validation passes.                          |
 | P2 Workspace Skeleton                 | complete    | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                                 |
-| P3 Core Semantic Module               | in progress | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface. |
+| P3 Core Semantic Module               | complete    | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface. |
 | P4 History Module                     | pending     | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.           |
 | P5 CLI                                | pending     | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                          |
 | P6 Web Integration                    | pending     | P3, P4     | Web UI uses core and supports static and local history modes.                                        |
@@ -333,7 +333,7 @@ Notes:
 
 ### P3-T4 Core Semantic Diff
 
-Status: in progress
+Status: complete
 
 Depends on:
 
@@ -368,9 +368,15 @@ TDD Vertical Slices:
 
 Verification:
 
-- core test command: pending
-- `pnpm format`: pending
-- `pnpm lint`: pending
+- `pnpm --filter @silksong-git/core test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
+
+Notes:
+
+- Added public `diffSemanticSnapshots` and Semantic Event types to `packages/core`.
+- Diff events include item status changes, journal partial value changes, summary metric changes, version stamps, source references, direction, and regression classification.
+- Display Semantic Event Filters remain outside `packages/core`; P4 history/query code will apply them at query time.
 
 ## P4 History Module
 

@@ -222,10 +222,7 @@ export interface SemanticItemEventState {
   readonly value: unknown;
 }
 
-export type SemanticEventDirection =
-  | "neutral"
-  | "progression"
-  | "regression";
+export type SemanticEventDirection = "neutral" | "progression" | "regression";
 
 export interface SemanticSummaryMetricEvent {
   readonly kind: "summaryMetric";

@@ -4,23 +4,29 @@ import type {
   SemanticEventDirection,
   SemanticItemEvent,
   SemanticSnapshot,
-  SemanticSnapshotItemStatus,
   SemanticSnapshotItem,
+  SemanticSnapshotItemStatus,
   SemanticSummaryMetricEvent,
   SourceReference,
 } from "../types.ts";
 
+import { isArray } from "complete-common";
+
 const SUMMARY_METRIC_SOURCE_FIELDS = {
   completionPercentage: "completionPercentage",
+  permadeathMode: "permadeathMode",
   playTime: "playTime",
   rosaries: "geo",
   shellShards: "ShellShards",
-  permadeathMode: "permadeathMode",
 } as const satisfies Record<SaveSummaryMetricName, string>;
 
-const SUMMARY_METRIC_ORDER = Object.keys(
-  SUMMARY_METRIC_SOURCE_FIELDS,
-) as SaveSummaryMetricName[];
+const SUMMARY_METRIC_ORDER = [
+  "completionPercentage",
+  "playTime",
+  "rosaries",
+  "shellShards",
+  "permadeathMode",
+] as const satisfies readonly SaveSummaryMetricName[];
 
 export function diffSemanticSnapshots(
   before: SemanticSnapshot,
@@ -71,7 +77,7 @@ function shouldRecordValueChange(item: SemanticSnapshotItem): boolean {
 function createSummaryMetricEvents(
   before: SemanticSnapshot,
   after: SemanticSnapshot,
-): SemanticSummaryMetricEvent[] {
+): readonly SemanticSummaryMetricEvent[] {
   const events: SemanticSummaryMetricEvent[] = [];
 
   for (const metric of SUMMARY_METRIC_ORDER) {
@@ -85,17 +91,17 @@ function createSummaryMetricEvents(
     const direction = getValueDirection(beforeValue, afterValue);
 
     events.push({
-      afterValue,
-      beforeValue,
-      direction,
-      eventType: "summaryMetricChanged",
-      isRegression: direction === "regression",
       kind: "summaryMetric",
+      eventType: "summaryMetricChanged",
       metric,
+      beforeValue,
+      afterValue,
+      direction,
+      isRegression: direction === "regression",
       sourceReferences: createSummaryMetricSourceReferences(metric),
       version: {
-        after: after.version,
         before: before.version,
+        after: after.version,
       },
     });
   }
@@ -122,29 +128,29 @@ function createItemEvent(
   options: Pick<SemanticItemEvent, "direction" | "eventType">,
 ): SemanticItemEvent {
   return {
-    after: {
-      status: afterItem.status,
-      value: afterItem.value,
+    kind: "item",
+    eventType: options.eventType,
+    item: {
+      id: afterItem.id,
+      label: afterItem.label,
+      sectionId: afterItem.sectionId,
+      categoryId: afterItem.categoryId,
+      type: afterItem.type,
     },
     before: {
       status: beforeItem.status,
       value: beforeItem.value,
     },
-    direction: options.direction,
-    eventType: options.eventType,
-    isRegression: options.direction === "regression",
-    item: {
-      categoryId: afterItem.categoryId,
-      id: afterItem.id,
-      label: afterItem.label,
-      sectionId: afterItem.sectionId,
-      type: afterItem.type,
+    after: {
+      status: afterItem.status,
+      value: afterItem.value,
     },
-    kind: "item",
+    direction: options.direction,
+    isRegression: options.direction === "regression",
     sourceReferences: afterItem.sourceReferences,
     version: {
-      after: after.version,
       before: before.version,
+      after: after.version,
     },
   };
 }
@@ -211,10 +217,12 @@ function isSameValue(beforeValue: unknown, afterValue: unknown): boolean {
     return true;
   }
 
-  if (Array.isArray(beforeValue) && Array.isArray(afterValue)) {
+  if (isArray(beforeValue) && isArray(afterValue)) {
     return (
       beforeValue.length === afterValue.length
-      && beforeValue.every((value, index) => isSameValue(value, afterValue[index]))
+      && beforeValue.every((value, index) =>
+        isSameValue(value, afterValue[index]),
+      )
     );
   }
 

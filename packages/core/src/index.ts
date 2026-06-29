@@ -12,8 +12,8 @@ export { createSemanticSnapshot } from "./snapshot/create-semantic-snapshot.ts";
 export type {
   DecodedSave,
   MappingData,
-  SaveSummaryMetrics,
   SaveSummaryMetricName,
+  SaveSummaryMetrics,
   SemanticEvent,
   SemanticEventDirection,
   SemanticEventItem,

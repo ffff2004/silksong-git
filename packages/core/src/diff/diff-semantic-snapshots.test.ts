@@ -1,7 +1,14 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 
-import type { SemanticSnapshot } from "../index.ts";
+import { isArray } from "complete-common";
+
+import type {
+  SemanticEvent,
+  SemanticItemEvent,
+  SemanticSnapshot,
+  SemanticSnapshotItem,
+} from "../index.ts";
 import { diffSemanticSnapshots } from "../index.ts";
 
 test("diffSemanticSnapshots creates an item-level event when a scene item is collected", () => {
@@ -59,19 +66,19 @@ test("diffSemanticSnapshots preserves quest accepted and completed states in ite
   const after = createSnapshot(questItem("done", "completed"));
 
   const events = diffSemanticSnapshots(before, after);
+  const event = onlyItemEvent(events);
 
-  assert.equal(events.length, 1);
-  assert.deepEqual(events[0]?.before, {
+  assert.deepEqual(event.before, {
     status: "accepted",
     value: "accepted",
   });
-  assert.deepEqual(events[0]?.after, {
+  assert.deepEqual(event.after, {
     status: "done",
     value: "completed",
   });
-  assert.equal(events[0]?.direction, "progression");
-  assert.equal(events[0]?.item.id, "citadel-seeker");
-  assert.equal(events[0]?.item.type, "quest");
+  assert.equal(event.direction, "progression");
+  assert.equal(event.item.id, "citadel-seeker");
+  assert.equal(event.item.type, "quest");
 });
 
 test("diffSemanticSnapshots creates one item event for each crossed numeric stage threshold", () => {
@@ -91,7 +98,7 @@ test("diffSemanticSnapshots creates one item event for each crossed numeric stag
   const events = diffSemanticSnapshots(before, after);
 
   assert.deepEqual(
-    events.map((event) => ({
+    itemEvents(events).map((event) => ({
       after: event.after,
       before: event.before,
       direction: event.direction,
@@ -139,7 +146,7 @@ test("diffSemanticSnapshots records journal partial progress and completion thre
   const events = diffSemanticSnapshots(before, after);
 
   assert.deepEqual(
-    events.map((event) => ({
+    itemEvents(events).map((event) => ({
       after: event.after,
       before: event.before,
       eventType: event.eventType,
@@ -264,19 +271,49 @@ test("diffSemanticSnapshots marks backward item and numeric transitions as regre
   );
 });
 
+function onlyItemEvent(events: readonly SemanticEvent[]): SemanticItemEvent {
+  const itemEventList = itemEvents(events);
+
+  assert.equal(itemEventList.length, 1);
+
+  const itemEvent = itemEventList[0];
+
+  if (itemEvent === undefined) {
+    assert.fail("expected one item event");
+  }
+
+  return itemEvent;
+}
+
+function itemEvents(
+  events: readonly SemanticEvent[],
+): readonly SemanticItemEvent[] {
+  const itemEventList = events.filter((event) => event.kind === "item");
+
+  assert.equal(itemEventList.length, events.length);
+
+  return itemEventList;
+}
+
 function createSnapshot(
-  items: SemanticSnapshot["items"][number] | readonly SemanticSnapshot["items"][number][],
+  items: SemanticSnapshotItem | readonly SemanticSnapshotItem[],
   summary: SemanticSnapshot["summary"] = {},
 ): SemanticSnapshot {
   return {
-    items: Array.isArray(items) ? items : [items],
+    items: isSnapshotItemArray(items) ? items : [items],
     summary,
     version: {
-      mappingDataVersion: "mapping-v1",
       saveSchemaVersion: "schema-v1",
+      mappingDataVersion: "mapping-v1",
       semanticCoreVersion: "core-v1",
     },
   };
+}
+
+function isSnapshotItemArray(
+  value: SemanticSnapshotItem | readonly SemanticSnapshotItem[],
+): value is readonly SemanticSnapshotItem[] {
+  return isArray(value);
 }
 
 function sceneItem(
@@ -284,10 +321,13 @@ function sceneItem(
   value: unknown,
 ): SemanticSnapshot["items"][number] {
   return {
-    categoryId: "items",
     id: "mask-shard-2",
     label: "Mask Shard #2",
     sectionId: "main",
+    categoryId: "items",
+    type: "sceneBool",
+    status,
+    value,
     sourceReferences: [
       {
         flag: "Heart Piece",
@@ -295,9 +335,6 @@ function sceneItem(
         scene: "Crawl_02",
       },
     ],
-    status,
-    type: "sceneBool",
-    value,
   };
 }
 
@@ -306,10 +343,13 @@ function questItem(
   value: unknown,
 ): SemanticSnapshot["items"][number] {
   return {
-    categoryId: "wishes",
     id: "citadel-seeker",
     label: "Citadel Seeker",
     sectionId: "wishes",
+    categoryId: "wishes",
+    type: "quest",
+    status,
+    value,
     sourceReferences: [
       {
         field: "QuestCompletionData",
@@ -317,9 +357,6 @@ function questItem(
         name: "Citadel Seeker",
       },
     ],
-    status,
-    type: "quest",
-    value,
   };
 }
 
@@ -330,19 +367,19 @@ function levelItem(
   value: number,
 ): SemanticSnapshot["items"][number] {
   return {
-    categoryId: "needle-upgrades",
     id,
     label,
     sectionId: "main",
+    categoryId: "needle-upgrades",
+    type: "level",
+    status,
+    value,
     sourceReferences: [
       {
         field: "nailUpgrades",
         kind: "playerData",
       },
     ],
-    status,
-    type: "level",
-    value,
   };
 }
 
@@ -353,10 +390,13 @@ function journalItem(
   value: number,
 ): SemanticSnapshot["items"][number] {
   return {
-    categoryId: "journal",
     id,
     label,
     sectionId: "journal",
+    categoryId: "journal",
+    type: "journal",
+    status,
+    value,
     sourceReferences: [
       {
         field: "EnemyJournalKillData",
@@ -364,8 +404,5 @@ function journalItem(
         name: label,
       },
     ],
-    status,
-    type: "journal",
-    value,
   };
 }
