@@ -361,7 +361,7 @@ TDD Vertical Slices:
 
 - [x] Tracer bullet: a scene-scoped item changing from `missing` to `done` produces an item-level Semantic Event through `diffSemanticSnapshots`.
 - [x] Quest state transitions preserve `accepted` and `done` states in Semantic Events.
-- [ ] Numeric stage threshold crossings produce one item-level Semantic Event for each crossed stage.
+- [x] Numeric stage threshold crossings produce one item-level Semantic Event for each crossed stage.
 - [ ] Journal progress records partial value changes and completion threshold changes.
 - [ ] Save Summary Metric changes produce complete Semantic Events.
 - [ ] Backward item and numeric transitions produce Regression Events.

@@ -74,9 +74,63 @@ test("diffSemanticSnapshots preserves quest accepted and completed states in ite
   assert.equal(events[0]?.item.type, "quest");
 });
 
-function createSnapshot(item: SemanticSnapshot["items"][number]): SemanticSnapshot {
+test("diffSemanticSnapshots creates one item event for each crossed numeric stage threshold", () => {
+  const before = createSnapshot([
+    levelItem("base-needle", "Base Needle", "done", 1),
+    levelItem("sharpened-needle", "Sharpened Needle", "done", 1),
+    levelItem("shining-needle", "Shining Needle", "missing", 1),
+    levelItem("hivesteel-needle", "Hivesteel Needle", "missing", 1),
+  ]);
+  const after = createSnapshot([
+    levelItem("base-needle", "Base Needle", "done", 3),
+    levelItem("sharpened-needle", "Sharpened Needle", "done", 3),
+    levelItem("shining-needle", "Shining Needle", "done", 3),
+    levelItem("hivesteel-needle", "Hivesteel Needle", "done", 3),
+  ]);
+
+  const events = diffSemanticSnapshots(before, after);
+
+  assert.deepEqual(
+    events.map((event) => ({
+      after: event.after,
+      before: event.before,
+      direction: event.direction,
+      itemId: event.item.id,
+    })),
+    [
+      {
+        after: {
+          status: "done",
+          value: 3,
+        },
+        before: {
+          status: "missing",
+          value: 1,
+        },
+        direction: "progression",
+        itemId: "shining-needle",
+      },
+      {
+        after: {
+          status: "done",
+          value: 3,
+        },
+        before: {
+          status: "missing",
+          value: 1,
+        },
+        direction: "progression",
+        itemId: "hivesteel-needle",
+      },
+    ],
+  );
+});
+
+function createSnapshot(
+  items: SemanticSnapshot["items"][number] | readonly SemanticSnapshot["items"][number][],
+): SemanticSnapshot {
   return {
-    items: [item],
+    items: Array.isArray(items) ? items : [items],
     summary: {},
     version: {
       mappingDataVersion: "mapping-v1",
@@ -126,6 +180,29 @@ function questItem(
     ],
     status,
     type: "quest",
+    value,
+  };
+}
+
+function levelItem(
+  id: string,
+  label: string,
+  status: SemanticSnapshot["items"][number]["status"],
+  value: number,
+): SemanticSnapshot["items"][number] {
+  return {
+    categoryId: "needle-upgrades",
+    id,
+    label,
+    sectionId: "main",
+    sourceReferences: [
+      {
+        field: "nailUpgrades",
+        kind: "playerData",
+      },
+    ],
+    status,
+    type: "level",
     value,
   };
 }
