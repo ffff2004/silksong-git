@@ -135,6 +135,10 @@ Decode failure is a Watcher Error and must not be committed. It usually means a 
 
 Decode success with unknown save shape becomes an Unrecognized Schema Observation. It is committed with `save.dat`, `decoded-save.json`, and `observation.json`, but does not produce Semantic Snapshots or Semantic Events until a future rebuild supports that Save Schema Version.
 
+`decoded-save.json` stores only the raw Decoded Save payload returned as `decoded.decodedSave` by `packages/core`. `decoderVersion` is Observation Metadata and belongs in `observation.json`; it must not be treated as a Save Schema Version.
+
+`DecodeEncodedSaveError` is a Watcher Error and produces no Raw Save Observation. `UnrecognizedSaveSchemaError` means decoding succeeded but `packages/core` cannot identify the Decoded Save shape; it should produce a committed Unrecognized Schema Observation.
+
 ## Capture Policy
 
 Capture Policy controls Git raw-history fidelity. It is separate from Display Semantic Event Filters.
@@ -308,6 +312,14 @@ First-version Project Config fields:
 `packages/core` should expose a small deep Module interface:
 
 ```ts
+import {
+  createSemanticSnapshot,
+  decodeEncodedSave,
+  diffSemanticSnapshots,
+  getBuiltinMappingData,
+  parseDecodedSave,
+} from "@silksong-git/core";
+
 decodeEncodedSave(bytes: ArrayBuffer | Uint8Array): DecodedEncodedSave;
 
 interface DecodedEncodedSave {
@@ -348,8 +360,10 @@ interface SnapshotOptions {
 diffSemanticSnapshots(
   before: SemanticSnapshot,
   after: SemanticSnapshot,
-): SemanticEvent[];
+): readonly SemanticEvent[];
 ```
+
+Callers should import `packages/core` only through the package root (`@silksong-git/core`), not through `@silksong-git/core/src/...`.
 
 The implementation may contain helpers such as:
 
@@ -370,26 +384,233 @@ Those helpers should not be external Interfaces. Exposing them would leak raw sa
 `packages/history` should expose a small deep Module interface:
 
 ```ts
-initSaveHistory(input): InitResult;
+initSaveHistory(input: InitSaveHistoryInput): Promise<InitSaveHistoryResult>;
 
-observeSave(repoPath, options?): ObservationResult;
+observeSave(input: ObserveSaveInput): Promise<ObserveSaveResult>;
 
-rebuildSemanticReadModel(repoPath, options?): RebuildResult;
+rebuildSemanticReadModel(
+  input: RebuildSemanticReadModelInput,
+): Promise<RebuildSemanticReadModelResult>;
 
-queryHistory(repoPath, query): HistoryResult;
+queryHistory(input: QueryHistoryInput): Promise<HistoryResult>;
 
-diffCommits(repoPath, fromRef, toRef, options?): SemanticEvent[];
+diffCommits(input: DiffCommitsInput): Promise<DiffCommitsResult>;
 
-searchSemanticEvents(repoPath, query): SearchResult;
+searchSemanticEvents(
+  input: SearchSemanticEventsInput,
+): Promise<SearchSemanticEventsResult>;
 
-restoreEncodedSave(repoPath, commitRef, target): RestoreResult;
+restoreEncodedSave(
+  input: RestoreEncodedSaveInput,
+): Promise<RestoreEncodedSaveResult>;
 
-startLocalHistoryProcess(repoPath, options): LocalHistoryProcess;
+startLocalHistoryProcess(
+  input: StartLocalHistoryProcessInput,
+): Promise<LocalHistoryProcess>;
+
+interface InitSaveHistoryInput {
+  repoPath: string;
+  watchedSavePath: string;
+  config?: ProjectConfigOverrides;
+}
+
+interface InitSaveHistoryResult {
+  repoPath: string;
+  configPath: string;
+}
+
+interface ObserveSaveInput {
+  repoPath: string;
+  observedAt?: Date;
+  force?: boolean;
+}
+
+type ObserveSaveResult =
+  | {
+      status: "committed";
+      observation: RawSaveObservation;
+      semanticUpdate: SemanticUpdateResult;
+    }
+  | {
+      status: "skipped";
+      reason: "unchanged" | "minimumCommitInterval";
+      encodedSha256: string;
+    }
+  | {
+      status: "watcherError";
+      error: WatcherError;
+    };
+
+type SemanticUpdateResult =
+  | {
+      status: "updated";
+      snapshotId: string;
+      eventCount: number;
+    }
+  | {
+      status: "notAvailable";
+      reason: "unrecognizedSchema" | "readModelUnavailable";
+    };
+
+interface HistoryCommit {
+  ref: string;
+  shortRef: string;
+  committedAt: string;
+}
+
+interface RawSaveObservation {
+  commit: HistoryCommit;
+  observedAt: string;
+  sourcePath: string;
+  encodedSha256: string;
+  decodedSha256: string;
+  previousCommit?: string;
+  decoderVersion: string;
+  schema:
+    | {
+        status: "recognized";
+        saveSchemaVersion: string;
+        gameVersion?: string;
+        platform?: string;
+        platformBuildId?: string;
+      }
+    | {
+        status: "unrecognized";
+        reason: string;
+      };
+}
+
+interface HistoricalSemanticEvent {
+  id: string;
+  commit: HistoryCommit;
+  previousCommit?: HistoryCommit;
+  observation: RawSaveObservation;
+  event: SemanticEvent;
+  visibility: {
+    defaultVisible: boolean;
+    filterReasons: readonly string[];
+  };
+}
+
+interface RebuildSemanticReadModelInput {
+  repoPath: string;
+}
+
+interface RebuildSemanticReadModelResult {
+  observationCount: number;
+  recognizedObservationCount: number;
+  unrecognizedObservationCount: number;
+  snapshotCount: number;
+  eventCount: number;
+}
+
+interface QueryHistoryInput {
+  repoPath: string;
+  includeFiltered?: boolean;
+  includeRawObservations?: boolean;
+  limit?: number;
+  cursor?: string;
+}
+
+interface HistoryResult {
+  events: readonly HistoricalSemanticEvent[];
+  rawObservations?: readonly RawSaveObservation[];
+  nextCursor?: string;
+}
+
+interface DiffCommitsInput {
+  repoPath: string;
+  fromRef: string;
+  toRef: string;
+}
+
+interface DiffCommitsResult {
+  from: HistoryCommit;
+  to: HistoryCommit;
+  before: SemanticSnapshot;
+  after: SemanticSnapshot;
+  events: readonly HistoricalSemanticEvent[];
+}
+
+interface SearchSemanticEventsInput {
+  repoPath: string;
+  query: {
+    itemId?: string;
+    label?: string;
+    type?: string;
+    statusTo?: SemanticSnapshotItemStatus;
+    eventType?: string;
+    direction?: SemanticEventDirection;
+    text?: string;
+  };
+  includeFiltered?: boolean;
+}
+
+interface SearchSemanticEventsResult {
+  events: readonly HistoricalSemanticEvent[];
+}
+
+type RestoreTarget =
+  | {
+      kind: "path";
+      path: string;
+      overwrite?: boolean;
+    }
+  | {
+      kind: "inPlace";
+      confirmation: "restore-watched-save";
+      backupDirectory?: string;
+    };
+
+interface RestoreEncodedSaveInput {
+  repoPath: string;
+  commitRef: string;
+  target: RestoreTarget;
+}
+
+interface RestoreEncodedSaveResult {
+  commit: HistoryCommit;
+  targetPath: string;
+  writtenSha256: string;
+  backupPath?: string;
+}
 ```
 
 Git, SQLite, file watching, config loading, and local HTTP are implementation details or internal Adapters behind this Interface.
 
-The SQLite schema is not public. CLI and Web callers must use `queryHistory`, `diffCommits`, and `searchSemanticEvents`; they must not query tables directly.
+`queryHistory`, `diffCommits`, and `searchSemanticEvents` should return Semantic Events with their commit and Raw Save Observation metadata. CLI and Web callers should not need separate Git or SQLite lookups to explain where an event came from.
+
+The SQLite schema is not public. CLI and Web callers must use `queryHistory`, `diffCommits`, and `searchSemanticEvents`; they must not query tables directly. Git command details are not public either; restore and history lookup go through `packages/history`.
+
+`searchSemanticEvents` accepts structured query fields as its stable Interface. Free-text `text` search supports the CLI `--event` convenience, but Web and programmatic callers should prefer structured fields.
+
+`packages/history` consumes `packages/core` only through its public package-root Interface:
+
+```ts
+const decoded = decodeEncodedSave(encodedBytes);
+// decoded.version.decoderVersion -> observation.json metadata
+
+let parsed: ParsedDecodedSave;
+try {
+  parsed = parseDecodedSave(decoded.decodedSave);
+} catch (error) {
+  if (error instanceof UnrecognizedSaveSchemaError) {
+    return commitUnrecognizedSchemaObservation({
+      decodedSave: decoded.decodedSave,
+      decoderVersion: decoded.version.decoderVersion,
+      encodedBytes,
+    });
+  }
+  throw error;
+}
+
+const mappingData = getBuiltinMappingData();
+const snapshot = createSemanticSnapshot(parsed, mappingData, {
+  configHash,
+});
+```
+
+Rebuilding the Semantic Read Model iterates Raw Save Observation commits from oldest to newest, parses each `decoded-save.json`, creates Semantic Snapshots for recognized schemas, and calls `diffSemanticSnapshots` between adjacent recognized snapshots. Display Semantic Event Filters are applied when querying, not when committing Git history and not inside `packages/core`.
 
 ## Local History Process
 
