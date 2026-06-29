@@ -8,7 +8,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 - Current phase: P3 Core Semantic Module
 - Next task: P3-T4 Core Semantic Diff
-- Last updated: 2026-06-25
+- Last updated: 2026-06-29
 
 ## Phase Overview
 
@@ -333,7 +333,7 @@ Notes:
 
 ### P3-T4 Core Semantic Diff
 
-Status: pending
+Status: in progress
 
 Depends on:
 
@@ -356,6 +356,15 @@ Acceptance criteria:
 - Two Semantic Snapshots produce item-level Semantic Events.
 - Numeric threshold, stage, summary metric, and regression rules are represented according to ADR-0014.
 - Tests use `diffSemanticSnapshots`.
+
+TDD Vertical Slices:
+
+- [ ] Tracer bullet: a scene-scoped item changing from `missing` to `done` produces an item-level Semantic Event through `diffSemanticSnapshots`.
+- [ ] Quest state transitions preserve `accepted` and `done` states in Semantic Events.
+- [ ] Numeric stage threshold crossings produce one item-level Semantic Event for each crossed stage.
+- [ ] Journal progress records partial value changes and completion threshold changes.
+- [ ] Save Summary Metric changes produce complete Semantic Events.
+- [ ] Backward item and numeric transitions produce Regression Events.
 
 Verification:
 
