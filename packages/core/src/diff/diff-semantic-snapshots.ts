@@ -1,11 +1,26 @@
 import type {
+  SaveSummaryMetricName,
   SemanticEvent,
   SemanticEventDirection,
   SemanticItemEvent,
   SemanticSnapshot,
   SemanticSnapshotItemStatus,
   SemanticSnapshotItem,
+  SemanticSummaryMetricEvent,
+  SourceReference,
 } from "../types.ts";
+
+const SUMMARY_METRIC_SOURCE_FIELDS = {
+  completionPercentage: "completionPercentage",
+  playTime: "playTime",
+  rosaries: "geo",
+  shellShards: "ShellShards",
+  permadeathMode: "permadeathMode",
+} as const satisfies Record<SaveSummaryMetricName, string>;
+
+const SUMMARY_METRIC_ORDER = Object.keys(
+  SUMMARY_METRIC_SOURCE_FIELDS,
+) as SaveSummaryMetricName[];
 
 export function diffSemanticSnapshots(
   before: SemanticSnapshot,
@@ -44,11 +59,59 @@ export function diffSemanticSnapshots(
     }
   }
 
+  events.push(...createSummaryMetricEvents(before, after));
+
   return events;
 }
 
 function shouldRecordValueChange(item: SemanticSnapshotItem): boolean {
   return item.type === "journal";
+}
+
+function createSummaryMetricEvents(
+  before: SemanticSnapshot,
+  after: SemanticSnapshot,
+): SemanticSummaryMetricEvent[] {
+  const events: SemanticSummaryMetricEvent[] = [];
+
+  for (const metric of SUMMARY_METRIC_ORDER) {
+    const beforeValue = before.summary[metric];
+    const afterValue = after.summary[metric];
+
+    if (isSameValue(beforeValue, afterValue)) {
+      continue;
+    }
+
+    const direction = getValueDirection(beforeValue, afterValue);
+
+    events.push({
+      afterValue,
+      beforeValue,
+      direction,
+      eventType: "summaryMetricChanged",
+      isRegression: direction === "regression",
+      kind: "summaryMetric",
+      metric,
+      sourceReferences: createSummaryMetricSourceReferences(metric),
+      version: {
+        after: after.version,
+        before: before.version,
+      },
+    });
+  }
+
+  return events;
+}
+
+function createSummaryMetricSourceReferences(
+  metric: SaveSummaryMetricName,
+): readonly SourceReference[] {
+  return [
+    {
+      field: SUMMARY_METRIC_SOURCE_FIELDS[metric],
+      kind: "playerData",
+    },
+  ];
 }
 
 function createItemEvent(

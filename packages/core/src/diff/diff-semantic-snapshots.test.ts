@@ -174,12 +174,67 @@ test("diffSemanticSnapshots records journal partial progress and completion thre
   );
 });
 
+test("diffSemanticSnapshots records save summary metric changes as semantic events", () => {
+  const before = createSnapshot(sceneItem("missing", false), {
+    completionPercentage: 12,
+    rosaries: 120,
+  });
+  const after = createSnapshot(sceneItem("missing", false), {
+    completionPercentage: 13,
+    rosaries: 145,
+  });
+
+  const events = diffSemanticSnapshots(before, after);
+
+  assert.deepEqual(events, [
+    {
+      afterValue: 13,
+      beforeValue: 12,
+      direction: "progression",
+      eventType: "summaryMetricChanged",
+      isRegression: false,
+      kind: "summaryMetric",
+      metric: "completionPercentage",
+      sourceReferences: [
+        {
+          field: "completionPercentage",
+          kind: "playerData",
+        },
+      ],
+      version: {
+        after: after.version,
+        before: before.version,
+      },
+    },
+    {
+      afterValue: 145,
+      beforeValue: 120,
+      direction: "progression",
+      eventType: "summaryMetricChanged",
+      isRegression: false,
+      kind: "summaryMetric",
+      metric: "rosaries",
+      sourceReferences: [
+        {
+          field: "geo",
+          kind: "playerData",
+        },
+      ],
+      version: {
+        after: after.version,
+        before: before.version,
+      },
+    },
+  ]);
+});
+
 function createSnapshot(
   items: SemanticSnapshot["items"][number] | readonly SemanticSnapshot["items"][number][],
+  summary: SemanticSnapshot["summary"] = {},
 ): SemanticSnapshot {
   return {
     items: Array.isArray(items) ? items : [items],
-    summary: {},
+    summary,
     version: {
       mappingDataVersion: "mapping-v1",
       saveSchemaVersion: "schema-v1",

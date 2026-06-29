@@ -363,7 +363,7 @@ TDD Vertical Slices:
 - [x] Quest state transitions preserve `accepted` and `done` states in Semantic Events.
 - [x] Numeric stage threshold crossings produce one item-level Semantic Event for each crossed stage.
 - [x] Journal progress records partial value changes and completion threshold changes.
-- [ ] Save Summary Metric changes produce complete Semantic Events.
+- [x] Save Summary Metric changes produce complete Semantic Events.
 - [ ] Backward item and numeric transitions produce Regression Events.
 
 Verification:

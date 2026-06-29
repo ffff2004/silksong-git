@@ -195,7 +195,7 @@ export interface SemanticEventVersion {
   readonly after: SemanticSnapshotVersion;
 }
 
-export type SemanticEvent = SemanticItemEvent;
+export type SemanticEvent = SemanticItemEvent | SemanticSummaryMetricEvent;
 
 export interface SemanticItemEvent {
   readonly kind: "item";
@@ -226,6 +226,20 @@ export type SemanticEventDirection =
   | "neutral"
   | "progression"
   | "regression";
+
+export interface SemanticSummaryMetricEvent {
+  readonly kind: "summaryMetric";
+  readonly eventType: "summaryMetricChanged";
+  readonly metric: SaveSummaryMetricName;
+  readonly beforeValue: unknown;
+  readonly afterValue: unknown;
+  readonly direction: SemanticEventDirection;
+  readonly isRegression: boolean;
+  readonly sourceReferences: readonly SourceReference[];
+  readonly version: SemanticEventVersion;
+}
+
+export type SaveSummaryMetricName = keyof SaveSummaryMetrics;
 
 export type SourceReference =
   | SceneFlagSourceReference

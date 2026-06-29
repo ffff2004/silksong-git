@@ -13,6 +13,7 @@ export type {
   DecodedSave,
   MappingData,
   SaveSummaryMetrics,
+  SaveSummaryMetricName,
   SemanticEvent,
   SemanticEventDirection,
   SemanticEventItem,
@@ -23,6 +24,7 @@ export type {
   SemanticSnapshotItem,
   SemanticSnapshotItemStatus,
   SemanticSnapshotVersion,
+  SemanticSummaryMetricEvent,
   SnapshotOptions,
   SourceReference,
 } from "./types.ts";
