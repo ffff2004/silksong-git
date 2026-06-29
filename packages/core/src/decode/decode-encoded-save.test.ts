@@ -21,10 +21,11 @@ test("decodeEncodedSave decodes an encoded Silksong save fixture", async () => {
     path.join(fixtureDirectory, "minimal-valid-save.dat"),
   );
 
-  const decodedSave = decodeEncodedSave(encodedSave);
+  const decoded = decodeEncodedSave(encodedSave);
 
-  assert.ok(isObject(decodedSave));
-  assert.ok("playerData" in decodedSave);
+  assert.equal(decoded.version.decoderVersion, "silksong-save-decoder-v1");
+  assert.ok(isObject(decoded.decodedSave));
+  assert.ok("playerData" in decoded.decodedSave);
 });
 
 test("parseDecodedSave validates a decoded Silksong save fixture", async () => {
@@ -32,8 +33,8 @@ test("parseDecodedSave validates a decoded Silksong save fixture", async () => {
     path.join(fixtureDirectory, "minimal-valid-save.dat"),
   );
 
-  const decodedSave = decodeEncodedSave(encodedSave);
-  const parsedSave = parseDecodedSave(decodedSave);
+  const decoded = decodeEncodedSave(encodedSave);
+  const parsedSave = parseDecodedSave(decoded.decodedSave);
 
   assert.equal(parsedSave.version.saveSchemaVersion, "silksong-save-v1");
   assert.equal(parsedSave.decodedSave.playerData["completionPercentage"], 39);
@@ -61,8 +62,8 @@ test("decoded saves pass schema versions into semantic snapshots through core", 
     path.join(fixtureDirectory, "minimal-valid-save.dat"),
   );
 
-  const decodedSave = decodeEncodedSave(encodedSave);
-  const parsedSave = parseDecodedSave(decodedSave);
+  const decoded = decodeEncodedSave(encodedSave);
+  const parsedSave = parseDecodedSave(decoded.decodedSave);
   const snapshot = createSemanticSnapshot(parsedSave, getBuiltinMappingData());
 
   assert.equal(snapshot.summary.completionPercentage, 39);

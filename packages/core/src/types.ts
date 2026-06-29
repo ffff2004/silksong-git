@@ -4,6 +4,15 @@ export interface DecodedSave {
   readonly [key: string]: unknown;
 }
 
+export interface DecodedEncodedSave {
+  readonly decodedSave: unknown;
+  readonly version: DecodedSaveDecoderVersion;
+}
+
+export interface DecodedSaveDecoderVersion {
+  readonly decoderVersion: string;
+}
+
 export interface ParsedDecodedSave {
   readonly decodedSave: DecodedSave;
   readonly version: DecodedSaveVersion;

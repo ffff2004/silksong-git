@@ -35,11 +35,12 @@ for (const result of results) {
 
 async function readLocalSaveSummary(fileName: string) {
   const encodedSave = await readFile(path.join(checkedSaveDirectory, fileName));
-  const decodedSave = decodeEncodedSave(encodedSave);
-  const parsedSave = parseDecodedSave(decodedSave);
+  const decoded = decodeEncodedSave(encodedSave);
+  const parsedSave = parseDecodedSave(decoded.decodedSave);
   const snapshot = createSemanticSnapshot(parsedSave, mappingData);
 
   return {
+    decoderVersion: decoded.version.decoderVersion,
     fileName,
     itemCount: snapshot.items.length,
     summary: snapshot.summary,

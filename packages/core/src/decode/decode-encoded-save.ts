@@ -1,5 +1,9 @@
 import CryptoJS from "crypto-js";
 
+import type { DecodedEncodedSave } from "../types.ts";
+
+const decoderVersion = "silksong-save-decoder-v1";
+
 const CSHARP_HEADER = new Uint8Array([
   0, 1, 0, 0, 0, 255, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0, 0, 6, 1, 0, 0, 0,
 ]);
@@ -15,9 +19,14 @@ export class DecodeEncodedSaveError extends Error {
 
 export function decodeEncodedSave(
   encodedSave: ArrayBuffer | Uint8Array,
-): unknown {
+): DecodedEncodedSave {
   try {
-    return decodeEncodedSaveUnsafe(encodedSave);
+    return {
+      decodedSave: decodeEncodedSaveUnsafe(encodedSave),
+      version: {
+        decoderVersion,
+      },
+    };
   } catch (error) {
     throw new DecodeEncodedSaveError({ cause: error });
   }
