@@ -2,6 +2,12 @@
   "name": "@silksong-git/core",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "scripts": {
     "fixtures:generate": "tsx src/decode/fixtures/generate-fixtures.ts",
     "smoke:local-saves": "tsx src/decode/smoke-local-saves.ts",
