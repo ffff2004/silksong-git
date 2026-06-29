@@ -308,7 +308,7 @@ First-version Project Config fields:
 `packages/core` should expose a small deep Module interface:
 
 ```ts
-decodeEncodedSave(bytes: ArrayBuffer | Uint8Array): DecodedSave;
+decodeEncodedSave(bytes: ArrayBuffer | Uint8Array): unknown;
 
 parseDecodedSave(input: unknown): DecodedSave;
 
