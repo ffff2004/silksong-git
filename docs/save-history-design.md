@@ -403,17 +403,7 @@ First-version commands:
 | `history` | `silksong-git history rebuild [--repo <history-repo>]`                      | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations. |
 | `ui`      | `silksong-git ui open [--repo <history-repo>]`                              | Local History Web Mode    | Start or connect to the local Web UI.                             |
 
-Default aliases can exist for low-risk interactive commands:
-
-```txt
-silksong-git history
-  -> silksong-git history list
-
-silksong-git ui
-  -> silksong-git ui open
-```
-
-Do not add implicit defaults for high-risk writes. Restore must remain explicit.
+The first version requires explicit group/action commands. Do not add implicit default actions before the first CLI is implemented and exercised. Restore must remain explicit.
 
 The groups are user-facing operation objects, not internal packages. Avoid CLI groups such as `core`, `read-model`, or `process` even when those names match implementation Modules.
 
