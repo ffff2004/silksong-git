@@ -348,7 +348,6 @@ interface SnapshotOptions {
 diffSemanticSnapshots(
   before: SemanticSnapshot,
   after: SemanticSnapshot,
-  options?: DiffOptions,
 ): SemanticEvent[];
 ```
 
