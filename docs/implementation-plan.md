@@ -138,7 +138,7 @@ Owned files or likely files:
 Relevant docs and ADRs:
 
 - `docs/save-history-design.md`
-- ADR-0011
+- [ADR-0011](adr/0011-workspace-package-architecture.md)
 
 Acceptance criteria:
 
@@ -182,8 +182,8 @@ Relevant docs and ADRs:
 
 - `docs/save-history-design.md`
 - `docs/current-design-reference/save-to-semantic.md`
-- ADR-0012
-- ADR-0017
+- [ADR-0012](adr/0012-core-semantic-module-interface.md)
+- [ADR-0017](adr/0017-start-implementation-with-core-tracer-bullet.md)
 
 Acceptance criteria:
 
@@ -220,10 +220,10 @@ Owned files or likely files:
 
 Relevant docs and ADRs:
 
-- ADR-0003
-- ADR-0012
-- ADR-0015
-- ADR-0017
+- [ADR-0003](adr/0003-semantic-snapshot-coverage.md)
+- [ADR-0012](adr/0012-core-semantic-module-interface.md)
+- [ADR-0015](adr/0015-version-stamps-for-decoding-and-semantic-mapping.md)
+- [ADR-0017](adr/0017-start-implementation-with-core-tracer-bullet.md)
 - `docs/current-design-reference/save-to-semantic.md`
 
 Acceptance criteria:
@@ -290,9 +290,9 @@ Owned files or likely files:
 
 Relevant docs and ADRs:
 
-- ADR-0015
-- ADR-0012
-- ADR-0016
+- [ADR-0015](adr/0015-version-stamps-for-decoding-and-semantic-mapping.md)
+- [ADR-0012](adr/0012-core-semantic-module-interface.md)
+- [ADR-0016](adr/0016-commit-unrecognized-schema-observations.md)
 - `docs/current-design-reference/overview.md`
 - `docs/current-design-reference/save-to-semantic.md`
 
@@ -346,10 +346,10 @@ Owned files or likely files:
 
 Relevant docs and ADRs:
 
-- ADR-0002
-- ADR-0003
-- ADR-0014
-- ADR-0015
+- [ADR-0002](adr/0002-item-level-semantic-events.md)
+- [ADR-0003](adr/0003-semantic-snapshot-coverage.md)
+- [ADR-0014](adr/0014-numeric-semantic-event-rules.md)
+- [ADR-0015](adr/0015-version-stamps-for-decoding-and-semantic-mapping.md)
 
 Acceptance criteria:
 
@@ -380,12 +380,12 @@ Owned files or likely files:
 
 Relevant docs and ADRs:
 
-- ADR-0001
-- ADR-0005
-- ADR-0006
-- ADR-0007
-- ADR-0013
-- ADR-0016
+- [ADR-0001](adr/0001-save-history-artifacts.md)
+- [ADR-0005](adr/0005-single-save-history-repository.md)
+- [ADR-0006](adr/0006-save-history-repository-layout.md)
+- [ADR-0007](adr/0007-restore-requires-explicit-target-or-in-place-confirmation.md)
+- [ADR-0013](adr/0013-history-module-interface-and-testing.md)
+- [ADR-0016](adr/0016-commit-unrecognized-schema-observations.md)
 
 Acceptance criteria:
 
@@ -417,10 +417,10 @@ Owned files or likely files:
 
 Relevant docs and ADRs:
 
-- ADR-0001
-- ADR-0008
-- ADR-0013
-- ADR-0015
+- [ADR-0001](adr/0001-save-history-artifacts.md)
+- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-ui.md)
+- [ADR-0013](adr/0013-history-module-interface-and-testing.md)
+- [ADR-0015](adr/0015-version-stamps-for-decoding-and-semantic-mapping.md)
 
 Acceptance criteria:
 
@@ -451,8 +451,8 @@ Owned files or likely files:
 
 Relevant docs and ADRs:
 
-- ADR-0010
-- ADR-0012
+- [ADR-0010](adr/0010-first-version-cli-command-set.md)
+- [ADR-0012](adr/0012-core-semantic-module-interface.md)
 
 Acceptance criteria:
 
@@ -483,8 +483,8 @@ Owned files or likely files:
 
 Relevant docs and ADRs:
 
-- ADR-0010
-- ADR-0013
+- [ADR-0010](adr/0010-first-version-cli-command-set.md)
+- [ADR-0013](adr/0013-history-module-interface-and-testing.md)
 
 Acceptance criteria:
 
@@ -518,8 +518,8 @@ Relevant docs and ADRs:
 
 - `docs/current-design-reference/overview.md`
 - `docs/current-design-reference/save-to-semantic.md`
-- ADR-0009
-- ADR-0012
+- [ADR-0009](adr/0009-one-web-ui-with-static-and-local-history-modes.md)
+- [ADR-0012](adr/0012-core-semantic-module-interface.md)
 
 Acceptance criteria:
 
@@ -550,9 +550,9 @@ Owned files or likely files:
 
 Relevant docs and ADRs:
 
-- ADR-0008
-- ADR-0009
-- ADR-0013
+- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-ui.md)
+- [ADR-0009](adr/0009-one-web-ui-with-static-and-local-history-modes.md)
+- [ADR-0013](adr/0013-history-module-interface-and-testing.md)
 
 Acceptance criteria:
 
