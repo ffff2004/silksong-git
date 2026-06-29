@@ -95,7 +95,7 @@ When both an ADR and a commit body are needed, the ADR records the durable decis
 
 ## Validation
 
-After changes, run formatting and linting serially, not in parallel:
+After changes and before commit, run formatting and linting serially, not in parallel:
 
 ```sh
 pnpm format
@@ -104,6 +104,6 @@ pnpm lint
 
 `pnpm format` runs ESLint fixes and Prettier. `pnpm lint` runs TypeScript, ESLint, JSON schema validation, stylelint, knip, Prettier checks, and custom repository checks.
 
-`pnpm format` mutates files, so running `pnpm lint` at the same time can produce stale Prettier failures from files that are being formatted.
+If `pnpm format` modified files, read it before editing again.
 
 If validation fails because of unrelated local files or pre-existing issues, report the exact failing paths and checks.
