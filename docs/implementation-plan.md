@@ -12,14 +12,14 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 ## Phase Overview
 
-| Phase                                 | Status      | Depends On | Goal                                                                                                 |
-| ------------------------------------- | ----------- | ---------- | ---------------------------------------------------------------------------------------------------- |
-| P1 Documentation / Repository Hygiene | complete    | none       | Documentation is coherent, old references are moved, and validation passes.                          |
-| P2 Workspace Skeleton                 | complete    | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                                 |
-| P3 Core Semantic Module               | complete    | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface. |
-| P4 History Module                     | pending     | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.           |
-| P5 CLI                                | pending     | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                          |
-| P6 Web Integration                    | pending     | P3, P4     | Web UI uses core and supports static and local history modes.                                        |
+| Phase                                 | Status   | Depends On | Goal                                                                                                 |
+| ------------------------------------- | -------- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| P1 Documentation / Repository Hygiene | complete | none       | Documentation is coherent, old references are moved, and validation passes.                          |
+| P2 Workspace Skeleton                 | complete | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                                 |
+| P3 Core Semantic Module               | complete | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface. |
+| P4 History Module                     | pending  | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.           |
+| P5 CLI                                | pending  | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                          |
+| P6 Web Integration                    | pending  | P3, P4     | Web UI uses core and supports static and local history modes.                                        |
 
 ## Task Rules
 
@@ -451,7 +451,7 @@ Verification:
 
 ## P5 CLI
 
-### P5-T1 Implement `save snapshot --save --json`
+### P5-T1 Implement Save CLI Commands
 
 Status: pending
 
@@ -471,11 +471,14 @@ Relevant docs and ADRs:
 
 Acceptance criteria:
 
+- `save decode --save <path>` prints raw Decoded Save JSON from `decodeEncodedSave`.
+- `save decode --save <path> --out <path>` writes raw Decoded Save JSON to the explicit output path.
+- `save decode --schema-check` reports whether `parseDecodedSave` recognizes the decoded shape without changing the raw decoded output.
 - `save snapshot --save <path> --json` prints a Semantic Snapshot.
 - Command syntax matches `docs/save-history-design.md`.
-- Decode failure exits 2.
-- Unknown schema exits 3 by default and supports raw debugging behavior as designed.
-- Output JSON is stable enough for tests.
+- Decode failure exits 2 for both `save decode` and `save snapshot`.
+- Unknown schema exits 3 for `save snapshot` by default and suggests `save decode` for raw debugging.
+- Semantic Snapshot JSON is stable enough for tests; raw Decoded Save JSON remains debug output, not a stable semantic Interface.
 
 Verification:
 

@@ -391,23 +391,61 @@ ADR-0010 decides that the first CLI is object-grouped and lifecycle-oriented. Th
 
 First-version commands:
 
-| Group     | Command                                                                     | User-facing object        | Responsibility                                                    |
-| --------- | --------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------- |
-| `repo`    | `silksong-git repo init --save <save.dat> --repo <history-repo>`            | Save History Repository   | Create a single-save Save History Repository and Project Config.  |
-| `save`    | `silksong-git save snapshot --save <save.dat> --json`                       | Encoded Save              | Decode and map one save without writing Git history.              |
-| `watch`   | `silksong-git watch start [--repo <history-repo>]`                          | Local History Process     | Start watching the Watched Save and updating history.             |
-| `history` | `silksong-git history list [--repo <history-repo>]`                         | Semantic Events           | Show Semantic Event history and optionally raw observations.      |
-| `history` | `silksong-git history diff <from> <to> [--repo <history-repo>]`             | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                   |
-| `history` | `silksong-git history search [--repo <history-repo>] --event <text>`        | Semantic Events           | Find events and corresponding commits.                            |
-| `history` | `silksong-git history restore <commit> --to <path> [--repo <history-repo>]` | Encoded Save restore      | Write a commit's `save.dat` to an explicit Restore Target.        |
-| `history` | `silksong-git history rebuild [--repo <history-repo>]`                      | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations. |
-| `ui`      | `silksong-git ui open [--repo <history-repo>]`                              | Local History Web Mode    | Start or connect to the local Web UI.                             |
+| Group     | Action     | User-facing object        | Responsibility                                                    |
+| --------- | ---------- | ------------------------- | ----------------------------------------------------------------- |
+| `repo`    | `init`     | Save History Repository   | Create a single-save Save History Repository and Project Config.  |
+| `save`    | `decode`   | Encoded Save              | Decode one save to raw Decoded Save JSON for debugging.           |
+| `save`    | `snapshot` | Encoded Save              | Decode and map one save without writing Git history.              |
+| `watch`   | `start`    | Local History Process     | Start watching the Watched Save and updating history.             |
+| `history` | `list`     | Semantic Events           | Show Semantic Event history and optionally raw observations.      |
+| `history` | `diff`     | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                   |
+| `history` | `search`   | Semantic Events           | Find events and corresponding commits.                            |
+| `history` | `restore`  | Encoded Save restore      | Write a commit's `save.dat` to an explicit Restore Target.        |
+| `history` | `rebuild`  | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations. |
+| `ui`      | `open`     | Local History Web Mode    | Start or connect to the local Web UI.                             |
+
+First-version command forms:
+
+```txt
+silksong-git repo init --save <save.dat> --repo <history-repo>
+
+silksong-git save decode --save <save.dat> [--out <decoded-save.json>] [--compact] [--schema-check]
+silksong-git save snapshot --save <save.dat> --json
+
+silksong-git watch start [--repo <history-repo>]
+
+silksong-git history list [--repo <history-repo>]
+silksong-git history diff <from> <to> [--repo <history-repo>]
+silksong-git history search [--repo <history-repo>] --event <text>
+silksong-git history restore <commit> --to <path> [--repo <history-repo>]
+silksong-git history rebuild [--repo <history-repo>]
+
+silksong-git ui open [--repo <history-repo>]
+```
 
 The first version requires explicit group/action commands. Do not add implicit default actions before the first CLI is implemented and exercised. Restore must remain explicit.
 
 The groups are user-facing operation objects, not internal packages. Avoid CLI groups such as `core`, `read-model`, or `process` even when those names match implementation Modules.
 
 Default command output is human-readable text. `--json` provides stable machine-readable output for scripts and tests.
+
+`save decode` is the exception: it always emits Decoded Save JSON because it is a debugging command for inspecting raw decoded shape. It uses the public `packages/core` `decodeEncodedSave` Interface directly and does not call `parseDecodedSave` unless `--schema-check` is requested. The raw Decoded Save shape is not a stable semantic Interface.
+
+`save decode` supports:
+
+```txt
+--save <save.dat>
+  required input Encoded Save path
+
+--out <decoded-save.json>
+  optional output path; stdout is used when omitted
+
+--compact
+  print compact JSON; default output is pretty JSON for debugging
+
+--schema-check
+  also call parseDecodedSave and report whether the decoded shape is recognized
+```
 
 `search` should support structured query flags such as:
 
@@ -436,16 +474,40 @@ error: repository path required
 
 Commands should make side effects visible in their names, arguments, and confirmation behavior:
 
-| Safety class           | Commands                                                          | Requirements                                                               |
-| ---------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Read-only              | `save snapshot`, `history list`, `history diff`, `history search` | No writes to Git, SQLite, or user save files.                              |
-| Repository creation    | `repo init`                                                       | Requires explicit `--save` and `--repo`.                                   |
-| Read-model mutation    | `history rebuild`                                                 | May rewrite the SQLite Semantic Read Model; does not rewrite Git history.  |
-| Process start          | `watch start`, `ui open`                                          | May start the Local History Process or local Web UI.                       |
-| Filesystem write       | `history restore <commit> --to <path>`                            | Requires an explicit Restore Target.                                       |
-| High-risk save rewrite | `history restore <commit> --in-place`                             | Requires explicit in-place intent and must create a backup before writing. |
+| Safety class           | Commands                                                                         | Requirements                                                               |
+| ---------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Read-only              | `save decode`, `save snapshot`, `history list`, `history diff`, `history search` | No writes to Git, SQLite, or user save files.                              |
+| Debug file write       | `save decode --out <decoded-save.json>`                                          | Writes only the explicit Decoded Save output path.                         |
+| Repository creation    | `repo init`                                                                      | Requires explicit `--save` and `--repo`.                                   |
+| Read-model mutation    | `history rebuild`                                                                | May rewrite the SQLite Semantic Read Model; does not rewrite Git history.  |
+| Process start          | `watch start`, `ui open`                                                         | May start the Local History Process or local Web UI.                       |
+| Filesystem write       | `history restore <commit> --to <path>`                                           | Requires an explicit Restore Target.                                       |
+| High-risk save rewrite | `history restore <commit> --in-place`                                            | Requires explicit in-place intent and must create a backup before writing. |
 
 ## CLI Error Behavior
+
+`save decode --save` behavior:
+
+```txt
+success:
+  exit 0
+  print Decoded Save JSON to stdout or write it to --out
+
+decode failure:
+  exit 2
+  stderr: cannot decode save
+  no JSON output
+
+--schema-check recognized:
+  exit 0
+  output raw Decoded Save JSON
+  stderr: recognized save schema
+
+--schema-check unrecognized:
+  exit 0
+  output raw Decoded Save JSON
+  stderr: warning: decoded save does not match a recognized schema
+```
 
 `save snapshot --save` behavior:
 
@@ -461,7 +523,7 @@ decode failure:
 
 unknown schema:
   exit 3 by default
-  --raw may print Decoded Save plus schema status for debugging
+  stderr suggests using save decode --save <save.dat> for raw debugging
 ```
 
 History-oriented commands should report rebuild-required or stale-read-model cases clearly instead of silently returning incomplete results.
@@ -563,6 +625,9 @@ history semantic index:
   -> event maps to expected commit
 
 CLI snapshot:
+  save decode --save fixture
+  -> Decoded Save JSON
+
   save snapshot --save fixture --json
   -> SemanticSnapshot JSON
 

@@ -109,7 +109,7 @@ A CLI command that reads the Save History Repository and Semantic Read Model dir
 _Avoid_: Watcher
 
 **Command Set**:
-The first-version object-grouped CLI surface for initializing a repository, watching a save, producing one-off snapshots, viewing history, diffing commits, searching events, restoring saves, rebuilding the Semantic Read Model, and launching the local Web UI.
+The first-version object-grouped CLI surface for initializing a repository, watching a save, decoding saves for debugging, producing one-off snapshots, viewing history, diffing commits, searching events, restoring saves, rebuilding the Semantic Read Model, and launching the local Web UI.
 _Avoid_: Internal module interface
 
 **Static Web Mode**:
