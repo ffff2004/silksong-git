@@ -126,6 +126,54 @@ test("diffSemanticSnapshots creates one item event for each crossed numeric stag
   );
 });
 
+test("diffSemanticSnapshots records journal partial progress and completion threshold changes", () => {
+  const before = createSnapshot([
+    journalItem("moss-charger", "Moss Charger", "accepted", 2),
+    journalItem("bell-beast", "Bell Beast", "accepted", 4),
+  ]);
+  const after = createSnapshot([
+    journalItem("moss-charger", "Moss Charger", "accepted", 3),
+    journalItem("bell-beast", "Bell Beast", "done", 5),
+  ]);
+
+  const events = diffSemanticSnapshots(before, after);
+
+  assert.deepEqual(
+    events.map((event) => ({
+      after: event.after,
+      before: event.before,
+      eventType: event.eventType,
+      itemId: event.item.id,
+    })),
+    [
+      {
+        after: {
+          status: "accepted",
+          value: 3,
+        },
+        before: {
+          status: "accepted",
+          value: 2,
+        },
+        eventType: "itemValueChanged",
+        itemId: "moss-charger",
+      },
+      {
+        after: {
+          status: "done",
+          value: 5,
+        },
+        before: {
+          status: "accepted",
+          value: 4,
+        },
+        eventType: "itemStatusChanged",
+        itemId: "bell-beast",
+      },
+    ],
+  );
+});
+
 function createSnapshot(
   items: SemanticSnapshot["items"][number] | readonly SemanticSnapshot["items"][number][],
 ): SemanticSnapshot {
@@ -203,6 +251,30 @@ function levelItem(
     ],
     status,
     type: "level",
+    value,
+  };
+}
+
+function journalItem(
+  id: string,
+  label: string,
+  status: SemanticSnapshot["items"][number]["status"],
+  value: number,
+): SemanticSnapshot["items"][number] {
+  return {
+    categoryId: "journal",
+    id,
+    label,
+    sectionId: "journal",
+    sourceReferences: [
+      {
+        field: "EnemyJournalKillData",
+        kind: "savedData",
+        name: label,
+      },
+    ],
+    status,
+    type: "journal",
     value,
   };
 }

@@ -199,7 +199,7 @@ export type SemanticEvent = SemanticItemEvent;
 
 export interface SemanticItemEvent {
   readonly kind: "item";
-  readonly eventType: "itemStatusChanged";
+  readonly eventType: "itemStatusChanged" | "itemValueChanged";
   readonly item: SemanticEventItem;
   readonly before: SemanticItemEventState;
   readonly after: SemanticItemEventState;
