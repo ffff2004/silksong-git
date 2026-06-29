@@ -310,15 +310,31 @@ First-version Project Config fields:
 ```ts
 decodeEncodedSave(bytes: ArrayBuffer | Uint8Array): unknown;
 
-parseDecodedSave(input: unknown): DecodedSave;
+parseDecodedSave(input: unknown): ParsedDecodedSave;
+
+interface ParsedDecodedSave {
+  decodedSave: DecodedSave;
+  version: DecodedSaveVersion;
+}
+
+interface DecodedSaveVersion {
+  saveSchemaVersion: string;
+  gameVersion?: string;
+  platform?: string;
+  platformBuildId?: string;
+}
 
 getBuiltinMappingData(): MappingData;
 
 createSemanticSnapshot(
-  decodedSave: DecodedSave,
+  parsedSave: ParsedDecodedSave,
   mappingData: MappingData,
   options?: SnapshotOptions,
 ): SemanticSnapshot;
+
+interface SnapshotOptions {
+  configHash?: string;
+}
 
 diffSemanticSnapshots(
   before: SemanticSnapshot,

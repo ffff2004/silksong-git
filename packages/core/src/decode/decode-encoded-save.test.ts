@@ -35,10 +35,11 @@ test("parseDecodedSave validates a decoded Silksong save fixture", async () => {
   const decodedSave = decodeEncodedSave(encodedSave);
   const parsedSave = parseDecodedSave(decodedSave);
 
-  assert.equal(parsedSave.playerData["completionPercentage"], 39);
-  assert.equal(parsedSave.playerData["playTime"], 87_137.12);
-  assert.equal(parsedSave.playerData["geo"], 731);
-  assert.equal(parsedSave.playerData["ShellShards"], 76);
+  assert.equal(parsedSave.version.saveSchemaVersion, "silksong-save-v1");
+  assert.equal(parsedSave.decodedSave.playerData["completionPercentage"], 39);
+  assert.equal(parsedSave.decodedSave.playerData["playTime"], 87_137.12);
+  assert.equal(parsedSave.decodedSave.playerData["geo"], 731);
+  assert.equal(parsedSave.decodedSave.playerData["ShellShards"], 76);
 });
 
 test("parseDecodedSave validates a decoded JSON-style save fixture", async () => {
@@ -50,11 +51,12 @@ test("parseDecodedSave validates a decoded JSON-style save fixture", async () =>
 
   const parsedSave = parseDecodedSave(decodedSave);
 
-  assert.equal(parsedSave.playerData["completionPercentage"], 39);
-  assert.equal(parsedSave.playerData["geo"], 731);
+  assert.equal(parsedSave.version.saveSchemaVersion, "silksong-save-v1");
+  assert.equal(parsedSave.decodedSave.playerData["completionPercentage"], 39);
+  assert.equal(parsedSave.decodedSave.playerData["geo"], 731);
 });
 
-test("encoded saves produce semantic summary metrics through core", async () => {
+test("decoded saves pass schema versions into semantic snapshots through core", async () => {
   const encodedSave = await readFile(
     path.join(fixtureDirectory, "minimal-valid-save.dat"),
   );
@@ -67,6 +69,8 @@ test("encoded saves produce semantic summary metrics through core", async () => 
   assert.equal(snapshot.summary.playTime, 87_137.12);
   assert.equal(snapshot.summary.rosaries, 731);
   assert.equal(snapshot.summary.shellShards, 76);
+  assert.equal(snapshot.version.saveSchemaVersion, "silksong-save-v1");
+  assert.equal(snapshot.version.semanticCoreVersion, "core-semantic-v1");
 });
 
 test("decodeEncodedSave reports invalid encoded bytes as a decode failure", () => {

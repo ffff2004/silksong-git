@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-import type { DecodedSave } from "../types.ts";
+import type { ParsedDecodedSave } from "../types.ts";
+
+const saveSchemaVersion = "silksong-save-v1";
 
 const stringSchema = z.string();
 const unknownSchema = z.unknown();
@@ -96,12 +98,17 @@ export class UnrecognizedSaveSchemaError extends Error {
   }
 }
 
-export function parseDecodedSave(decodedSave: unknown): DecodedSave {
+export function parseDecodedSave(decodedSave: unknown): ParsedDecodedSave {
   const result = silksongSaveSchema.safeParse(decodedSave);
 
   if (!result.success) {
     throw new UnrecognizedSaveSchemaError(result.error.issues);
   }
 
-  return result.data;
+  return {
+    decodedSave: result.data,
+    version: {
+      saveSchemaVersion,
+    },
+  };
 }

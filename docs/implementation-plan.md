@@ -260,6 +260,7 @@ Latest slice verification:
 
 Review follow-ups:
 
+- `parseDecodedSave` returns `ParsedDecodedSave`, including the recognized `version.saveSchemaVersion`, so P4 history code should not infer Decoded Save schema itself.
 - Semantic Snapshot Version Stamps include `saveSchemaVersion`, `gameVersion`, `platform`, `platformBuildId`, `mappingDataVersion`, `semanticCoreVersion`, and `configHash`.
 - Save Summary Metrics use semantic names in `packages/core`: raw `geo` maps to `rosaries`, and raw `ShellShards` maps to `shellShards`.
 

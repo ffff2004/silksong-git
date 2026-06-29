@@ -4,6 +4,7 @@ import test from "node:test";
 import type {
   DecodedSave,
   MappingData,
+  ParsedDecodedSave,
   SemanticSnapshot,
   SemanticSnapshotItemStatus,
   SourceReference,
@@ -29,7 +30,7 @@ test("createSemanticSnapshot marks a scene-scoped collected item as done", () =>
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping([
       sceneBoolItem("mask-shard-2", "Mask Shard #2", {
         flag: "Heart Piece",
@@ -67,7 +68,7 @@ test("createSemanticSnapshot marks an untriggered scene-scoped item as missing",
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping([
       sceneBoolItem("mask-shard-2", "Mask Shard #2", {
         flag: "Heart Piece",
@@ -98,7 +99,7 @@ test("createSemanticSnapshot maps direct playerData booleans to semantic item st
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping(
       [
         flagItem("bell-beast", "Bell Beast", "defeatedBellBeast"),
@@ -142,7 +143,7 @@ test("createSemanticSnapshot maps key flags to semantic item status", () => {
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping(
       [
         keyItem("city-key", "City Key", { flag: "hasCityKey" }),
@@ -200,7 +201,7 @@ test("createSemanticSnapshot maps numeric thresholds to semantic item status", (
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping(
       [
         levelItem("base-needle", "Base Needle", "nailUpgrades", 0),
@@ -284,7 +285,7 @@ test("createSemanticSnapshot maps savedData quantity and unlocked entries to sem
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping([
       collectableItem("mossberry", "Mossberry", "Mossberry"),
       collectableItem("memory-locket", "Memory Locket", "Memory Locket"),
@@ -362,7 +363,7 @@ test("createSemanticSnapshot maps quest states to semantic item status", () => {
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping(
       [
         questItem("citadel-seeker", "Citadel Seeker", "Citadel   Seeker"),
@@ -422,7 +423,7 @@ test("createSemanticSnapshot maps journal progress to semantic item status", () 
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping(
       [
         journalItem("moss-charger", "Moss Charger", "Moss Charger", 5),
@@ -506,7 +507,7 @@ test("createSemanticSnapshot maps relic, materium, and device states to semantic
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping(
       [
         relicItem(
@@ -590,7 +591,7 @@ test("createSemanticSnapshot maps sceneVisited entries to semantic item status",
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping(
       [
         sceneVisitedItem("crawl-02", "Crawl 02", "Crawl_02"),
@@ -625,7 +626,7 @@ test("createSemanticSnapshot maps quill entries to semantic item status", () => 
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping(
       [
         quillItem("QuillState_2", "Quill Entry 2", "QuillState"),
@@ -672,7 +673,7 @@ test("createSemanticSnapshot maps anyOf entries to semantic item status", () => 
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping(
       [
         {
@@ -752,7 +753,7 @@ test("createSemanticSnapshot supports Shell Fossil Mimic scene numeric entries",
   };
 
   const snapshot = createSemanticSnapshot(
-    decodedSave,
+    createParsedSave(decodedSave),
     createMapping(
       [
         sceneBoolItem("visible-mimic", "Visible Mimic", {
@@ -804,7 +805,10 @@ test("createSemanticSnapshot maps raw summary fields to semantic summary metrics
     },
   };
 
-  const snapshot = createSemanticSnapshot(decodedSave, createEmptyMapping());
+  const snapshot = createSemanticSnapshot(
+    createParsedSave(decodedSave),
+    createEmptyMapping(),
+  );
 
   assert.equal(snapshot.summary.completionPercentage, 12);
   assert.equal(snapshot.summary.playTime, 56);
@@ -819,14 +823,18 @@ test("createSemanticSnapshot includes semantic version stamps", () => {
     playerData: {},
   };
 
-  const snapshot = createSemanticSnapshot(decodedSave, createEmptyMapping(), {
-    configHash: "config-hash",
-    gameVersion: "1.0.30000",
-    platform: "steam",
-    platformBuildId: "22479045",
-    saveSchemaVersion: "silksong-save-v1",
-    semanticCoreVersion: "test-core",
-  });
+  const snapshot = createSemanticSnapshot(
+    createParsedSave(decodedSave, {
+      gameVersion: "1.0.30000",
+      platform: "steam",
+      platformBuildId: "22479045",
+      saveSchemaVersion: "silksong-save-v1",
+    }),
+    createEmptyMapping(),
+    {
+      configHash: "config-hash",
+    },
+  );
 
   assert.deepEqual(snapshot.version, {
     configHash: "config-hash",
@@ -835,7 +843,7 @@ test("createSemanticSnapshot includes semantic version stamps", () => {
     platform: "steam",
     platformBuildId: "22479045",
     saveSchemaVersion: "silksong-save-v1",
-    semanticCoreVersion: "test-core",
+    semanticCoreVersion: "core-semantic-v1",
   });
 });
 
@@ -855,10 +863,10 @@ test("getBuiltinMappingData exposes the current Web mapping tables", () => {
   ]);
 
   const snapshot = createSemanticSnapshot(
-    {
+    createParsedSave({
       playerData: {},
       sceneData: {},
-    },
+    }),
     mappingData,
   );
 
@@ -902,6 +910,19 @@ function createEmptyMapping(): MappingData {
   return {
     version: "fixture-v1",
     sections: [],
+  };
+}
+
+function createParsedSave(
+  decodedSave: DecodedSave,
+  version: Partial<ParsedDecodedSave["version"]> = {},
+): ParsedDecodedSave {
+  return {
+    decodedSave,
+    version: {
+      saveSchemaVersion: "fixture-save-schema-v1",
+      ...version,
+    },
   };
 }
 

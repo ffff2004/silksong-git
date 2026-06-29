@@ -1,6 +1,6 @@
 import type {
-  DecodedSave,
   MappingData,
+  ParsedDecodedSave,
   SemanticSnapshot,
   SemanticSnapshotItem,
   SnapshotOptions,
@@ -9,12 +9,15 @@ import { createSnapshotCreationContext } from "./snapshot-creation-context.ts";
 import { createSnapshotItem } from "./snapshot-items.ts";
 import { createSummaryMetrics } from "./summary-metrics.ts";
 
+const semanticCoreVersion = "core-semantic-v1";
+
 export function createSemanticSnapshot(
-  decodedSave: DecodedSave,
+  parsedSave: ParsedDecodedSave,
   mappingData: MappingData,
   options: SnapshotOptions = {},
 ): SemanticSnapshot {
   const items: SemanticSnapshotItem[] = [];
+  const { decodedSave } = parsedSave;
   const context = createSnapshotCreationContext(decodedSave);
 
   for (const section of mappingData.sections) {
@@ -29,12 +32,12 @@ export function createSemanticSnapshot(
     items,
     summary: createSummaryMetrics(decodedSave),
     version: {
-      saveSchemaVersion: options.saveSchemaVersion,
-      gameVersion: options.gameVersion,
-      platform: options.platform,
-      platformBuildId: options.platformBuildId,
+      saveSchemaVersion: parsedSave.version.saveSchemaVersion,
+      gameVersion: parsedSave.version.gameVersion,
+      platform: parsedSave.version.platform,
+      platformBuildId: parsedSave.version.platformBuildId,
       mappingDataVersion: mappingData.version,
-      semanticCoreVersion: options.semanticCoreVersion,
+      semanticCoreVersion,
       configHash: options.configHash,
     },
   };

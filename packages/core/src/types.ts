@@ -4,6 +4,18 @@ export interface DecodedSave {
   readonly [key: string]: unknown;
 }
 
+export interface ParsedDecodedSave {
+  readonly decodedSave: DecodedSave;
+  readonly version: DecodedSaveVersion;
+}
+
+export interface DecodedSaveVersion {
+  readonly saveSchemaVersion: string;
+  readonly gameVersion?: string;
+  readonly platform?: string;
+  readonly platformBuildId?: string;
+}
+
 export interface MappingData {
   readonly version?: string;
   readonly sections: readonly MappingSection[];
@@ -149,11 +161,6 @@ interface SceneVisitedMappingItemCheck {
 }
 
 export interface SnapshotOptions {
-  readonly saveSchemaVersion?: string;
-  readonly gameVersion?: string;
-  readonly platform?: string;
-  readonly platformBuildId?: string;
-  readonly semanticCoreVersion?: string;
   readonly configHash?: string;
 }
 
@@ -164,12 +171,12 @@ export interface SemanticSnapshot {
 }
 
 export interface SemanticSnapshotVersion {
-  readonly saveSchemaVersion?: string;
+  readonly saveSchemaVersion: string;
   readonly gameVersion?: string;
   readonly platform?: string;
   readonly platformBuildId?: string;
   readonly mappingDataVersion?: string;
-  readonly semanticCoreVersion?: string;
+  readonly semanticCoreVersion: string;
   readonly configHash?: string;
 }
 
