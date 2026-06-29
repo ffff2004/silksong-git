@@ -163,7 +163,7 @@ export interface SemanticSnapshot {
   readonly version: SemanticSnapshotVersion;
 }
 
-interface SemanticSnapshotVersion {
+export interface SemanticSnapshotVersion {
   readonly saveSchemaVersion?: string;
   readonly gameVersion?: string;
   readonly platform?: string;
@@ -189,6 +189,43 @@ export type SemanticSnapshotItemStatus =
   | "done"
   | "missing"
   | "unknown";
+
+export interface SemanticEventVersion {
+  readonly before: SemanticSnapshotVersion;
+  readonly after: SemanticSnapshotVersion;
+}
+
+export type SemanticEvent = SemanticItemEvent;
+
+export interface SemanticItemEvent {
+  readonly kind: "item";
+  readonly eventType: "itemStatusChanged";
+  readonly item: SemanticEventItem;
+  readonly before: SemanticItemEventState;
+  readonly after: SemanticItemEventState;
+  readonly direction: SemanticEventDirection;
+  readonly isRegression: boolean;
+  readonly sourceReferences: readonly SourceReference[];
+  readonly version: SemanticEventVersion;
+}
+
+export interface SemanticEventItem {
+  readonly id: string;
+  readonly label: string;
+  readonly sectionId: string;
+  readonly categoryId: string;
+  readonly type: string;
+}
+
+export interface SemanticItemEventState {
+  readonly status: SemanticSnapshotItemStatus;
+  readonly value: unknown;
+}
+
+export type SemanticEventDirection =
+  | "neutral"
+  | "progression"
+  | "regression";
 
 export type SourceReference =
   | SceneFlagSourceReference
