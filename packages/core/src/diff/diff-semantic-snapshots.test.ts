@@ -228,6 +228,42 @@ test("diffSemanticSnapshots records save summary metric changes as semantic even
   ]);
 });
 
+test("diffSemanticSnapshots marks backward item and numeric transitions as regression events", () => {
+  const before = createSnapshot([
+    sceneItem("done", true),
+    journalItem("moss-charger", "Moss Charger", "accepted", 4),
+  ]);
+  const after = createSnapshot([
+    sceneItem("missing", false),
+    journalItem("moss-charger", "Moss Charger", "accepted", 2),
+  ]);
+
+  const events = diffSemanticSnapshots(before, after);
+
+  assert.deepEqual(
+    events.map((event) => ({
+      direction: event.direction,
+      eventType: event.eventType,
+      isRegression: event.isRegression,
+      kind: event.kind,
+    })),
+    [
+      {
+        direction: "regression",
+        eventType: "itemStatusChanged",
+        isRegression: true,
+        kind: "item",
+      },
+      {
+        direction: "regression",
+        eventType: "itemValueChanged",
+        isRegression: true,
+        kind: "item",
+      },
+    ],
+  );
+});
+
 function createSnapshot(
   items: SemanticSnapshot["items"][number] | readonly SemanticSnapshot["items"][number][],
   summary: SemanticSnapshot["summary"] = {},
