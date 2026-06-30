@@ -94,6 +94,7 @@ export interface DiffCommitsInput {
   readonly repoPath: string;
   readonly fromRef: string;
   readonly toRef: string;
+  readonly includeFiltered?: boolean;
 }
 
 export interface DiffCommitsResult {

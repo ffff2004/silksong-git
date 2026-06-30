@@ -541,7 +541,8 @@ Notes:
 - Implemented the SQLite Semantic Read Model behind the `packages/history` public Interface.
 - `rebuildSemanticReadModel` rebuilds observations, recognized Semantic Snapshots, and adjacent Semantic Events from Git raw observation commits.
 - `queryHistory`, `diffCommits`, and `searchSemanticEvents` return events with commit and Raw Save Observation metadata without exposing SQLite tables.
-- Display Semantic Event Filters are applied at query/search time; filtered events remain stored in the read model and are returned with `includeFiltered`.
+- Display Semantic Event Filters are applied at query/diff/search time; filtered events remain stored in the read model and are returned with `includeFiltered`.
+- Follow-up alignment: `diffCommits` now accepts `includeFiltered` and uses the same visibility/filter behavior as `queryHistory` and `searchSemanticEvents`.
 
 ## P5 CLI
 

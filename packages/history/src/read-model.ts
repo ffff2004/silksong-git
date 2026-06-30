@@ -17,6 +17,7 @@ import { sha256Hex } from "./hash.ts";
 import { getRepositoryLayout } from "./layout.ts";
 import type { ObservationMetadata } from "./observation.ts";
 import type {
+  DiffCommitsInput,
   DiffCommitsResult,
   HistoricalSemanticEvent,
   HistoryResult,
@@ -150,12 +151,10 @@ export async function queryReadModelHistory(
   const filters = config.displaySemanticEventFilters;
   using db = openReadModel(repoPath);
   const page = selectEventRows(db, options);
-  const events = page.rows
-    .map((row) => toHistoricalSemanticEvent(row, filters))
-    .filter(
-      (event) =>
-        options.includeFiltered === true || event.visibility.defaultVisible,
-    );
+  const events = applyDisplayFilters(
+    page.rows.map((row) => toHistoricalSemanticEvent(row, filters)),
+    options.includeFiltered,
+  );
   const rawObservations =
     options.includeRawObservations === true
       ? selectRawObservations(db)
@@ -169,29 +168,29 @@ export async function queryReadModelHistory(
 }
 
 export async function diffReadModelCommits(
-  repoPath: string,
-  fromRef: string,
-  toRef: string,
+  input: DiffCommitsInput,
 ): Promise<DiffCommitsResult> {
-  const [from, to] = await Promise.all([
-    readHistoryCommit(repoPath, fromRef),
-    readHistoryCommit(repoPath, toRef),
+  const [config, from, to] = await Promise.all([
+    readProjectConfig(input.repoPath),
+    readHistoryCommit(input.repoPath, input.fromRef),
+    readHistoryCommit(input.repoPath, input.toRef),
   ]);
-  using db = openReadModel(repoPath);
+  const filters = config.displaySemanticEventFilters;
+  using db = openReadModel(input.repoPath);
   const before = selectSnapshot(db, from.ref);
   const after = selectSnapshot(db, to.ref);
   const observation = selectObservation(db, to.ref);
-  const events = diffSemanticSnapshots(before, after).map((event, index) => ({
-    id: `${to.ref}:${index}`,
-    commit: to,
-    previousCommit: from,
-    observation,
-    event,
-    visibility: {
-      defaultVisible: true,
-      filterReasons: [],
-    },
-  }));
+  const events = applyDisplayFilters(
+    diffSemanticSnapshots(before, after).map((event, index) => ({
+      id: `${to.ref}:${index}`,
+      commit: to,
+      previousCommit: from,
+      observation,
+      event,
+      visibility: getEventVisibility(event, filters),
+    })),
+    input.includeFiltered,
+  );
 
   return {
     from,
@@ -211,13 +210,22 @@ export async function searchReadModelEvents(
   using db = openReadModel(repoPath);
 
   return {
-    events: selectSearchEventRows(db, input.query)
-      .map((row) => toHistoricalSemanticEvent(row, filters))
-      .filter(
-        (event) =>
-          input.includeFiltered === true || event.visibility.defaultVisible,
+    events: applyDisplayFilters(
+      selectSearchEventRows(db, input.query).map((row) =>
+        toHistoricalSemanticEvent(row, filters),
       ),
+      input.includeFiltered,
+    ),
   };
+}
+
+function applyDisplayFilters(
+  events: readonly HistoricalSemanticEvent[],
+  includeFiltered: boolean | undefined,
+): readonly HistoricalSemanticEvent[] {
+  return events.filter(
+    (event) => includeFiltered === true || event.visibility.defaultVisible,
+  );
 }
 
 async function readRawSaveObservation(

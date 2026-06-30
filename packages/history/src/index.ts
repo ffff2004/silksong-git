@@ -167,7 +167,7 @@ export async function queryHistory(
 export async function diffCommits(
   input: DiffCommitsInput,
 ): Promise<DiffCommitsResult> {
-  return await diffReadModelCommits(input.repoPath, input.fromRef, input.toRef);
+  return await diffReadModelCommits(input);
 }
 
 export async function searchSemanticEvents(

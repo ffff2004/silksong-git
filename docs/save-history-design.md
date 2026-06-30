@@ -522,6 +522,7 @@ interface DiffCommitsInput {
   repoPath: string;
   fromRef: string;
   toRef: string;
+  includeFiltered?: boolean;
 }
 
 interface DiffCommitsResult {
@@ -579,6 +580,8 @@ interface RestoreEncodedSaveResult {
 Git, SQLite, file watching, config loading, and local HTTP are implementation details or internal Adapters behind this Interface.
 
 `queryHistory`, `diffCommits`, and `searchSemanticEvents` should return Semantic Events with their commit and Raw Save Observation metadata. CLI and Web callers should not need separate Git or SQLite lookups to explain where an event came from.
+
+Display Semantic Event Filters apply consistently to `queryHistory`, `diffCommits`, and `searchSemanticEvents`. Default calls return default-visible events; `includeFiltered: true` returns hidden events as well, with `visibility.filterReasons` explaining why they are hidden by default.
 
 The SQLite schema is not public. CLI and Web callers must use `queryHistory`, `diffCommits`, and `searchSemanticEvents`; they must not query tables directly. Git command details are not public either; restore and history lookup go through `packages/history`.
 

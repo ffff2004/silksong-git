@@ -503,6 +503,61 @@ test("diffCommits returns Semantic Snapshots and Historical Semantic Events", as
   assert.equal(event.event.kind, "item");
 });
 
+test("diffCommits applies Display Semantic Event Filters by default", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath,
+  });
+  await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
+  const visibleBaseline = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedRosariesEncodedSavePath, watchedSavePath);
+  const filteredChange = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:02:00.000Z"),
+  });
+
+  assert.equal(visibleBaseline.status, "committed");
+  assert.equal(filteredChange.status, "committed");
+
+  await rebuildSemanticReadModel({ repoPath });
+  const defaultDiff = await diffCommits({
+    repoPath,
+    fromRef: visibleBaseline.observation.commit.ref,
+    toRef: filteredChange.observation.commit.ref,
+  });
+  const completeDiff = await diffCommits({
+    repoPath,
+    fromRef: visibleBaseline.observation.commit.ref,
+    toRef: filteredChange.observation.commit.ref,
+    includeFiltered: true,
+  });
+
+  assert.equal(defaultDiff.events.length, 0);
+  assert.equal(completeDiff.events.length, 1);
+  const [hiddenEvent] = completeDiff.events;
+
+  assert.ok(hiddenEvent !== undefined);
+  assert.equal(hiddenEvent.event.kind, "summaryMetric");
+  assert.equal(hiddenEvent.visibility.defaultVisible, false);
+  assert.deepEqual(hiddenEvent.visibility.filterReasons, [
+    "summaryMetric:rosaries",
+  ]);
+});
+
 test("searchSemanticEvents finds events by structured fields", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
