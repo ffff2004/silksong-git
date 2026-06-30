@@ -15,6 +15,7 @@ import {
   diffReadModelCommits,
   queryReadModelHistory,
   rebuildReadModel,
+  searchReadModelEvents,
 } from "./read-model.ts";
 import type {
   DiffCommitsInput,
@@ -29,6 +30,8 @@ import type {
   RebuildSemanticReadModelResult,
   RestoreEncodedSaveInput,
   RestoreEncodedSaveResult,
+  SearchSemanticEventsInput,
+  SearchSemanticEventsResult,
 } from "./types.ts";
 
 export type {
@@ -165,6 +168,12 @@ export async function diffCommits(
   input: DiffCommitsInput,
 ): Promise<DiffCommitsResult> {
   return await diffReadModelCommits(input.repoPath, input.fromRef, input.toRef);
+}
+
+export async function searchSemanticEvents(
+  input: SearchSemanticEventsInput,
+): Promise<SearchSemanticEventsResult> {
+  return await Promise.resolve(searchReadModelEvents(input.repoPath, input));
 }
 
 async function readLastObservation(

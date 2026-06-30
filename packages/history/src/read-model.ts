@@ -21,6 +21,8 @@ import type {
   HistoryResult,
   RawSaveObservation,
   RebuildSemanticReadModelResult,
+  SearchSemanticEventsInput,
+  SearchSemanticEventsResult,
 } from "./types.ts";
 
 const readModelSchemaVersion = "1";
@@ -183,6 +185,19 @@ export async function diffReadModelCommits(
     before,
     after,
     events,
+  };
+}
+
+export function searchReadModelEvents(
+  repoPath: string,
+  input: SearchSemanticEventsInput,
+): SearchSemanticEventsResult {
+  using db = openReadModel(repoPath);
+
+  return {
+    events: selectSearchEventRows(db, input.query).map(
+      toHistoricalSemanticEvent,
+    ),
   };
 }
 
@@ -506,6 +521,65 @@ function selectEventRows(
     rows: pageRows,
     ...(lastRow !== undefined && { nextCursor: createCursor(lastRow) }),
   };
+}
+
+function selectSearchEventRows(
+  db: DatabaseSync,
+  query: SearchSemanticEventsInput["query"],
+): readonly EventRow[] {
+  const conditions = ["? = ?"];
+  const parameters: Array<number | string> = [1, 1];
+
+  if (query.itemId !== undefined) {
+    conditions.push("events.item_id = ?");
+    parameters.push(query.itemId);
+  }
+
+  if (query.label !== undefined) {
+    conditions.push("events.item_label = ?");
+    parameters.push(query.label);
+  }
+
+  if (query.type !== undefined) {
+    conditions.push("events.item_type = ?");
+    parameters.push(query.type);
+  }
+
+  if (query.statusTo !== undefined) {
+    conditions.push("events.status_to = ?");
+    parameters.push(query.statusTo);
+  }
+
+  if (query.eventType !== undefined) {
+    conditions.push("events.event_type = ?");
+    parameters.push(query.eventType);
+  }
+
+  if (query.direction !== undefined) {
+    conditions.push("events.direction = ?");
+    parameters.push(query.direction);
+  }
+
+  return db
+    .prepare(
+      `
+      select
+        events.event_id,
+        events.event_json,
+        events.after_observation_sequence,
+        events.event_index,
+        after_observations.observation_json as observation_json,
+        before_observations.observation_json as previous_observation_json
+      from events
+      join observations as after_observations
+        on after_observations.sequence = events.after_observation_sequence
+      left join observations as before_observations
+        on before_observations.sequence = events.before_observation_sequence
+      where ${conditions.join(" and ")}
+      order by events.after_observation_sequence asc, events.event_index asc
+    `,
+    )
+    .all(...parameters) as unknown as EventRow[];
 }
 
 function parseCursor(cursor: string | undefined): {

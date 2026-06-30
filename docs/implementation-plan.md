@@ -514,7 +514,7 @@ TDD Vertical Slices:
   - Assert: result includes the resolved `from` and `to` commits, `before` and `after` Semantic Snapshots, and the Semantic Events between those two commits with commit and observation metadata.
   - Fixture: generated committed encoded save pair whose decoded saves differ by one stable semantic item.
   - Other information: this verifies semantic diff behavior through history, not direct calls to `packages/core` from tests.
-- [ ] Search Semantic Events by structured fields
+- [x] Search Semantic Events by structured fields
   - Public call: rebuild a repository with multiple Semantic Events, then `searchSemanticEvents({ repoPath, query: { itemId } })` and at least one additional structured query such as `statusTo`, `eventType`, or `direction`.
   - Assert: search returns only matching `HistoricalSemanticEvent` rows and preserves commit, previous commit, observation, event, and visibility metadata.
   - Fixture: generated committed encoded save sequence with at least two distinct event types or items.

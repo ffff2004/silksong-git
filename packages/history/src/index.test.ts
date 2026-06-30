@@ -19,6 +19,7 @@ import {
   queryHistory,
   rebuildSemanticReadModel,
   restoreEncodedSave,
+  searchSemanticEvents,
 } from "./index.ts";
 
 const fixtureDirectory = path.join(
@@ -494,4 +495,60 @@ test("diffCommits returns Semantic Snapshots and Historical Semantic Events", as
   assert.equal(event.commit.ref, afterResult.observation.commit.ref);
   assert.equal(event.previousCommit?.ref, beforeResult.observation.commit.ref);
   assert.equal(event.event.kind, "item");
+});
+
+test("searchSemanticEvents finds events by structured fields", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath,
+  });
+  await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
+  await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedRosariesEncodedSavePath, watchedSavePath);
+  await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:02:00.000Z"),
+  });
+
+  await rebuildSemanticReadModel({ repoPath });
+
+  const itemSearch = await searchSemanticEvents({
+    repoPath,
+    query: {
+      itemId: "mask-shard-2",
+      statusTo: "done",
+    },
+  });
+  const summarySearch = await searchSemanticEvents({
+    repoPath,
+    query: {
+      eventType: "summaryMetricChanged",
+    },
+  });
+
+  assert.equal(itemSearch.events.length, 1);
+  const [itemEvent] = itemSearch.events;
+
+  assert.ok(itemEvent !== undefined);
+  assert.equal(itemEvent.event.kind, "item");
+  assert.equal(summarySearch.events.length, 1);
+  const [summaryEvent] = summarySearch.events;
+
+  assert.ok(summaryEvent !== undefined);
+  assert.equal(summaryEvent.event.kind, "summaryMetric");
+  assert.equal(summaryEvent.event.direction, "progression");
 });
