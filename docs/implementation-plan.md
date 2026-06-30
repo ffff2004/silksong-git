@@ -413,7 +413,7 @@ Acceptance criteria:
 
 TDD Vertical Slices:
 
-- [ ] Init creates a Save History Repository
+- [x] Init creates a Save History Repository
   - Public call: `initSaveHistory({ repoPath, watchedSavePath })`
   - Assert: repo path exists, `.silksong-git/config.json` exists, and the result includes `repoPath` and `configPath`.
   - Fixture: temporary directory plus the committed minimal encoded save fixture path as `watchedSavePath`.

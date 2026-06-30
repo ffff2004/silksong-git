@@ -1,6 +1,31 @@
 import type { DecodedSaveVersion } from "@silksong-git/core";
+import { execFile } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 export type ProjectConfigOverrides = Record<string, unknown>;
+
+interface ProjectConfig {
+  readonly watchedSavePath: string;
+  readonly capturePolicy: {
+    readonly debounceWriteMs: number;
+    readonly minCommitIntervalMs: number;
+  };
+  readonly displaySemanticEventFilters: {
+    readonly hideEventTypes: readonly string[];
+    readonly hideItemTypes: readonly string[];
+    readonly hideSummaryMetrics: readonly string[];
+    readonly minJournalDelta?: number;
+    readonly hideCurrencyOnlyEvents: boolean;
+  };
+  readonly restore: {
+    readonly backupDirectory?: string;
+  };
+  readonly localUi: {
+    readonly host: "127.0.0.1";
+    readonly port?: number;
+  };
+}
 
 export interface InitSaveHistoryInput {
   readonly repoPath: string;
@@ -101,10 +126,43 @@ export interface RestoreEncodedSaveResult {
 }
 
 export async function initSaveHistory(
-  _input: InitSaveHistoryInput,
+  input: InitSaveHistoryInput,
 ): Promise<InitSaveHistoryResult> {
-  await Promise.resolve();
-  throw new Error("initSaveHistory is not implemented yet.");
+  await mkdir(input.repoPath, { recursive: true });
+  await runGit(input.repoPath, ["init"]);
+
+  const silksongGitDirectory = path.join(input.repoPath, ".silksong-git");
+  const configPath = path.join(silksongGitDirectory, "config.json");
+
+  await mkdir(silksongGitDirectory, { recursive: true });
+  await writeFile(
+    path.join(input.repoPath, ".gitignore"),
+    ".silksong-git/read-model.sqlite\n",
+  );
+  await writeFile(
+    configPath,
+    `${JSON.stringify(createProjectConfig(input), undefined, 2)}\n`,
+  );
+
+  return {
+    repoPath: input.repoPath,
+    configPath,
+  };
+}
+
+async function runGit(cwd: string, args: readonly string[]) {
+  await new Promise<void>((resolve, reject) => {
+    execFile("git", [...args], { cwd }, (error) => {
+      if (error) {
+        reject(
+          error instanceof Error ? error : new Error("Git command failed."),
+        );
+        return;
+      }
+
+      resolve();
+    });
+  });
 }
 
 export async function observeSave(
@@ -119,4 +177,25 @@ export async function restoreEncodedSave(
 ): Promise<RestoreEncodedSaveResult> {
   await Promise.resolve();
   throw new Error("restoreEncodedSave is not implemented yet.");
+}
+
+function createProjectConfig(input: InitSaveHistoryInput): ProjectConfig {
+  return {
+    watchedSavePath: input.watchedSavePath,
+    capturePolicy: {
+      debounceWriteMs: 500,
+      minCommitIntervalMs: 0,
+    },
+    displaySemanticEventFilters: {
+      hideEventTypes: [],
+      hideItemTypes: [],
+      hideSummaryMetrics: ["rosaries", "shellShards", "playTime"],
+      hideCurrencyOnlyEvents: true,
+    },
+    restore: {},
+    localUi: {
+      host: "127.0.0.1",
+    },
+    ...input.config,
+  };
 }
