@@ -492,6 +492,44 @@ Acceptance criteria:
 - `queryHistory`, `diffCommits`, and `searchSemanticEvents` work through the history Interface.
 - SQLite schema remains private to `packages/history`.
 
+TDD Vertical Slices:
+
+- [ ] Rebuild and query recognized Semantic Events
+  - Public call: `initSaveHistory({ repoPath, watchedSavePath })`, `observeSave({ repoPath })` for two recognized Encoded Saves, then `rebuildSemanticReadModel({ repoPath })` and `queryHistory({ repoPath })`.
+  - Assert: rebuild reports two recognized observations, two snapshots, and one or more Semantic Events; query returns events with `commit`, `previousCommit`, `observation`, `event`, and `visibility` metadata.
+  - Fixture: generated committed encoded save pair whose decoded saves differ by one stable semantic item.
+  - Other information: this is the P4-T2 tracer bullet; tests must not inspect SQLite tables directly.
+- [ ] Rebuild preserves unrecognized observations without Semantic Snapshots
+  - Public call: observe one recognized Encoded Save and one unrecognized-schema Encoded Save, then `rebuildSemanticReadModel({ repoPath })` and `queryHistory({ repoPath, includeRawObservations: true })`.
+  - Assert: rebuild counts recognized and unrecognized observations separately; the unrecognized observation is returned as raw observation metadata but produces no Semantic Snapshot or Semantic Event.
+  - Fixture: `packages/core/src/decode/fixtures/unrecognized-schema-save.dat` plus a recognized encoded save fixture.
+  - Other information: covers ADR-0016 behavior during rebuild, not only during live observation.
+- [ ] Query history supports raw observations and pagination
+  - Public call: create at least three recognized observations, rebuild, then call `queryHistory({ repoPath, includeRawObservations: true, limit })` followed by the returned cursor.
+  - Assert: event pages are stable and non-overlapping; `rawObservations` is present only when requested; every returned event still includes its Raw Save Observation metadata.
+  - Fixture: generated committed encoded save sequence with multiple semantic transitions.
+  - Other information: cursor format remains opaque to callers.
+- [ ] Diff commits returns Semantic Snapshots and Historical Semantic Events
+  - Public call: observe two recognized saves, rebuild, then `diffCommits({ repoPath, fromRef, toRef })`.
+  - Assert: result includes the resolved `from` and `to` commits, `before` and `after` Semantic Snapshots, and the Semantic Events between those two commits with commit and observation metadata.
+  - Fixture: generated committed encoded save pair whose decoded saves differ by one stable semantic item.
+  - Other information: this verifies semantic diff behavior through history, not direct calls to `packages/core` from tests.
+- [ ] Search Semantic Events by structured fields
+  - Public call: rebuild a repository with multiple Semantic Events, then `searchSemanticEvents({ repoPath, query: { itemId } })` and at least one additional structured query such as `statusTo`, `eventType`, or `direction`.
+  - Assert: search returns only matching `HistoricalSemanticEvent` rows and preserves commit, previous commit, observation, event, and visibility metadata.
+  - Fixture: generated committed encoded save sequence with at least two distinct event types or items.
+  - Other information: structured fields are the stable programmatic Interface.
+- [ ] Search Semantic Events by free text
+  - Public call: rebuild a repository with multiple Semantic Events, then `searchSemanticEvents({ repoPath, query: { text } })`.
+  - Assert: free-text search finds matching event labels or related searchable event text and excludes unrelated events.
+  - Fixture: generated committed encoded save sequence with distinguishable labels.
+  - Other information: this supports the CLI `history search --event <text>` convenience while keeping structured search as the preferred Interface.
+- [ ] Query filtering annotates default visibility without deleting events
+  - Public call: rebuild observations that produce both default-visible and default-hidden Semantic Events, then call `queryHistory({ repoPath })` and `queryHistory({ repoPath, includeFiltered: true })`.
+  - Assert: default queries hide filtered events or mark them according to the public query contract; `includeFiltered` returns the complete stored event set with `visibility.filterReasons`; rebuild counts still include the complete event set.
+  - Fixture: generated committed encoded save sequence that produces a noisy Save Summary Metric or currency-only event.
+  - Other information: Display Semantic Event Filters are query-time behavior and must not affect Git commits or remove events from the SQLite Semantic Read Model.
+
 Verification:
 
 - history test command: pending
