@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -137,5 +137,25 @@ test("observeSave skips an unchanged Encoded Save", async () => {
   assert.equal(
     secondResult.encodedSha256,
     firstResult.observation.encodedSha256,
+  );
+});
+
+test("observeSave reports decode failures as Watcher Errors without committing", async () => {
+  const tempDirectory = await createTempDirectory();
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const invalidSavePath = path.join(tempDirectory, "invalid-save.dat");
+
+  await writeFile(invalidSavePath, new Uint8Array([1, 2, 3, 4]));
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath: invalidSavePath,
+  });
+
+  const result = await observeSave({ repoPath });
+
+  assert.equal(result.status, "watcherError");
+  assert.equal(result.error.reason, "decodeFailure");
+  await assert.rejects(
+    async () => await stat(path.join(repoPath, "observation.json")),
   );
 });

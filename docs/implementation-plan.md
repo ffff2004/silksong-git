@@ -433,7 +433,7 @@ TDD Vertical Slices:
   - Assert: the second result is `status: "skipped"` with `reason: "unchanged"` and returns the encoded hash.
   - Fixture: `packages/core/src/decode/fixtures/minimal-valid-save.dat`.
   - Other information: verifies raw history does not grow for identical bytes.
-- [ ] Decode failure is a Watcher Error and commits nothing
+- [x] Decode failure is a Watcher Error and commits nothing
   - Public call: `observeSave({ repoPath })` with invalid bytes at the Watched Save path.
   - Assert: result is `status: "watcherError"` with a decode-failure reason, and no new Raw Save Observation is committed.
   - Fixture: temporary invalid `.dat` file.

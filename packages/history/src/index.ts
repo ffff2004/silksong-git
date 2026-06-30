@@ -1,5 +1,9 @@
 import type { DecodedSaveVersion } from "@silksong-git/core";
-import { decodeEncodedSave, parseDecodedSave } from "@silksong-git/core";
+import {
+  DecodeEncodedSaveError,
+  decodeEncodedSave,
+  parseDecodedSave,
+} from "@silksong-git/core";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -174,7 +178,23 @@ export async function observeSave(
     };
   }
 
-  const decoded = decodeEncodedSave(encodedBytes);
+  let decoded: ReturnType<typeof decodeEncodedSave>;
+  try {
+    decoded = decodeEncodedSave(encodedBytes);
+  } catch (error) {
+    if (error instanceof DecodeEncodedSaveError) {
+      return {
+        status: "watcherError",
+        error: {
+          message: error.message,
+          reason: "decodeFailure",
+        },
+      };
+    }
+
+    throw error;
+  }
+
   const parsed = parseDecodedSave(decoded.decodedSave);
   const decodedJson = `${JSON.stringify(decoded.decodedSave, undefined, 2)}\n`;
   const previousCommit = await readCurrentHead(input.repoPath);
