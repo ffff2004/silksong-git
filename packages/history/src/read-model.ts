@@ -7,6 +7,7 @@ import {
 } from "@silksong-git/core";
 import { DatabaseSync } from "node:sqlite";
 
+import { readProjectConfig } from "./config.ts";
 import {
   readGitBlob,
   readHistoryCommit,
@@ -50,6 +51,7 @@ interface EventRow {
 }
 
 interface QueryEventsOptions {
+  readonly includeFiltered?: boolean;
   readonly includeRawObservations?: boolean;
   readonly limit?: number;
   readonly cursor?: string;
@@ -67,6 +69,10 @@ interface SnapshotRow {
 interface ObservationRow {
   readonly observation_json: string;
 }
+
+type DisplaySemanticEventFilters = Awaited<
+  ReturnType<typeof readProjectConfig>
+>["displaySemanticEventFilters"];
 
 export async function rebuildReadModel(
   repoPath: string,
@@ -136,19 +142,27 @@ export async function rebuildReadModel(
   };
 }
 
-export function queryReadModelHistory(
+export async function queryReadModelHistory(
   repoPath: string,
   options: QueryEventsOptions = {},
-): HistoryResult {
+): Promise<HistoryResult> {
+  const config = await readProjectConfig(repoPath);
+  const filters = config.displaySemanticEventFilters;
   using db = openReadModel(repoPath);
   const page = selectEventRows(db, options);
+  const events = page.rows
+    .map((row) => toHistoricalSemanticEvent(row, filters))
+    .filter(
+      (event) =>
+        options.includeFiltered === true || event.visibility.defaultVisible,
+    );
   const rawObservations =
     options.includeRawObservations === true
       ? selectRawObservations(db)
       : undefined;
 
   return {
-    events: page.rows.map(toHistoricalSemanticEvent),
+    events,
     ...(page.nextCursor !== undefined && { nextCursor: page.nextCursor }),
     ...(rawObservations !== undefined && { rawObservations }),
   };
@@ -188,16 +202,21 @@ export async function diffReadModelCommits(
   };
 }
 
-export function searchReadModelEvents(
+export async function searchReadModelEvents(
   repoPath: string,
   input: SearchSemanticEventsInput,
-): SearchSemanticEventsResult {
+): Promise<SearchSemanticEventsResult> {
+  const config = await readProjectConfig(repoPath);
+  const filters = config.displaySemanticEventFilters;
   using db = openReadModel(repoPath);
 
   return {
-    events: selectSearchEventRows(db, input.query).map(
-      toHistoricalSemanticEvent,
-    ),
+    events: selectSearchEventRows(db, input.query)
+      .map((row) => toHistoricalSemanticEvent(row, filters))
+      .filter(
+        (event) =>
+          input.includeFiltered === true || event.visibility.defaultVisible,
+      ),
   };
 }
 
@@ -679,22 +698,54 @@ function selectObservation(
   return JSON.parse(row.observation_json) as RawSaveObservation;
 }
 
-function toHistoricalSemanticEvent(row: EventRow): HistoricalSemanticEvent {
+function toHistoricalSemanticEvent(
+  row: EventRow,
+  filters: DisplaySemanticEventFilters,
+): HistoricalSemanticEvent {
   const observation = JSON.parse(row.observation_json) as RawSaveObservation;
   const previousObservation =
     row.previous_observation_json === null
       ? undefined
       : (JSON.parse(row.previous_observation_json) as RawSaveObservation);
+  const event = JSON.parse(row.event_json) as SemanticEvent;
+  const visibility = getEventVisibility(event, filters);
 
   return {
     id: row.event_id,
     commit: observation.commit,
     previousCommit: previousObservation?.commit,
     observation,
-    event: JSON.parse(row.event_json) as SemanticEvent,
-    visibility: {
-      defaultVisible: true,
-      filterReasons: [],
-    },
+    event,
+    visibility,
+  };
+}
+
+function getEventVisibility(
+  event: SemanticEvent,
+  filters: DisplaySemanticEventFilters,
+): HistoricalSemanticEvent["visibility"] {
+  const filterReasons: string[] = [];
+
+  if (filters.hideEventTypes.includes(event.eventType)) {
+    filterReasons.push(`eventType:${event.eventType}`);
+  }
+
+  if (
+    event.kind === "item"
+    && filters.hideItemTypes.includes(event.item.type)
+  ) {
+    filterReasons.push(`itemType:${event.item.type}`);
+  }
+
+  if (
+    event.kind === "summaryMetric"
+    && filters.hideSummaryMetrics.includes(event.metric)
+  ) {
+    filterReasons.push(`summaryMetric:${event.metric}`);
+  }
+
+  return {
+    defaultVisible: filterReasons.length === 0,
+    filterReasons,
   };
 }

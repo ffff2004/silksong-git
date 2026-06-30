@@ -418,7 +418,11 @@ test("queryHistory paginates events and returns raw observations only when reque
   assert.equal(thirdObservation.status, "committed");
 
   const rebuildResult = await rebuildSemanticReadModel({ repoPath });
-  const firstPage = await queryHistory({ repoPath, limit: 1 });
+  const firstPage = await queryHistory({
+    repoPath,
+    includeFiltered: true,
+    limit: 1,
+  });
 
   assert.equal(rebuildResult.eventCount, 2);
   assert.equal(firstPage.events.length, 1);
@@ -427,6 +431,7 @@ test("queryHistory paginates events and returns raw observations only when reque
 
   const secondPage = await queryHistory({
     repoPath,
+    includeFiltered: true,
     limit: 1,
     cursor: firstPage.nextCursor,
   });
@@ -437,6 +442,7 @@ test("queryHistory paginates events and returns raw observations only when reque
 
   const withRawObservations = await queryHistory({
     repoPath,
+    includeFiltered: true,
     includeRawObservations: true,
     limit: 1,
   });
@@ -538,6 +544,7 @@ test("searchSemanticEvents finds events by structured fields", async (t) => {
     query: {
       eventType: "summaryMetricChanged",
     },
+    includeFiltered: true,
   });
 
   assert.equal(itemSearch.events.length, 1);
@@ -593,6 +600,7 @@ test("searchSemanticEvents finds events by free text", async (t) => {
     query: {
       text: "rosaries",
     },
+    includeFiltered: true,
   });
   const unrelatedSearch = await searchSemanticEvents({
     repoPath,
@@ -606,4 +614,58 @@ test("searchSemanticEvents finds events by free text", async (t) => {
   assert.equal(rosariesSearch.events.length, 1);
   assert.equal(rosariesSearch.events[0]?.event.kind, "summaryMetric");
   assert.equal(unrelatedSearch.events.length, 0);
+});
+
+test("queryHistory applies Display Semantic Event Filters at query time", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath,
+  });
+  await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
+  await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedRosariesEncodedSavePath, watchedSavePath);
+  await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:02:00.000Z"),
+  });
+
+  const rebuildResult = await rebuildSemanticReadModel({ repoPath });
+  const defaultHistory = await queryHistory({ repoPath });
+  const completeHistory = await queryHistory({
+    repoPath,
+    includeFiltered: true,
+  });
+
+  assert.equal(rebuildResult.eventCount, 2);
+  assert.equal(defaultHistory.events.length, 1);
+  const [defaultEvent] = defaultHistory.events;
+
+  assert.ok(defaultEvent !== undefined);
+  assert.equal(defaultEvent.event.kind, "item");
+  assert.equal(defaultEvent.visibility.defaultVisible, true);
+  assert.equal(completeHistory.events.length, 2);
+
+  const hiddenSummaryEvent = completeHistory.events.find(
+    (event) => event.event.kind === "summaryMetric",
+  );
+
+  assert.ok(hiddenSummaryEvent !== undefined);
+  assert.equal(hiddenSummaryEvent.visibility.defaultVisible, false);
+  assert.deepEqual(hiddenSummaryEvent.visibility.filterReasons, [
+    "summaryMetric:rosaries",
+  ]);
 });

@@ -6,8 +6,8 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 ## Current Status
 
-- Current phase: P4 History Module
-- Next task: P4-T2 Rebuild And Query Semantic Read Model
+- Current phase: P5 CLI
+- Next task: P5-T1 Implement Save CLI Commands
 - Last updated: 2026-06-30
 
 ## Phase Overview
@@ -17,8 +17,8 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 | P1 Documentation / Repository Hygiene | complete    | none       | Documentation is coherent, old references are moved, and validation passes.                          |
 | P2 Workspace Skeleton                 | complete    | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                                 |
 | P3 Core Semantic Module               | complete    | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface. |
-| P4 History Module                     | in progress | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.           |
-| P5 CLI                                | pending     | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                          |
+| P4 History Module                     | complete    | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.           |
+| P5 CLI                                | in progress | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                          |
 | P6 Web Integration                    | pending     | P3, P4     | Web UI uses core and supports static and local history modes.                                        |
 
 ## Task Rules
@@ -466,7 +466,7 @@ Notes:
 
 ### P4-T2 Rebuild And Query Semantic Read Model
 
-Status: pending
+Status: complete
 
 Depends on:
 
@@ -524,7 +524,7 @@ TDD Vertical Slices:
   - Assert: free-text search finds matching event labels or related searchable event text and excludes unrelated events.
   - Fixture: generated committed encoded save sequence with distinguishable labels.
   - Other information: this supports the CLI `history search --event <text>` convenience while keeping structured search as the preferred Interface.
-- [ ] Query filtering annotates default visibility without deleting events
+- [x] Query filtering annotates default visibility without deleting events
   - Public call: rebuild observations that produce both default-visible and default-hidden Semantic Events, then call `queryHistory({ repoPath })` and `queryHistory({ repoPath, includeFiltered: true })`.
   - Assert: default queries hide filtered events or mark them according to the public query contract; `includeFiltered` returns the complete stored event set with `visibility.filterReasons`; rebuild counts still include the complete event set.
   - Fixture: generated committed encoded save sequence that produces a noisy Save Summary Metric or currency-only event.
@@ -532,9 +532,16 @@ TDD Vertical Slices:
 
 Verification:
 
-- history test command: pending
-- `pnpm format`: pending
-- `pnpm lint`: pending
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- `pnpm --filter @silksong-git/history test`: passed
+
+Notes:
+
+- Implemented the SQLite Semantic Read Model behind the `packages/history` public Interface.
+- `rebuildSemanticReadModel` rebuilds observations, recognized Semantic Snapshots, and adjacent Semantic Events from Git raw observation commits.
+- `queryHistory`, `diffCommits`, and `searchSemanticEvents` return events with commit and Raw Save Observation metadata without exposing SQLite tables.
+- Display Semantic Event Filters are applied at query/search time; filtered events remain stored in the read model and are returned with `includeFiltered`.
 
 ## P5 CLI
 
