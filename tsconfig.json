@@ -34,6 +34,7 @@
     "apps/web/*.ts",
     "apps/web/src/**/*.ts",
     "packages/core/src/**/*.ts",
+    "packages/history/src/**/*.ts",
     "scripts/**/*.ts",
   ],
 }

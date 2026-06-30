@@ -1,5 +1,18 @@
 {
   "name": "@silksong-git/history",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "tsx --test --test-reporter=dot src/**/*.test.ts",
+    "test:verbose": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@silksong-git/core": "workspace:*"
+  }
 }

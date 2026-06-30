@@ -8,18 +8,18 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 - Current phase: P4 History Module
 - Next task: P4-T1 Raw Observation Restore Tracer Bullet
-- Last updated: 2026-06-29
+- Last updated: 2026-06-30
 
 ## Phase Overview
 
-| Phase                                 | Status   | Depends On | Goal                                                                                                 |
-| ------------------------------------- | -------- | ---------- | ---------------------------------------------------------------------------------------------------- |
-| P1 Documentation / Repository Hygiene | complete | none       | Documentation is coherent, old references are moved, and validation passes.                          |
-| P2 Workspace Skeleton                 | complete | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                                 |
-| P3 Core Semantic Module               | complete | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface. |
-| P4 History Module                     | pending  | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.           |
-| P5 CLI                                | pending  | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                          |
-| P6 Web Integration                    | pending  | P3, P4     | Web UI uses core and supports static and local history modes.                                        |
+| Phase                                 | Status      | Depends On | Goal                                                                                                 |
+| ------------------------------------- | ----------- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| P1 Documentation / Repository Hygiene | complete    | none       | Documentation is coherent, old references are moved, and validation passes.                          |
+| P2 Workspace Skeleton                 | complete    | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                                 |
+| P3 Core Semantic Module               | complete    | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface. |
+| P4 History Module                     | in progress | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.           |
+| P5 CLI                                | pending     | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                          |
+| P6 Web Integration                    | pending     | P3, P4     | Web UI uses core and supports static and local history modes.                                        |
 
 ## Task Rules
 
@@ -384,7 +384,7 @@ Notes:
 
 ### P4-T1 Raw Observation Restore Tracer Bullet
 
-Status: pending
+Status: in progress
 
 Depends on:
 
@@ -411,11 +411,54 @@ Acceptance criteria:
 - `restoreEncodedSave` restores bytes equal to the observed Encoded Save.
 - Tests use temporary directories, real Git, and real SQLite where practical.
 
+TDD Vertical Slices:
+
+- [ ] Init creates a Save History Repository
+  - Public call: `initSaveHistory({ repoPath, watchedSavePath })`
+  - Assert: repo path exists, `.silksong-git/config.json` exists, and the result includes `repoPath` and `configPath`.
+  - Fixture: temporary directory plus the committed minimal encoded save fixture path as `watchedSavePath`.
+  - Other information: this is the first tracer bullet and should not require an initial observation commit.
+- [ ] Observe commits a recognized Raw Save Observation
+  - Public call: `initSaveHistory({ repoPath, watchedSavePath })`, then `observeSave({ repoPath, observedAt })`.
+  - Assert: result is `status: "committed"`; schema is `recognized`; `decoderVersion`, `saveSchemaVersion`, hashes, and commit metadata are present; `save.dat`, `decoded-save.json`, and `observation.json` exist in the repository worktree.
+  - Fixture: `packages/core/src/decode/fixtures/minimal-valid-save.dat`.
+  - Other information: tests should not inspect internal Git adapter calls.
+- [ ] Restore writes the observed Encoded Save byte-for-byte
+  - Public call: `restoreEncodedSave({ repoPath, commitRef, target: { kind: "path", path } })` after a recognized observation commit.
+  - Assert: restored file bytes equal the original Encoded Save bytes and result includes the target path, commit, and written hash.
+  - Fixture: `packages/core/src/decode/fixtures/minimal-valid-save.dat`.
+  - Other information: this completes the minimal P4-T1 end-to-end path: init -> observe -> restore.
+- [ ] Observe skips an unchanged save
+  - Public call: call `observeSave({ repoPath })` twice after `initSaveHistory`.
+  - Assert: the second result is `status: "skipped"` with `reason: "unchanged"` and returns the encoded hash.
+  - Fixture: `packages/core/src/decode/fixtures/minimal-valid-save.dat`.
+  - Other information: verifies raw history does not grow for identical bytes.
+- [ ] Decode failure is a Watcher Error and commits nothing
+  - Public call: `observeSave({ repoPath })` with invalid bytes at the Watched Save path.
+  - Assert: result is `status: "watcherError"` with a decode-failure reason, and no new Raw Save Observation is committed.
+  - Fixture: temporary invalid `.dat` file.
+  - Other information: covers the distinction between Watcher Error and Unrecognized Schema Observation.
+- [ ] Unrecognized schema is committed without semantic update
+  - Public call: `observeSave({ repoPath })` with bytes that decode successfully but fail `parseDecodedSave`.
+  - Assert: result is `status: "committed"`; schema is `unrecognized`; `semanticUpdate.status` is `notAvailable`; restore remains byte-for-byte from the committed observation.
+  - Fixture: generated encoded save fixture with an unsupported decoded shape.
+  - Other information: covers ADR-0016 and should still commit `save.dat`, `decoded-save.json`, and `observation.json`.
+- [ ] Restore refuses implicit overwrite
+  - Public call: `restoreEncodedSave({ repoPath, commitRef, target: { kind: "path", path } })` where the target path already exists.
+  - Assert: restore fails without changing the existing target file unless overwrite is explicit.
+  - Fixture: observed minimal encoded save plus a pre-existing temporary restore target.
+  - Other information: this is the smallest restore safety slice; in-place restore can remain future work.
+
 Verification:
 
 - history test command: pending
 - `pnpm format`: pending
 - `pnpm lint`: pending
+
+Notes:
+
+- Pre-implementation wiring added the `@silksong-git/history` package root export, test scripts, workspace dependency on `@silksong-git/core`, TypeScript include coverage, a minimal public seam, and internal directory placeholders.
+- Pre-implementation setup verification: `pnpm format` passed; `pnpm lint` passed.
 
 ### P4-T2 Rebuild And Query Semantic Read Model
 
