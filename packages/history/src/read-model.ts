@@ -40,6 +40,8 @@ interface GitObservationRecord {
 interface EventRow {
   readonly event_id: string;
   readonly event_json: string;
+  readonly after_observation_sequence: number;
+  readonly event_index: number;
   readonly observation_json: string;
   readonly previous_observation_json: string | null;
 }
@@ -48,6 +50,11 @@ interface QueryEventsOptions {
   readonly includeRawObservations?: boolean;
   readonly limit?: number;
   readonly cursor?: string;
+}
+
+interface EventRowsPage {
+  readonly rows: readonly EventRow[];
+  readonly nextCursor?: string;
 }
 
 export async function rebuildReadModel(
@@ -123,14 +130,15 @@ export function queryReadModelHistory(
   options: QueryEventsOptions = {},
 ): HistoryResult {
   using db = openReadModel(repoPath);
-  const rows = selectEventRows(db, options);
+  const page = selectEventRows(db, options);
   const rawObservations =
     options.includeRawObservations === true
       ? selectRawObservations(db)
       : undefined;
 
   return {
-    events: rows.map(toHistoricalSemanticEvent),
+    events: page.rows.map(toHistoricalSemanticEvent),
+    ...(page.nextCursor !== undefined && { nextCursor: page.nextCursor }),
     ...(rawObservations !== undefined && { rawObservations }),
   };
 }
@@ -408,16 +416,18 @@ function toSqliteText(value: unknown): string {
 function selectEventRows(
   db: DatabaseSync,
   options: QueryEventsOptions,
-): readonly EventRow[] {
-  const limit = options.limit ?? -1;
-  const cursor = options.cursor === undefined ? 0 : Number(options.cursor);
+): EventRowsPage {
+  const cursor = parseCursor(options.cursor);
+  const queryLimit = options.limit === undefined ? -1 : options.limit + 1;
 
-  return db
+  const rows = db
     .prepare(
       `
       select
         events.event_id,
         events.event_json,
+        events.after_observation_sequence,
+        events.event_index,
         after_observations.observation_json as observation_json,
         before_observations.observation_json as previous_observation_json
       from events
@@ -425,12 +435,66 @@ function selectEventRows(
         on after_observations.sequence = events.after_observation_sequence
       left join observations as before_observations
         on before_observations.sequence = events.before_observation_sequence
-      where events.after_observation_sequence > ?
+      where
+        events.after_observation_sequence > ?
+        or (
+          events.after_observation_sequence = ?
+          and events.event_index > ?
+        )
       order by events.after_observation_sequence asc, events.event_index asc
       limit ?
     `,
     )
-    .all(cursor, limit) as unknown as EventRow[];
+    .all(
+      cursor.afterObservationSequence,
+      cursor.afterObservationSequence,
+      cursor.eventIndex,
+      queryLimit,
+    ) as unknown as EventRow[];
+
+  if (options.limit === undefined || rows.length <= options.limit) {
+    return { rows };
+  }
+
+  const pageRows = rows.slice(0, options.limit);
+  const lastRow = pageRows.at(-1);
+
+  return {
+    rows: pageRows,
+    ...(lastRow !== undefined && { nextCursor: createCursor(lastRow) }),
+  };
+}
+
+function parseCursor(cursor: string | undefined): {
+  readonly afterObservationSequence: number;
+  readonly eventIndex: number;
+} {
+  if (cursor === undefined) {
+    return {
+      afterObservationSequence: 0,
+      eventIndex: -1,
+    };
+  }
+
+  const [afterObservationSequence, eventIndex] = cursor.split(":").map(Number);
+
+  if (
+    afterObservationSequence === undefined
+    || eventIndex === undefined
+    || Number.isNaN(afterObservationSequence)
+    || Number.isNaN(eventIndex)
+  ) {
+    throw new Error("Invalid history cursor.");
+  }
+
+  return {
+    afterObservationSequence,
+    eventIndex,
+  };
+}
+
+function createCursor(row: EventRow): string {
+  return `${row.after_observation_sequence}:${row.event_index}`;
 }
 
 function selectRawObservations(

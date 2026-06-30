@@ -36,6 +36,10 @@ const maskShard2CollectedEncodedSavePath = path.join(
   fixtureDirectory,
   "mask-shard-2-collected-save.dat",
 );
+const maskShard2CollectedRosariesEncodedSavePath = path.join(
+  fixtureDirectory,
+  "mask-shard-2-collected-rosaries-save.dat",
+);
 
 async function createTempDirectory(t: TestContext): Promise<string> {
   const directory = await mkdtemp(
@@ -377,5 +381,72 @@ test("rebuildSemanticReadModel preserves Unrecognized Schema Observations withou
   assert.equal(
     unrecognizedObservation.commit.ref,
     unrecognizedResult.observation.commit.ref,
+  );
+});
+
+test("queryHistory paginates events and returns raw observations only when requested", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath,
+  });
+  const firstObservation = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
+  const secondObservation = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedRosariesEncodedSavePath, watchedSavePath);
+  const thirdObservation = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:02:00.000Z"),
+  });
+
+  assert.equal(firstObservation.status, "committed");
+  assert.equal(secondObservation.status, "committed");
+  assert.equal(thirdObservation.status, "committed");
+
+  const rebuildResult = await rebuildSemanticReadModel({ repoPath });
+  const firstPage = await queryHistory({ repoPath, limit: 1 });
+
+  assert.equal(rebuildResult.eventCount, 2);
+  assert.equal(firstPage.events.length, 1);
+  assert.equal("rawObservations" in firstPage, false);
+  assert.notEqual(firstPage.nextCursor, undefined);
+
+  const secondPage = await queryHistory({
+    repoPath,
+    limit: 1,
+    cursor: firstPage.nextCursor,
+  });
+
+  assert.equal(secondPage.events.length, 1);
+  assert.notEqual(secondPage.events[0]?.id, firstPage.events[0]?.id);
+  assert.equal(secondPage.nextCursor, undefined);
+
+  const withRawObservations = await queryHistory({
+    repoPath,
+    includeRawObservations: true,
+    limit: 1,
+  });
+
+  assert.ok(withRawObservations.rawObservations !== undefined);
+  assert.equal(withRawObservations.rawObservations.length, 3);
+  assert.equal(
+    withRawObservations.rawObservations[0]?.commit.ref,
+    firstObservation.observation.commit.ref,
+  );
+  assert.equal(
+    withRawObservations.rawObservations[2]?.commit.ref,
+    thirdObservation.observation.commit.ref,
   );
 });

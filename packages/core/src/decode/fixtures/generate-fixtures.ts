@@ -24,6 +24,10 @@ const fixtures = [
     decoded: "mask-shard-2-collected-save.decoded.json",
     encoded: "mask-shard-2-collected-save.dat",
   },
+  {
+    decoded: "mask-shard-2-collected-rosaries-save.decoded.json",
+    encoded: "mask-shard-2-collected-rosaries-save.dat",
+  },
 ] as const;
 
 function encode7BitLength(length: number): Uint8Array {
