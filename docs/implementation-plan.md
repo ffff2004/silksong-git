@@ -543,6 +543,7 @@ Notes:
 - `queryHistory`, `diffCommits`, and `searchSemanticEvents` return events with commit and Raw Save Observation metadata without exposing SQLite tables.
 - Display Semantic Event Filters are applied at query/diff/search time; filtered events remain stored in the read model and are returned with `includeFiltered`.
 - Follow-up alignment: `diffCommits` now accepts `includeFiltered` and uses the same visibility/filter behavior as `queryHistory` and `searchSemanticEvents`.
+- Read model internals were split under `packages/history/src/read-model/`; the public history Interface and SQLite schema privacy remain unchanged.
 
 ## P5 CLI
 
