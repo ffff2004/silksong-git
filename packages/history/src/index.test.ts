@@ -1,7 +1,15 @@
 import { strict as assert } from "node:assert";
-import { copyFile, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { TestContext } from "node:test";
 import test from "node:test";
 
 import { initSaveHistory, observeSave, restoreEncodedSave } from "./index.ts";
@@ -19,12 +27,20 @@ const unrecognizedEncodedSavePath = path.join(
   "unrecognized-schema-save.dat",
 );
 
-async function createTempDirectory(): Promise<string> {
-  return await mkdtemp(path.join(tmpdir(), "silksong-history-test-"));
+async function createTempDirectory(t: TestContext): Promise<string> {
+  const directory = await mkdtemp(
+    path.join(tmpdir(), "silksong-history-test-"),
+  );
+
+  t.after(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  return directory;
 }
 
-test("initSaveHistory creates a Save History Repository project config", async () => {
-  const tempDirectory = await createTempDirectory();
+test("initSaveHistory creates a Save History Repository project config", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
 
   const result = await initSaveHistory({
@@ -44,8 +60,8 @@ test("initSaveHistory creates a Save History Repository project config", async (
   assert.equal(config.watchedSavePath, minimalEncodedSavePath);
 });
 
-test("observeSave commits a recognized Raw Save Observation", async () => {
-  const tempDirectory = await createTempDirectory();
+test("observeSave commits a recognized Raw Save Observation", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
   const observedAt = new Date("2026-06-30T12:00:00.000Z");
 
@@ -78,8 +94,8 @@ test("observeSave commits a recognized Raw Save Observation", async () => {
   );
 });
 
-test("restoreEncodedSave writes the observed Encoded Save byte-for-byte", async () => {
-  const tempDirectory = await createTempDirectory();
+test("restoreEncodedSave writes the observed Encoded Save byte-for-byte", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
   const restorePath = path.join(tempDirectory, "restored-save.dat");
 
@@ -118,8 +134,8 @@ test("restoreEncodedSave writes the observed Encoded Save byte-for-byte", async 
   );
 });
 
-test("observeSave skips an unchanged Encoded Save", async () => {
-  const tempDirectory = await createTempDirectory();
+test("observeSave skips an unchanged Encoded Save", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
 
   await initSaveHistory({
@@ -144,8 +160,8 @@ test("observeSave skips an unchanged Encoded Save", async () => {
   );
 });
 
-test("observeSave reports decode failures as Watcher Errors without committing", async () => {
-  const tempDirectory = await createTempDirectory();
+test("observeSave reports decode failures as Watcher Errors without committing", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
   const invalidSavePath = path.join(tempDirectory, "invalid-save.dat");
 
@@ -164,8 +180,8 @@ test("observeSave reports decode failures as Watcher Errors without committing",
   );
 });
 
-test("observeSave commits an Unrecognized Schema Observation without semantic update", async () => {
-  const tempDirectory = await createTempDirectory();
+test("observeSave commits an Unrecognized Schema Observation without semantic update", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
   const unrecognizedSavePath = path.join(
     tempDirectory,
@@ -215,8 +231,8 @@ test("observeSave commits an Unrecognized Schema Observation without semantic up
   );
 });
 
-test("restoreEncodedSave refuses to overwrite an existing target implicitly", async () => {
-  const tempDirectory = await createTempDirectory();
+test("restoreEncodedSave refuses to overwrite an existing target implicitly", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
   const restorePath = path.join(tempDirectory, "existing-save.dat");
   const existingBytes = new Uint8Array([9, 8, 7, 6]);
