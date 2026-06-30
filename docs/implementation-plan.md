@@ -7,7 +7,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P4 History Module
-- Next task: P4-T1 Raw Observation Restore Tracer Bullet
+- Next task: P4-T2 Rebuild And Query Semantic Read Model
 - Last updated: 2026-06-30
 
 ## Phase Overview
@@ -384,7 +384,7 @@ Notes:
 
 ### P4-T1 Raw Observation Restore Tracer Bullet
 
-Status: in progress
+Status: complete
 
 Depends on:
 
@@ -451,14 +451,17 @@ TDD Vertical Slices:
 
 Verification:
 
-- history test command: pending
-- `pnpm format`: pending
-- `pnpm lint`: pending
+- `pnpm --filter @silksong-git/history test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
 
 Notes:
 
 - Pre-implementation wiring added the `@silksong-git/history` package root export, test scripts, workspace dependency on `@silksong-git/core`, TypeScript include coverage, a minimal public seam, and internal directory placeholders.
 - Pre-implementation setup verification: `pnpm format` passed; `pnpm lint` passed.
+- Implemented P4-T1 in seven vertical TDD slices through the public `packages/history` Interface.
+- `initSaveHistory`, `observeSave`, and `restoreEncodedSave` now cover the minimal raw observation and restore path with temporary directories and real Git.
+- Project TypeScript target and lib were raised to `ES2024` during P4-T1 to match formatter output for modern regular expression flags.
 
 ### P4-T2 Rebuild And Query Semantic Read Model
 
