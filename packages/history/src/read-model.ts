@@ -16,6 +16,8 @@ import {
 import { sha256Hex } from "./hash.ts";
 import { getRepositoryLayout } from "./layout.ts";
 import type { ObservationMetadata } from "./observation.ts";
+import type { ReadModelCursor } from "./read-model/cursor.ts";
+import { createCursor, parseCursor } from "./read-model/cursor.ts";
 import {
   applyDisplayFilters,
   getEventVisibility,
@@ -496,7 +498,7 @@ function selectEventRows(
   db: DatabaseSync,
   options: QueryEventsOptions,
 ): EventRowsPage {
-  const cursor = parseCursor(options.cursor);
+  const cursor: ReadModelCursor = parseCursor(options.cursor);
   const queryLimit = options.limit === undefined ? -1 : options.limit + 1;
 
   const rows = db
@@ -540,7 +542,12 @@ function selectEventRows(
 
   return {
     rows: pageRows,
-    ...(lastRow !== undefined && { nextCursor: createCursor(lastRow) }),
+    ...(lastRow !== undefined && {
+      nextCursor: createCursor({
+        afterObservationSequence: lastRow.after_observation_sequence,
+        eventIndex: lastRow.event_index,
+      }),
+    }),
   };
 }
 
@@ -606,38 +613,6 @@ function selectSearchEventRows(
     `,
     )
     .all(...parameters) as unknown as EventRow[];
-}
-
-function parseCursor(cursor: string | undefined): {
-  readonly afterObservationSequence: number;
-  readonly eventIndex: number;
-} {
-  if (cursor === undefined) {
-    return {
-      afterObservationSequence: 0,
-      eventIndex: -1,
-    };
-  }
-
-  const [afterObservationSequence, eventIndex] = cursor.split(":").map(Number);
-
-  if (
-    afterObservationSequence === undefined
-    || eventIndex === undefined
-    || Number.isNaN(afterObservationSequence)
-    || Number.isNaN(eventIndex)
-  ) {
-    throw new Error("Invalid history cursor.");
-  }
-
-  return {
-    afterObservationSequence,
-    eventIndex,
-  };
-}
-
-function createCursor(row: EventRow): string {
-  return `${row.after_observation_sequence}:${row.event_index}`;
 }
 
 function selectRawObservations(
