@@ -13,7 +13,6 @@ import {
   readHistoryCommit,
   readObservationCommitRefs,
 } from "./git-store.ts";
-import { sha256Hex } from "./hash.ts";
 import { getRepositoryLayout } from "./layout.ts";
 import type { ObservationMetadata } from "./observation.ts";
 import type { ReadModelCursor } from "./read-model/cursor.ts";
@@ -22,6 +21,14 @@ import {
   applyDisplayFilters,
   getEventVisibility,
 } from "./read-model/event-visibility.ts";
+import { readModelSchemaVersion, resetSchema } from "./read-model/schema.ts";
+import type { RecognizedSnapshotRecord } from "./read-model/types.ts";
+import {
+  insertEvents,
+  insertMetadata,
+  insertObservation,
+  insertSnapshot,
+} from "./read-model/writes.ts";
 import type {
   DiffCommitsInput,
   DiffCommitsResult,
@@ -32,15 +39,6 @@ import type {
   SearchSemanticEventsInput,
   SearchSemanticEventsResult,
 } from "./types.ts";
-
-const readModelSchemaVersion = "1";
-
-interface RecognizedSnapshotRecord {
-  readonly commitRef: string;
-  readonly observationSequence: number;
-  readonly snapshotId: string;
-  readonly snapshot: SemanticSnapshot;
-}
 
 interface GitObservationRecord {
   readonly commitRef: string;
@@ -250,248 +248,6 @@ async function readGitTextBlob(
 
 function openReadModel(repoPath: string): DatabaseSync {
   return new DatabaseSync(getRepositoryLayout(repoPath).readModelPath);
-}
-
-function resetSchema(db: DatabaseSync) {
-  db.exec(`
-    drop table if exists events;
-    drop table if exists snapshots;
-    drop table if exists observations;
-    drop table if exists read_model_metadata;
-
-    create table read_model_metadata (
-      key text primary key,
-      value text not null
-    );
-
-    create table observations (
-      sequence integer primary key,
-      commit_ref text not null unique,
-      short_ref text not null,
-      committed_at text not null,
-      observation_json text not null
-    );
-
-    create table snapshots (
-      snapshot_id text primary key,
-      commit_ref text not null unique,
-      observation_sequence integer not null,
-      snapshot_sha256 text not null,
-      snapshot_json text not null
-    );
-
-    create table events (
-      event_id text primary key,
-      before_snapshot_id text not null,
-      after_snapshot_id text not null,
-      before_commit_ref text not null,
-      after_commit_ref text not null,
-      before_observation_sequence integer not null,
-      after_observation_sequence integer not null,
-      event_index integer not null,
-      kind text not null,
-      event_type text not null,
-      direction text not null,
-      is_regression integer not null,
-      item_id text,
-      item_label text,
-      section_id text,
-      category_id text,
-      item_type text,
-      status_from text,
-      status_to text,
-      metric text,
-      search_text text not null,
-      event_json text not null,
-      unique(after_commit_ref, event_index)
-    );
-
-    create index events_after_sequence_idx
-      on events(after_observation_sequence, event_index);
-  `);
-}
-
-function insertMetadata(db: DatabaseSync, key: string, value: string) {
-  db.prepare("insert into read_model_metadata (key, value) values (?, ?)").run(
-    key,
-    value,
-  );
-}
-
-function insertObservation(
-  db: DatabaseSync,
-  sequence: number,
-  observation: RawSaveObservation,
-) {
-  db.prepare(
-    `
-    insert into observations (
-      sequence,
-      commit_ref,
-      short_ref,
-      committed_at,
-      observation_json
-    ) values (?, ?, ?, ?, ?)
-  `,
-  ).run(
-    sequence,
-    observation.commit.ref,
-    observation.commit.shortRef,
-    observation.commit.committedAt,
-    JSON.stringify(observation),
-  );
-}
-
-function insertSnapshot(
-  db: DatabaseSync,
-  snapshotRecord: RecognizedSnapshotRecord,
-) {
-  const snapshotJson = JSON.stringify(snapshotRecord.snapshot);
-
-  db.prepare(
-    `
-    insert into snapshots (
-      snapshot_id,
-      commit_ref,
-      observation_sequence,
-      snapshot_sha256,
-      snapshot_json
-    ) values (?, ?, ?, ?, ?)
-  `,
-  ).run(
-    snapshotRecord.snapshotId,
-    snapshotRecord.commitRef,
-    snapshotRecord.observationSequence,
-    sha256Hex(snapshotJson),
-    snapshotJson,
-  );
-}
-
-function insertEvents(
-  db: DatabaseSync,
-  recognizedSnapshots: readonly RecognizedSnapshotRecord[],
-): number {
-  let eventCount = 0;
-
-  for (let index = 1; index < recognizedSnapshots.length; index++) {
-    const before = recognizedSnapshots[index - 1];
-    const after = recognizedSnapshots[index];
-
-    if (before === undefined || after === undefined) {
-      continue;
-    }
-
-    const events = diffSemanticSnapshots(before.snapshot, after.snapshot);
-
-    for (const [eventIndex, event] of events.entries()) {
-      insertEvent(db, {
-        before,
-        after,
-        event,
-        eventIndex,
-      });
-      eventCount++;
-    }
-  }
-
-  return eventCount;
-}
-
-function insertEvent(
-  db: DatabaseSync,
-  input: {
-    readonly before: RecognizedSnapshotRecord;
-    readonly after: RecognizedSnapshotRecord;
-    readonly event: SemanticEvent;
-    readonly eventIndex: number;
-  },
-) {
-  const eventJson = JSON.stringify(input.event);
-  const itemColumns = getItemColumns(input.event);
-
-  db.prepare(
-    `
-    insert into events (
-      event_id,
-      before_snapshot_id,
-      after_snapshot_id,
-      before_commit_ref,
-      after_commit_ref,
-      before_observation_sequence,
-      after_observation_sequence,
-      event_index,
-      kind,
-      event_type,
-      direction,
-      is_regression,
-      item_id,
-      item_label,
-      section_id,
-      category_id,
-      item_type,
-      status_from,
-      status_to,
-      metric,
-      search_text,
-      event_json
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `,
-  ).run(
-    `${input.after.commitRef}:${input.eventIndex}`,
-    input.before.snapshotId,
-    input.after.snapshotId,
-    input.before.commitRef,
-    input.after.commitRef,
-    input.before.observationSequence,
-    input.after.observationSequence,
-    input.eventIndex,
-    input.event.kind,
-    input.event.eventType,
-    input.event.direction,
-    input.event.isRegression ? 1 : 0,
-    itemColumns.itemId,
-    itemColumns.itemLabel,
-    itemColumns.sectionId,
-    itemColumns.categoryId,
-    itemColumns.itemType,
-    itemColumns.statusFrom,
-    itemColumns.statusTo,
-    itemColumns.metric,
-    itemColumns.searchText,
-    eventJson,
-  );
-}
-
-function getItemColumns(event: SemanticEvent) {
-  if (event.kind === "item") {
-    return {
-      itemId: toSqliteText(event.item.id),
-      itemLabel: toSqliteText(event.item.label),
-      sectionId: toSqliteText(event.item.sectionId),
-      categoryId: toSqliteText(event.item.categoryId),
-      itemType: toSqliteText(event.item.type),
-      statusFrom: toSqliteText(event.before.status),
-      statusTo: toSqliteText(event.after.status),
-      metric: "",
-      searchText: [event.item.id, event.item.label, event.item.type].join(" "),
-    };
-  }
-
-  return {
-    itemId: "",
-    itemLabel: "",
-    sectionId: "",
-    categoryId: "",
-    itemType: "",
-    statusFrom: "",
-    statusTo: "",
-    metric: event.metric,
-    searchText: event.metric,
-  };
-}
-
-function toSqliteText(value: unknown): string {
-  return typeof value === "string" ? value : "";
 }
 
 function selectEventRows(
