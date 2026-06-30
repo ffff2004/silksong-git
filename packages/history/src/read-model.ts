@@ -16,6 +16,10 @@ import {
 import { sha256Hex } from "./hash.ts";
 import { getRepositoryLayout } from "./layout.ts";
 import type { ObservationMetadata } from "./observation.ts";
+import {
+  applyDisplayFilters,
+  getEventVisibility,
+} from "./read-model/event-visibility.ts";
 import type {
   DiffCommitsInput,
   DiffCommitsResult,
@@ -74,7 +78,6 @@ interface ObservationRow {
 type DisplaySemanticEventFilters = Awaited<
   ReturnType<typeof readProjectConfig>
 >["displaySemanticEventFilters"];
-
 export async function rebuildReadModel(
   repoPath: string,
 ): Promise<RebuildSemanticReadModelResult> {
@@ -217,15 +220,6 @@ export async function searchReadModelEvents(
       input.includeFiltered,
     ),
   };
-}
-
-function applyDisplayFilters(
-  events: readonly HistoricalSemanticEvent[],
-  includeFiltered: boolean | undefined,
-): readonly HistoricalSemanticEvent[] {
-  return events.filter(
-    (event) => includeFiltered === true || event.visibility.defaultVisible,
-  );
 }
 
 async function readRawSaveObservation(
@@ -725,35 +719,5 @@ function toHistoricalSemanticEvent(
     observation,
     event,
     visibility,
-  };
-}
-
-function getEventVisibility(
-  event: SemanticEvent,
-  filters: DisplaySemanticEventFilters,
-): HistoricalSemanticEvent["visibility"] {
-  const filterReasons: string[] = [];
-
-  if (filters.hideEventTypes.includes(event.eventType)) {
-    filterReasons.push(`eventType:${event.eventType}`);
-  }
-
-  if (
-    event.kind === "item"
-    && filters.hideItemTypes.includes(event.item.type)
-  ) {
-    filterReasons.push(`itemType:${event.item.type}`);
-  }
-
-  if (
-    event.kind === "summaryMetric"
-    && filters.hideSummaryMetrics.includes(event.metric)
-  ) {
-    filterReasons.push(`summaryMetric:${event.metric}`);
-  }
-
-  return {
-    defaultVisible: filterReasons.length === 0,
-    filterReasons,
   };
 }
