@@ -55,6 +55,92 @@ async function createTempDirectory(t: TestContext): Promise<string> {
   return directory;
 }
 
+type ObserveSaveResult = Awaited<ReturnType<typeof observeSave>>;
+type CommittedObserveSaveResult = Extract<
+  ObserveSaveResult,
+  { readonly status: "committed" }
+>;
+
+interface HistoryRepoFixture {
+  readonly tempDirectory: string;
+  readonly repoPath: string;
+  readonly watchedSavePath: string;
+}
+
+interface ObservedFixtureSequence extends HistoryRepoFixture {
+  readonly observations: readonly CommittedObserveSaveResult[];
+}
+
+async function createHistoryRepo(
+  t: TestContext,
+  initialSavePath = minimalEncodedSavePath,
+): Promise<HistoryRepoFixture> {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+
+  await copyFile(initialSavePath, watchedSavePath);
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath,
+  });
+
+  return {
+    tempDirectory,
+    repoPath,
+    watchedSavePath,
+  };
+}
+
+async function observeFixture(
+  repo: HistoryRepoFixture,
+  fixturePath: string,
+  observedAt: Date,
+): Promise<ObserveSaveResult> {
+  await copyFile(fixturePath, repo.watchedSavePath);
+
+  return await observeSave({
+    repoPath: repo.repoPath,
+    observedAt,
+  });
+}
+
+async function observeFixtureSequence(
+  t: TestContext,
+  fixturePaths: readonly string[],
+): Promise<ObservedFixtureSequence> {
+  const [initialFixturePath] = fixturePaths;
+
+  assert.ok(initialFixturePath !== undefined);
+
+  const repo = await createHistoryRepo(t, initialFixturePath);
+  const observations: CommittedObserveSaveResult[] = [];
+
+  async function observeNextFixture(index: number) {
+    const fixturePath = fixturePaths[index];
+
+    if (fixturePath !== undefined) {
+      const result = await observeFixture(
+        repo,
+        fixturePath,
+        new Date(`2026-06-30T12:${index.toString().padStart(2, "0")}:00.000Z`),
+      );
+
+      assert.equal(result.status, "committed");
+      observations.push(result);
+
+      await observeNextFixture(index + 1);
+    }
+  }
+
+  await observeNextFixture(0);
+
+  return {
+    ...repo,
+    observations,
+  };
+}
+
 test("initSaveHistory creates a Save History Repository project config", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
@@ -280,28 +366,14 @@ test("restoreEncodedSave refuses to overwrite an existing target implicitly", as
 });
 
 test("rebuildSemanticReadModel rebuilds recognized Semantic Events for queryHistory", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const repoPath = path.join(tempDirectory, "history-repo");
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const { observations, repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    maskShard2CollectedEncodedSavePath,
+  ]);
+  const [beforeResult, afterResult] = observations;
 
-  await copyFile(minimalEncodedSavePath, watchedSavePath);
-  await initSaveHistory({
-    repoPath,
-    watchedSavePath,
-  });
-  const beforeResult = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:00:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
-  const afterResult = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:01:00.000Z"),
-  });
-
-  assert.equal(beforeResult.status, "committed");
-  assert.equal(afterResult.status, "committed");
+  assert.ok(beforeResult !== undefined);
+  assert.ok(afterResult !== undefined);
 
   const rebuildResult = await rebuildSemanticReadModel({ repoPath });
   const history = await queryHistory({ repoPath });
@@ -336,28 +408,14 @@ test("rebuildSemanticReadModel rebuilds recognized Semantic Events for queryHist
 });
 
 test("rebuildSemanticReadModel preserves Unrecognized Schema Observations without Semantic Events", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const repoPath = path.join(tempDirectory, "history-repo");
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const { observations, repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    unrecognizedEncodedSavePath,
+  ]);
+  const [recognizedResult, unrecognizedResult] = observations;
 
-  await copyFile(minimalEncodedSavePath, watchedSavePath);
-  await initSaveHistory({
-    repoPath,
-    watchedSavePath,
-  });
-  const recognizedResult = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:00:00.000Z"),
-  });
-
-  await copyFile(unrecognizedEncodedSavePath, watchedSavePath);
-  const unrecognizedResult = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:01:00.000Z"),
-  });
-
-  assert.equal(recognizedResult.status, "committed");
-  assert.equal(unrecognizedResult.status, "committed");
+  assert.ok(recognizedResult !== undefined);
+  assert.ok(unrecognizedResult !== undefined);
 
   const rebuildResult = await rebuildSemanticReadModel({ repoPath });
   const history = await queryHistory({
@@ -387,35 +445,15 @@ test("rebuildSemanticReadModel preserves Unrecognized Schema Observations withou
 });
 
 test("queryHistory paginates events and returns raw observations only when requested", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const repoPath = path.join(tempDirectory, "history-repo");
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const { observations, repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    maskShard2CollectedEncodedSavePath,
+    maskShard2CollectedRosariesEncodedSavePath,
+  ]);
+  const [firstObservation, , thirdObservation] = observations;
 
-  await copyFile(minimalEncodedSavePath, watchedSavePath);
-  await initSaveHistory({
-    repoPath,
-    watchedSavePath,
-  });
-  const firstObservation = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:00:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
-  const secondObservation = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:01:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedRosariesEncodedSavePath, watchedSavePath);
-  const thirdObservation = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:02:00.000Z"),
-  });
-
-  assert.equal(firstObservation.status, "committed");
-  assert.equal(secondObservation.status, "committed");
-  assert.equal(thirdObservation.status, "committed");
+  assert.ok(firstObservation !== undefined);
+  assert.ok(thirdObservation !== undefined);
 
   const rebuildResult = await rebuildSemanticReadModel({ repoPath });
   const firstPage = await queryHistory({
@@ -460,28 +498,14 @@ test("queryHistory paginates events and returns raw observations only when reque
 });
 
 test("diffCommits returns Semantic Snapshots and Historical Semantic Events", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const repoPath = path.join(tempDirectory, "history-repo");
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const { observations, repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    maskShard2CollectedEncodedSavePath,
+  ]);
+  const [beforeResult, afterResult] = observations;
 
-  await copyFile(minimalEncodedSavePath, watchedSavePath);
-  await initSaveHistory({
-    repoPath,
-    watchedSavePath,
-  });
-  const beforeResult = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:00:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
-  const afterResult = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:01:00.000Z"),
-  });
-
-  assert.equal(beforeResult.status, "committed");
-  assert.equal(afterResult.status, "committed");
+  assert.ok(beforeResult !== undefined);
+  assert.ok(afterResult !== undefined);
 
   await rebuildSemanticReadModel({ repoPath });
   const diff = await diffCommits({
@@ -504,34 +528,15 @@ test("diffCommits returns Semantic Snapshots and Historical Semantic Events", as
 });
 
 test("diffCommits applies Display Semantic Event Filters by default", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const repoPath = path.join(tempDirectory, "history-repo");
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const { observations, repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    maskShard2CollectedEncodedSavePath,
+    maskShard2CollectedRosariesEncodedSavePath,
+  ]);
+  const [, visibleBaseline, filteredChange] = observations;
 
-  await copyFile(minimalEncodedSavePath, watchedSavePath);
-  await initSaveHistory({
-    repoPath,
-    watchedSavePath,
-  });
-  await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:00:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
-  const visibleBaseline = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:01:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedRosariesEncodedSavePath, watchedSavePath);
-  const filteredChange = await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:02:00.000Z"),
-  });
-
-  assert.equal(visibleBaseline.status, "committed");
-  assert.equal(filteredChange.status, "committed");
+  assert.ok(visibleBaseline !== undefined);
+  assert.ok(filteredChange !== undefined);
 
   await rebuildSemanticReadModel({ repoPath });
   const defaultDiff = await diffCommits({
@@ -559,31 +564,11 @@ test("diffCommits applies Display Semantic Event Filters by default", async (t) 
 });
 
 test("searchSemanticEvents finds events by structured fields", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const repoPath = path.join(tempDirectory, "history-repo");
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-
-  await copyFile(minimalEncodedSavePath, watchedSavePath);
-  await initSaveHistory({
-    repoPath,
-    watchedSavePath,
-  });
-  await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:00:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
-  await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:01:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedRosariesEncodedSavePath, watchedSavePath);
-  await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:02:00.000Z"),
-  });
+  const { repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    maskShard2CollectedEncodedSavePath,
+    maskShard2CollectedRosariesEncodedSavePath,
+  ]);
 
   await rebuildSemanticReadModel({ repoPath });
 
@@ -616,31 +601,11 @@ test("searchSemanticEvents finds events by structured fields", async (t) => {
 });
 
 test("searchSemanticEvents finds events by free text", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const repoPath = path.join(tempDirectory, "history-repo");
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-
-  await copyFile(minimalEncodedSavePath, watchedSavePath);
-  await initSaveHistory({
-    repoPath,
-    watchedSavePath,
-  });
-  await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:00:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
-  await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:01:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedRosariesEncodedSavePath, watchedSavePath);
-  await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:02:00.000Z"),
-  });
+  const { repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    maskShard2CollectedEncodedSavePath,
+    maskShard2CollectedRosariesEncodedSavePath,
+  ]);
 
   await rebuildSemanticReadModel({ repoPath });
 
@@ -672,31 +637,11 @@ test("searchSemanticEvents finds events by free text", async (t) => {
 });
 
 test("queryHistory applies Display Semantic Event Filters at query time", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const repoPath = path.join(tempDirectory, "history-repo");
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-
-  await copyFile(minimalEncodedSavePath, watchedSavePath);
-  await initSaveHistory({
-    repoPath,
-    watchedSavePath,
-  });
-  await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:00:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
-  await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:01:00.000Z"),
-  });
-
-  await copyFile(maskShard2CollectedRosariesEncodedSavePath, watchedSavePath);
-  await observeSave({
-    repoPath,
-    observedAt: new Date("2026-06-30T12:02:00.000Z"),
-  });
+  const { repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    maskShard2CollectedEncodedSavePath,
+    maskShard2CollectedRosariesEncodedSavePath,
+  ]);
 
   const rebuildResult = await rebuildSemanticReadModel({ repoPath });
   const defaultHistory = await queryHistory({ repoPath });
