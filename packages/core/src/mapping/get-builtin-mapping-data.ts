@@ -7,7 +7,7 @@ import miniBossesJSON from "../data/mini-bosses.json" with { type: "json" };
 import scenesJSON from "../data/scenes.json" with { type: "json" };
 import wishesJSON from "../data/wishes.json" with { type: "json" };
 
-import type { MappingData } from "../types.ts";
+import type { MappingData } from "./mapping-types.ts";
 
 export function getBuiltinMappingData(): MappingData {
   return {

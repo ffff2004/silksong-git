@@ -1,8 +1,8 @@
 import type {
   MappingItem,
   MappingItemCheck,
-  SourceReference,
-} from "../types.ts";
+} from "../mapping/mapping-types.ts";
+import type { SourceReference } from "../types.ts";
 
 export function createSourceReferences(
   item: MappingItem,

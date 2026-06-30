@@ -1,5 +1,5 @@
+import type { MappingData } from "../mapping/mapping-types.ts";
 import type {
-  MappingData,
   ParsedDecodedSave,
   SemanticSnapshot,
   SemanticSnapshotItem,

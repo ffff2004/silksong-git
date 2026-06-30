@@ -3,6 +3,8 @@ import { isArray } from "complete-common";
 import type {
   MappingItem,
   MappingItemCheck,
+} from "../mapping/mapping-types.ts";
+import type {
   SemanticSnapshotItem,
   SemanticSnapshotItemStatus,
 } from "../types.ts";

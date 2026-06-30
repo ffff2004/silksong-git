@@ -1,6 +1,7 @@
 import { isArray } from "complete-common";
 
-import type { DecodedSave, MappingItem } from "../types.ts";
+import type { MappingItem } from "../mapping/mapping-types.ts";
+import type { DecodedSave } from "../types.ts";
 
 export type SceneFlags = Record<string, Record<string, boolean>>;
 
