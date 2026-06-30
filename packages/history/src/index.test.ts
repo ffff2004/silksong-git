@@ -13,6 +13,7 @@ import type { TestContext } from "node:test";
 import test from "node:test";
 
 import {
+  diffCommits,
   initSaveHistory,
   observeSave,
   queryHistory,
@@ -449,4 +450,48 @@ test("queryHistory paginates events and returns raw observations only when reque
     withRawObservations.rawObservations[2]?.commit.ref,
     thirdObservation.observation.commit.ref,
   );
+});
+
+test("diffCommits returns Semantic Snapshots and Historical Semantic Events", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath,
+  });
+  const beforeResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
+  const afterResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  assert.equal(beforeResult.status, "committed");
+  assert.equal(afterResult.status, "committed");
+
+  await rebuildSemanticReadModel({ repoPath });
+  const diff = await diffCommits({
+    repoPath,
+    fromRef: beforeResult.observation.commit.ref,
+    toRef: afterResult.observation.commit.ref,
+  });
+
+  assert.equal(diff.from.ref, beforeResult.observation.commit.ref);
+  assert.equal(diff.to.ref, afterResult.observation.commit.ref);
+  assert.equal(diff.before.version.saveSchemaVersion, "silksong-save-v1");
+  assert.equal(diff.after.version.saveSchemaVersion, "silksong-save-v1");
+  assert.equal(diff.events.length, 1);
+  const [event] = diff.events;
+
+  assert.ok(event !== undefined);
+  assert.equal(event.commit.ref, afterResult.observation.commit.ref);
+  assert.equal(event.previousCommit?.ref, beforeResult.observation.commit.ref);
+  assert.equal(event.event.kind, "item");
 });

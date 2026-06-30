@@ -509,7 +509,7 @@ TDD Vertical Slices:
   - Assert: event pages are stable and non-overlapping; `rawObservations` is present only when requested; every returned event still includes its Raw Save Observation metadata.
   - Fixture: generated committed encoded save sequence with multiple semantic transitions.
   - Other information: cursor format remains opaque to callers.
-- [ ] Diff commits returns Semantic Snapshots and Historical Semantic Events
+- [x] Diff commits returns Semantic Snapshots and Historical Semantic Events
   - Public call: observe two recognized saves, rebuild, then `diffCommits({ repoPath, fromRef, toRef })`.
   - Assert: result includes the resolved `from` and `to` commits, `before` and `after` Semantic Snapshots, and the Semantic Events between those two commits with commit and observation metadata.
   - Fixture: generated committed encoded save pair whose decoded saves differ by one stable semantic item.

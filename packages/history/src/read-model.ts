@@ -16,6 +16,7 @@ import { sha256Hex } from "./hash.ts";
 import { getRepositoryLayout } from "./layout.ts";
 import type { ObservationMetadata } from "./observation.ts";
 import type {
+  DiffCommitsResult,
   HistoricalSemanticEvent,
   HistoryResult,
   RawSaveObservation,
@@ -55,6 +56,14 @@ interface QueryEventsOptions {
 interface EventRowsPage {
   readonly rows: readonly EventRow[];
   readonly nextCursor?: string;
+}
+
+interface SnapshotRow {
+  readonly snapshot_json: string;
+}
+
+interface ObservationRow {
+  readonly observation_json: string;
 }
 
 export async function rebuildReadModel(
@@ -140,6 +149,40 @@ export function queryReadModelHistory(
     events: page.rows.map(toHistoricalSemanticEvent),
     ...(page.nextCursor !== undefined && { nextCursor: page.nextCursor }),
     ...(rawObservations !== undefined && { rawObservations }),
+  };
+}
+
+export async function diffReadModelCommits(
+  repoPath: string,
+  fromRef: string,
+  toRef: string,
+): Promise<DiffCommitsResult> {
+  const [from, to] = await Promise.all([
+    readHistoryCommit(repoPath, fromRef),
+    readHistoryCommit(repoPath, toRef),
+  ]);
+  using db = openReadModel(repoPath);
+  const before = selectSnapshot(db, from.ref);
+  const after = selectSnapshot(db, to.ref);
+  const observation = selectObservation(db, to.ref);
+  const events = diffSemanticSnapshots(before, after).map((event, index) => ({
+    id: `${to.ref}:${index}`,
+    commit: to,
+    previousCommit: from,
+    observation,
+    event,
+    visibility: {
+      defaultVisible: true,
+      filterReasons: [],
+    },
+  }));
+
+  return {
+    from,
+    to,
+    before,
+    after,
+    events,
   };
 }
 
@@ -516,6 +559,45 @@ function selectRawObservations(
   return rows.map(
     (row) => JSON.parse(row.observation_json) as RawSaveObservation,
   );
+}
+
+function selectSnapshot(db: DatabaseSync, commitRef: string): SemanticSnapshot {
+  const row = db
+    .prepare(
+      `
+      select snapshot_json
+      from snapshots
+      where commit_ref = ?
+    `,
+    )
+    .get(commitRef) as unknown as SnapshotRow | undefined;
+
+  if (row === undefined) {
+    throw new Error(`No Semantic Snapshot found for commit ${commitRef}.`);
+  }
+
+  return JSON.parse(row.snapshot_json) as SemanticSnapshot;
+}
+
+function selectObservation(
+  db: DatabaseSync,
+  commitRef: string,
+): RawSaveObservation {
+  const row = db
+    .prepare(
+      `
+      select observation_json
+      from observations
+      where commit_ref = ?
+    `,
+    )
+    .get(commitRef) as unknown as ObservationRow | undefined;
+
+  if (row === undefined) {
+    throw new Error(`No Raw Save Observation found for commit ${commitRef}.`);
+  }
+
+  return JSON.parse(row.observation_json) as RawSaveObservation;
 }
 
 function toHistoricalSemanticEvent(row: EventRow): HistoricalSemanticEvent {

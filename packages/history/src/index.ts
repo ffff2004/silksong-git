@@ -11,8 +11,14 @@ import { encodedSaveArtifactPath, getRepositoryLayout } from "./layout.ts";
 import { decodeObservation } from "./observation-decoder.ts";
 import type { ObservationMetadata } from "./observation.ts";
 import { commitRawSaveObservation } from "./raw-observation-store.ts";
-import { queryReadModelHistory, rebuildReadModel } from "./read-model.ts";
+import {
+  diffReadModelCommits,
+  queryReadModelHistory,
+  rebuildReadModel,
+} from "./read-model.ts";
 import type {
+  DiffCommitsInput,
+  DiffCommitsResult,
   HistoryResult,
   InitSaveHistoryInput,
   InitSaveHistoryResult,
@@ -153,6 +159,12 @@ export async function queryHistory(
   input: QueryHistoryInput,
 ): Promise<HistoryResult> {
   return await Promise.resolve(queryReadModelHistory(input.repoPath, input));
+}
+
+export async function diffCommits(
+  input: DiffCommitsInput,
+): Promise<DiffCommitsResult> {
+  return await diffReadModelCommits(input.repoPath, input.fromRef, input.toRef);
 }
 
 async function readLastObservation(
