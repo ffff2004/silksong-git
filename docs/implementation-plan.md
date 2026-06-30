@@ -462,6 +462,7 @@ Notes:
 - Implemented P4-T1 in seven vertical TDD slices through the public `packages/history` Interface.
 - `initSaveHistory`, `observeSave`, and `restoreEncodedSave` now cover the minimal raw observation and restore path with temporary directories and real Git.
 - Project TypeScript target and lib were raised to `ES2024` during P4-T1 to match formatter output for modern regular expression flags.
+- Core fixture generation now also produces `unrecognized-schema-save.dat`, so history tests do not duplicate Encoded Save codec details.
 
 ### P4-T2 Rebuild And Query Semantic Read Model
 

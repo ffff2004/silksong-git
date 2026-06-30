@@ -1,6 +1,5 @@
 import { strict as assert } from "node:assert";
-import { createCipheriv } from "node:crypto";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -15,10 +14,10 @@ const minimalEncodedSavePath = path.join(
   fixtureDirectory,
   "minimal-valid-save.dat",
 );
-const csharpHeader = new Uint8Array([
-  0, 1, 0, 0, 0, 255, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0, 0, 6, 1, 0, 0, 0,
-]);
-const aesKeyString = "UKu52ePUBwetZ9wNX88o54dnfKRu0T1l";
+const unrecognizedEncodedSavePath = path.join(
+  fixtureDirectory,
+  "unrecognized-schema-save.dat",
+);
 
 async function createTempDirectory(): Promise<string> {
   return await mkdtemp(path.join(tmpdir(), "silksong-history-test-"));
@@ -174,10 +173,7 @@ test("observeSave commits an Unrecognized Schema Observation without semantic up
   );
   const restorePath = path.join(tempDirectory, "restored-unrecognized.dat");
 
-  await writeFile(
-    unrecognizedSavePath,
-    encodeSilksongSave({ playerData: { completionPercentage: 39 } }),
-  );
+  await copyFile(unrecognizedEncodedSavePath, unrecognizedSavePath);
   await initSaveHistory({
     repoPath,
     watchedSavePath: unrecognizedSavePath,
@@ -250,44 +246,3 @@ test("restoreEncodedSave refuses to overwrite an existing target implicitly", as
   );
   assert.deepEqual(await readFile(restorePath), Buffer.from(existingBytes));
 });
-
-function encodeSilksongSave(decodedSave: unknown): Uint8Array {
-  const cipher = createCipheriv(
-    "aes-256-ecb",
-    Buffer.from(aesKeyString, "utf8"),
-    // eslint-disable-next-line unicorn/no-null
-    null,
-  );
-  const jsonString = JSON.stringify(decodedSave);
-  const encrypted = Buffer.concat([
-    cipher.update(jsonString, "utf8"),
-    cipher.final(),
-  ]);
-  // eslint-disable-next-line unicorn/prefer-uint8array-base64
-  const base64Bytes = Buffer.from(encrypted.toString("base64"), "utf8");
-  const lengthPrefix = encode7BitLength(base64Bytes.length);
-  const encoded = new Uint8Array(
-    csharpHeader.length + lengthPrefix.length + base64Bytes.length + 1,
-  );
-
-  encoded.set(csharpHeader);
-  encoded.set(lengthPrefix, csharpHeader.length);
-  encoded.set(base64Bytes, csharpHeader.length + lengthPrefix.length);
-
-  return encoded;
-}
-
-function encode7BitLength(length: number): Uint8Array {
-  const bytes: number[] = [];
-  let value = length;
-
-  while (value >= 0x80) {
-    // eslint-disable-next-line no-bitwise
-    bytes.push((value & 0x7f) | 0x80);
-    // eslint-disable-next-line no-bitwise
-    value >>= 7;
-  }
-
-  bytes.push(value);
-  return new Uint8Array(bytes);
-}

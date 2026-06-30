@@ -10,15 +10,17 @@ const CSHARP_HEADER = new Uint8Array([
 const AES_KEY_STRING = "UKu52ePUBwetZ9wNX88o54dnfKRu0T1l";
 
 const currentDirectory = import.meta.dirname;
-const decodedFixturePath = path.join(
-  currentDirectory,
-  "minimal-valid-save.decoded.json",
-);
-const encodedFixturePath = path.join(
-  currentDirectory,
-  "minimal-valid-save.dat",
-);
 const textEncoder = new TextEncoder();
+const fixtures = [
+  {
+    decoded: "minimal-valid-save.decoded.json",
+    encoded: "minimal-valid-save.dat",
+  },
+  {
+    decoded: "unrecognized-schema-save.decoded.json",
+    encoded: "unrecognized-schema-save.dat",
+  },
+] as const;
 
 function encode7BitLength(length: number): Uint8Array {
   const bytes: number[] = [];
@@ -55,5 +57,12 @@ function encodeSilksongSave(jsonString: string): Uint8Array {
   return encoded;
 }
 
-const decodedJson = await readFile(decodedFixturePath, "utf8");
-await writeFile(encodedFixturePath, encodeSilksongSave(decodedJson));
+await Promise.all(
+  fixtures.map(async (fixture) => {
+    const decodedFixturePath = path.join(currentDirectory, fixture.decoded);
+    const encodedFixturePath = path.join(currentDirectory, fixture.encoded);
+    const decodedJson = await readFile(decodedFixturePath, "utf8");
+
+    await writeFile(encodedFixturePath, encodeSilksongSave(decodedJson));
+  }),
+);
