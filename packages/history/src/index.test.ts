@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { initSaveHistory } from "./index.ts";
+import { initSaveHistory, observeSave } from "./index.ts";
 
 const fixtureDirectory = path.join(
   import.meta.dirname,
@@ -38,4 +38,38 @@ test("initSaveHistory creates a Save History Repository project config", async (
   const config = JSON.parse(configJson) as { watchedSavePath?: unknown };
 
   assert.equal(config.watchedSavePath, minimalEncodedSavePath);
+});
+
+test("observeSave commits a recognized Raw Save Observation", async () => {
+  const tempDirectory = await createTempDirectory();
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const observedAt = new Date("2026-06-30T12:00:00.000Z");
+
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath: minimalEncodedSavePath,
+  });
+
+  const result = await observeSave({ repoPath, observedAt });
+
+  assert.equal(result.status, "committed");
+  assert.equal(result.observation.observedAt, observedAt.toISOString());
+  assert.equal(result.observation.sourcePath, minimalEncodedSavePath);
+  assert.match(result.observation.encodedSha256, /^[0-9a-f]{64}$/v);
+  assert.match(result.observation.decodedSha256, /^[0-9a-f]{64}$/v);
+  assert.equal(result.observation.decoderVersion, "silksong-save-decoder-v1");
+  assert.equal(result.observation.schema.status, "recognized");
+  assert.equal(result.observation.schema.saveSchemaVersion, "silksong-save-v1");
+  assert.match(result.observation.commit.ref, /^[0-9a-f]{40}$/v);
+  assert.match(result.observation.commit.shortRef, /^[0-9a-f]{7,12}$/v);
+  assert.notEqual(result.observation.commit.committedAt, "");
+  await assert.doesNotReject(
+    async () => await stat(path.join(repoPath, "save.dat")),
+  );
+  await assert.doesNotReject(
+    async () => await stat(path.join(repoPath, "decoded-save.json")),
+  );
+  await assert.doesNotReject(
+    async () => await stat(path.join(repoPath, "observation.json")),
+  );
 });

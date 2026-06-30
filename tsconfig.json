@@ -26,8 +26,8 @@
     "rootDir": ".",
 
     // Needed to support modern APIs used by project scripts and browser code.
-    "target": "ES2023",
-    "lib": ["DOM", "ES2023"],
+    "target": "ES2024",
+    "lib": ["DOM", "ES2024"],
   },
 
   "include": [

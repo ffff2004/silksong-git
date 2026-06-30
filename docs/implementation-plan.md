@@ -418,7 +418,7 @@ TDD Vertical Slices:
   - Assert: repo path exists, `.silksong-git/config.json` exists, and the result includes `repoPath` and `configPath`.
   - Fixture: temporary directory plus the committed minimal encoded save fixture path as `watchedSavePath`.
   - Other information: this is the first tracer bullet and should not require an initial observation commit.
-- [ ] Observe commits a recognized Raw Save Observation
+- [x] Observe commits a recognized Raw Save Observation
   - Public call: `initSaveHistory({ repoPath, watchedSavePath })`, then `observeSave({ repoPath, observedAt })`.
   - Assert: result is `status: "committed"`; schema is `recognized`; `decoderVersion`, `saveSchemaVersion`, hashes, and commit metadata are present; `save.dat`, `decoded-save.json`, and `observation.json` exist in the repository worktree.
   - Fixture: `packages/core/src/decode/fixtures/minimal-valid-save.dat`.

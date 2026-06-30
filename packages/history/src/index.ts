@@ -1,6 +1,8 @@
 import type { DecodedSaveVersion } from "@silksong-git/core";
+import { decodeEncodedSave, parseDecodedSave } from "@silksong-git/core";
 import { execFile } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export type ProjectConfigOverrides = Record<string, unknown>;
@@ -26,6 +28,8 @@ interface ProjectConfig {
     readonly port?: number;
   };
 }
+
+type ObservationMetadata = Omit<RawSaveObservation, "commit">;
 
 export interface InitSaveHistoryInput {
   readonly repoPath: string;
@@ -150,26 +154,71 @@ export async function initSaveHistory(
   };
 }
 
-async function runGit(cwd: string, args: readonly string[]) {
-  await new Promise<void>((resolve, reject) => {
-    execFile("git", [...args], { cwd }, (error) => {
-      if (error) {
-        reject(
-          error instanceof Error ? error : new Error("Git command failed."),
-        );
-        return;
-      }
-
-      resolve();
-    });
-  });
-}
-
 export async function observeSave(
-  _input: ObserveSaveInput,
+  input: ObserveSaveInput,
 ): Promise<ObserveSaveResult> {
-  await Promise.resolve();
-  throw new Error("observeSave is not implemented yet.");
+  const config = await readProjectConfig(input.repoPath);
+  const observedAt = input.observedAt ?? new Date();
+  const encodedBytes = await readFile(config.watchedSavePath);
+  const decoded = decodeEncodedSave(encodedBytes);
+  const parsed = parseDecodedSave(decoded.decodedSave);
+  const decodedJson = `${JSON.stringify(decoded.decodedSave, undefined, 2)}\n`;
+  const previousCommit = await readCurrentHead(input.repoPath);
+  const observationMetadata: ObservationMetadata = {
+    observedAt: observedAt.toISOString(),
+    sourcePath: config.watchedSavePath,
+    encodedSha256: sha256Hex(encodedBytes),
+    decodedSha256: sha256Hex(decodedJson),
+    previousCommit,
+    decoderVersion: decoded.version.decoderVersion,
+    schema: {
+      status: "recognized",
+      ...parsed.version,
+    },
+  };
+
+  await copyFile(config.watchedSavePath, path.join(input.repoPath, "save.dat"));
+  await writeFile(path.join(input.repoPath, "decoded-save.json"), decodedJson);
+  await writeFile(
+    path.join(input.repoPath, "observation.json"),
+    `${JSON.stringify(observationMetadata, undefined, 2)}\n`,
+  );
+  await runGit(input.repoPath, [
+    "add",
+    ".gitignore",
+    ".silksong-git/config.json",
+    "save.dat",
+    "decoded-save.json",
+    "observation.json",
+  ]);
+  await runGit(
+    input.repoPath,
+    [
+      "-c",
+      "user.name=silksong-git",
+      "-c",
+      "user.email=silksong-git@example.invalid",
+      "commit",
+      "-m",
+      `Observe save ${observationMetadata.observedAt}`,
+    ],
+    {
+      GIT_AUTHOR_DATE: observationMetadata.observedAt,
+      GIT_COMMITTER_DATE: observationMetadata.observedAt,
+    },
+  );
+
+  return {
+    status: "committed",
+    observation: {
+      commit: await readHistoryCommit(input.repoPath, "HEAD"),
+      ...observationMetadata,
+    },
+    semanticUpdate: {
+      status: "notAvailable",
+      reason: "readModelUnavailable",
+    },
+  };
 }
 
 export async function restoreEncodedSave(
@@ -198,4 +247,86 @@ function createProjectConfig(input: InitSaveHistoryInput): ProjectConfig {
     },
     ...input.config,
   };
+}
+
+async function readProjectConfig(repoPath: string): Promise<ProjectConfig> {
+  const configJson = await readFile(
+    path.join(repoPath, ".silksong-git/config.json"),
+    "utf8",
+  );
+
+  return JSON.parse(configJson) as ProjectConfig;
+}
+
+async function readCurrentHead(repoPath: string): Promise<string | undefined> {
+  try {
+    return await runGitOutput(repoPath, ["rev-parse", "--verify", "HEAD"]);
+  } catch {
+    return undefined;
+  }
+}
+
+async function readHistoryCommit(
+  repoPath: string,
+  ref: string,
+): Promise<HistoryCommit> {
+  const [fullRef, shortRef, committedAt] = await Promise.all([
+    runGitOutput(repoPath, ["rev-parse", ref]),
+    runGitOutput(repoPath, ["rev-parse", "--short", ref]),
+    runGitOutput(repoPath, ["show", "-s", "--format=%cI", ref]),
+  ]);
+
+  return {
+    ref: fullRef,
+    shortRef,
+    committedAt,
+  };
+}
+
+async function runGit(
+  cwd: string,
+  args: readonly string[],
+  env?: NodeJS.ProcessEnv,
+) {
+  await new Promise<void>((resolve, reject) => {
+    execFile(
+      "git",
+      [...args],
+      { cwd, env: { ...process.env, ...env } },
+      (error) => {
+        if (error) {
+          reject(
+            error instanceof Error ? error : new Error("Git command failed."),
+          );
+          return;
+        }
+
+        resolve();
+      },
+    );
+  });
+}
+
+async function runGitOutput(
+  cwd: string,
+  args: readonly string[],
+): Promise<string> {
+  const output = await new Promise<{ stdout: string }>((resolve, reject) => {
+    execFile("git", [...args], { cwd }, (error, stdout) => {
+      if (error) {
+        reject(
+          error instanceof Error ? error : new Error("Git command failed."),
+        );
+        return;
+      }
+
+      resolve({ stdout });
+    });
+  });
+
+  return output.stdout.trim();
+}
+
+function sha256Hex(input: Uint8Array | string): string {
+  return createHash("sha256").update(input).digest("hex");
 }
