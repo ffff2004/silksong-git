@@ -499,7 +499,7 @@ TDD Vertical Slices:
   - Assert: rebuild reports two recognized observations, two snapshots, and one or more Semantic Events; query returns events with `commit`, `previousCommit`, `observation`, `event`, and `visibility` metadata.
   - Fixture: generated committed encoded save pair whose decoded saves differ by one stable semantic item.
   - Other information: this is the P4-T2 tracer bullet; tests must not inspect SQLite tables directly.
-- [ ] Rebuild preserves unrecognized observations without Semantic Snapshots
+- [x] Rebuild preserves unrecognized observations without Semantic Snapshots
   - Public call: observe one recognized Encoded Save and one unrecognized-schema Encoded Save, then `rebuildSemanticReadModel({ repoPath })` and `queryHistory({ repoPath, includeRawObservations: true })`.
   - Assert: rebuild counts recognized and unrecognized observations separately; the unrecognized observation is returned as raw observation metadata but produces no Semantic Snapshot or Semantic Event.
   - Fixture: `packages/core/src/decode/fixtures/unrecognized-schema-save.dat` plus a recognized encoded save fixture.

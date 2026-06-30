@@ -45,6 +45,7 @@ interface EventRow {
 }
 
 interface QueryEventsOptions {
+  readonly includeRawObservations?: boolean;
   readonly limit?: number;
   readonly cursor?: string;
 }
@@ -123,9 +124,14 @@ export function queryReadModelHistory(
 ): HistoryResult {
   using db = openReadModel(repoPath);
   const rows = selectEventRows(db, options);
+  const rawObservations =
+    options.includeRawObservations === true
+      ? selectRawObservations(db)
+      : undefined;
 
   return {
     events: rows.map(toHistoricalSemanticEvent),
+    ...(rawObservations !== undefined && { rawObservations }),
   };
 }
 
@@ -425,6 +431,27 @@ function selectEventRows(
     `,
     )
     .all(cursor, limit) as unknown as EventRow[];
+}
+
+function selectRawObservations(
+  db: DatabaseSync,
+): readonly RawSaveObservation[] {
+  const rows = db
+    .prepare(
+      `
+      select observation_json
+      from observations
+      where ? = ?
+      order by sequence asc
+    `,
+    )
+    .all(1, 1) as unknown as ReadonlyArray<{
+    readonly observation_json: string;
+  }>;
+
+  return rows.map(
+    (row) => JSON.parse(row.observation_json) as RawSaveObservation,
+  );
 }
 
 function toHistoricalSemanticEvent(row: EventRow): HistoricalSemanticEvent {

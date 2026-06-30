@@ -328,3 +328,54 @@ test("rebuildSemanticReadModel rebuilds recognized Semantic Events for queryHist
     filterReasons: [],
   });
 });
+
+test("rebuildSemanticReadModel preserves Unrecognized Schema Observations without Semantic Events", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath,
+  });
+  const recognizedResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  await copyFile(unrecognizedEncodedSavePath, watchedSavePath);
+  const unrecognizedResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  assert.equal(recognizedResult.status, "committed");
+  assert.equal(unrecognizedResult.status, "committed");
+
+  const rebuildResult = await rebuildSemanticReadModel({ repoPath });
+  const history = await queryHistory({
+    repoPath,
+    includeRawObservations: true,
+  });
+
+  assert.equal(rebuildResult.observationCount, 2);
+  assert.equal(rebuildResult.recognizedObservationCount, 1);
+  assert.equal(rebuildResult.unrecognizedObservationCount, 1);
+  assert.equal(rebuildResult.snapshotCount, 1);
+  assert.equal(rebuildResult.eventCount, 0);
+  assert.equal(history.events.length, 0);
+  assert.ok(history.rawObservations !== undefined);
+  assert.equal(history.rawObservations.length, 2);
+  const [recognizedObservation, unrecognizedObservation] =
+    history.rawObservations;
+
+  assert.ok(recognizedObservation !== undefined);
+  assert.ok(unrecognizedObservation !== undefined);
+  assert.equal(recognizedObservation.schema.status, "recognized");
+  assert.equal(unrecognizedObservation.schema.status, "unrecognized");
+  assert.equal(
+    unrecognizedObservation.commit.ref,
+    unrecognizedResult.observation.commit.ref,
+  );
+});
