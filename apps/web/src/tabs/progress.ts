@@ -1,16 +1,9 @@
-import { assertArray, isArray } from "complete-common";
+import { getBuiltinMappingData } from "@silksong-git/core";
+import { assertArray } from "complete-common";
 import { getStoredActFilter } from "../components/acts-dropdown.ts";
 import { showOnlyMissing } from "../components/show-only-missing.ts";
 import { showSpoilers } from "../components/show-spoilers.ts";
 import { BASE_PATH } from "../constants.ts";
-import bossesJSON from "../data/bosses.json" with { type: "json" };
-import completionJSON from "../data/completion.json" with { type: "json" };
-import essentialsJSON from "../data/essentials.json" with { type: "json" };
-import journalJSON from "../data/journal.json" with { type: "json" };
-import mainJSON from "../data/main.json" with { type: "json" };
-import miniBossesJSON from "../data/mini-bosses.json" with { type: "json" };
-import scenesJSON from "../data/scenes.json" with { type: "json" };
-import wishesJSON from "../data/wishes.json" with { type: "json" };
 
 import {
   allProgressGrid,
@@ -22,9 +15,8 @@ import {
 } from "../elements.ts";
 import {
   getSaveData,
-  getSaveDataFlags,
   getSaveDataMode,
-  getSaveDataValue,
+  getSemanticSnapshotItem,
 } from "../save-data.ts";
 import type { Category } from "../types/Category.ts";
 import type { Item } from "../types/Item.ts";
@@ -43,49 +35,34 @@ function getProgressCategories(categories: unknown): readonly Category[] {
   return categories as readonly Category[];
 }
 
+function getProgressSections(): ReadonlyArray<{
+  title: string;
+  categories: readonly Category[];
+}> {
+  const titlesBySectionId = new Map([
+    ["bosses", "Bosses"],
+    ["completion", "Completion"],
+    ["essentials", "Essential Items"],
+    ["journal", "Journal"],
+    ["main", "Main Progress"],
+    ["mini-bosses", "Mini-Bosses"],
+    ["scenes", "Rooms"],
+    ["wishes", "Wishes"],
+  ]);
+
+  return getBuiltinMappingData().sections.map((section) => ({
+    title: titlesBySectionId.get(section.id) ?? section.label,
+    categories: getProgressCategories(section.categories),
+  }));
+}
+
 export function updateTabProgress(): void {
   initProgressListeners();
   const spoilerOn = showSpoilers.checked;
   const showMissingOnly = showOnlyMissing.checked;
   allProgressGrid.innerHTML = "";
 
-  const allCategories: Array<{
-    title: string;
-    categories: readonly Category[];
-  }> = [
-    {
-      title: "Main Progress",
-      categories: getProgressCategories(mainJSON.categories),
-    },
-    {
-      title: "Essential Items",
-      categories: getProgressCategories(essentialsJSON.categories),
-    },
-    {
-      title: "Bosses",
-      categories: getProgressCategories(bossesJSON.categories),
-    },
-    {
-      title: "Mini-Bosses",
-      categories: getProgressCategories(miniBossesJSON.categories),
-    },
-    {
-      title: "Completion",
-      categories: getProgressCategories(completionJSON.categories),
-    },
-    {
-      title: "Wishes",
-      categories: getProgressCategories(wishesJSON.categories),
-    },
-    {
-      title: "Journal",
-      categories: getProgressCategories(journalJSON.categories),
-    },
-    {
-      title: "Rooms",
-      categories: getProgressCategories(scenesJSON.categories),
-    },
-  ];
+  const allCategories = getProgressSections();
 
   for (const { title, categories } of allCategories) {
     const categoryHeader = document.createElement("h2");
@@ -106,7 +83,6 @@ export function updateTabProgress(): void {
       const { items } = category;
 
       const saveData = getSaveData();
-      const saveDataFlags = getSaveDataFlags();
 
       const obtainedGroups = new Set<string>();
       if (saveData !== undefined) {
@@ -115,8 +91,7 @@ export function updateTabProgress(): void {
             continue;
           }
 
-          const v = getSaveDataValue(saveData, saveDataFlags, i);
-          if (getUnlocked(i, v)) {
+          if (isObtained(i)) {
             obtainedGroups.add(i.group);
           }
         }
@@ -130,9 +105,7 @@ export function updateTabProgress(): void {
 
       if (showMissingOnly && saveData !== undefined) {
         filteredItems = filteredItems.filter((item: Item) => {
-          const value = getSaveDataValue(saveData, saveDataFlags, item);
-
-          if (getUnlocked(item, value)) {
+          if (isObtained(item)) {
             return false;
           }
 
@@ -141,18 +114,18 @@ export function updateTabProgress(): void {
           }
 
           if (item.type === "collectable") {
-            return (typeof value === "number" ? value : 0) === 0;
+            return getNumericValue(item) === 0;
           }
           if (item.type === "level") {
-            return (typeof value === "number" ? value : 0) < item.required;
+            return getNumericValue(item) < item.required;
           }
           if (item.type === "quest") {
-            return value !== "completed" && value !== true;
+            return !isDone(item);
           }
           if (item.type === "anyOf") {
-            return !getUnlocked(item, value);
+            return !isObtained(item);
           }
-          return value !== true;
+          return !isDone(item);
         });
       }
 
@@ -160,11 +133,7 @@ export function updateTabProgress(): void {
       let total = 0;
 
       for (const item of filteredItems) {
-        const value =
-          saveData === undefined
-            ? false
-            : getSaveDataValue(saveData, saveDataFlags, item);
-        const unlocked = getUnlocked(item, value);
+        const unlocked = saveData !== undefined && isObtained(item);
 
         if (item.type === "tool" && item.upgradeOf !== undefined) {
           continue;
@@ -179,11 +148,7 @@ export function updateTabProgress(): void {
           item.unobtainable === true
           && typeof item.group === "string"
           && item.group.trim() !== ""
-          && filteredItems.some(
-            (i) =>
-              i.group === item.group
-              && getUnlocked(i, getSaveDataValue(saveData, saveDataFlags, i)),
-          )
+          && filteredItems.some((i) => i.group === item.group && isObtained(i))
           && !unlocked
         ) {
           continue;
@@ -251,71 +216,33 @@ function initWorldMapListeners() {
   });
 }
 
-function getUnlocked(item: Item, value: unknown): boolean {
-  if (item.type === "quest") {
-    return value === "completed" || value === true;
+function getSnapshotValue(item: Item): unknown {
+  return getSemanticSnapshotItem(item.id)?.value;
+}
+
+function getNumericValue(item: Item): number {
+  const value = getSnapshotValue(item);
+  return typeof value === "number" ? value : 0;
+}
+
+function isDone(item: Item): boolean {
+  return getSemanticSnapshotItem(item.id)?.status === "done";
+}
+
+function isAccepted(item: Item): boolean {
+  return getSemanticSnapshotItem(item.id)?.status === "accepted";
+}
+
+function isObtained(item: Item): boolean {
+  if (
+    item.type === "relic"
+    || item.type === "materium"
+    || item.type === "device"
+  ) {
+    return isDone(item) || isAccepted(item);
   }
 
-  if (item.type === "level") {
-    const numberValue = typeof value === "number" ? value : 0;
-    return numberValue >= item.required;
-  }
-
-  if (item.type === "collectable") {
-    const numberValue = typeof value === "number" ? value : 0;
-    return numberValue > 0;
-  }
-
-  if (item.type === "quill" && typeof value === "number") {
-    return item.id === `QuillState_${value}` && [1, 2, 3].includes(value);
-  }
-
-  if (item.type === "journal") {
-    // Fix: count as complete if numeric progress >= required OR if value is boolean true
-    const numberValue = typeof value === "number" ? value : 0;
-    const { required } = item;
-    return numberValue >= required || value === true;
-  }
-
-  if (item.type === "anyOf") {
-    const anyOfResults: readonly unknown[] = isArray(value) ? value : [];
-    return item.anyOf.some((check, index) => {
-      const someValue = anyOfResults[index];
-
-      const evaluateCheck = (): boolean => {
-        switch (check.type) {
-          case "flag":
-          case "sceneBool":
-          case "sceneVisited": {
-            return someValue === true;
-          }
-
-          case "flagInt": {
-            return typeof someValue === "number" ? someValue >= 1 : false;
-          }
-
-          case "level": {
-            const current = typeof someValue === "number" ? someValue : 0;
-            return current >= check.required;
-          }
-        }
-      };
-
-      return evaluateCheck();
-    });
-  }
-
-  if (item.type === "key") {
-    return value === true;
-  }
-
-  if (item.type === "sceneVisited") {
-    const visitedScenes = getSaveData()?.playerData.scenesVisited ?? [];
-
-    return isArray(visitedScenes) && visitedScenes.includes(item.scene);
-  }
-
-  return value === true || value === "collected" || value === "deposited";
+  return isDone(item);
 }
 
 function buildDynamicTOC() {
@@ -677,16 +604,10 @@ function renderGenericGrid(
   containerElement.innerHTML = "";
 
   const saveData = getSaveData();
-  const saveDataFlags = getSaveDataFlags();
 
   const obtainedGroups = new Set<string>();
   for (const i of items) {
-    const v = getSaveDataValue(saveData, saveDataFlags, i);
-    if (
-      typeof i.group === "string"
-      && i.group.trim() !== ""
-      && getUnlocked(i, v)
-    ) {
+    if (typeof i.group === "string" && i.group.trim() !== "" && isObtained(i)) {
       obtainedGroups.add(i.group);
     }
   }
@@ -732,101 +653,8 @@ function renderGenericGrid(
     const img = document.createElement("img");
     img.alt = item.label;
 
-    const value = getSaveDataValue(saveData, saveDataFlags, item);
-
-    let isDone: boolean;
-    let isAccepted = false;
-
-    switch (item.type) {
-      case "level": {
-        const current = Number.isFinite(Number(value)) ? Number(value) : 0;
-        isDone = current >= item.required;
-        break;
-      }
-
-      case "collectable": {
-        const current = Number.isFinite(Number(value)) ? Number(value) : 0;
-        isDone = current > 0;
-        break;
-      }
-
-      case "quill": {
-        isDone =
-          typeof value === "number"
-          && item.id === `QuillState_${value}`
-          && [1, 2, 3].includes(value);
-        break;
-      }
-
-      case "quest": {
-        isDone = value === "completed" || value === true;
-        isAccepted = value === "accepted";
-        break;
-      }
-
-      case "relic":
-      case "materium":
-      case "device": {
-        isDone = value === "deposited";
-        isAccepted = value === "collected";
-        break;
-      }
-
-      case "journal": {
-        const current = Number.isFinite(Number(value)) ? Number(value) : 0;
-        const { required } = item;
-        isDone = current >= required;
-        isAccepted = current > 0 && current < required;
-        break;
-      }
-
-      case "anyOf": {
-        const anyOfResults: readonly unknown[] = isArray(value) ? value : [];
-        isDone = item.anyOf.some((check, index) => {
-          const someValue = anyOfResults[index];
-
-          const evaluateCheck = (): boolean => {
-            switch (check.type) {
-              case "flag":
-              case "sceneBool":
-              case "sceneVisited": {
-                return someValue === true;
-              }
-
-              case "flagInt": {
-                return typeof someValue === "number" ? someValue >= 1 : false;
-              }
-
-              case "level": {
-                const current = Number.isFinite(Number(someValue))
-                  ? Number(someValue)
-                  : 0;
-                return current >= check.required;
-              }
-            }
-          };
-
-          return evaluateCheck();
-        });
-        break;
-      }
-
-      case "key": {
-        isDone = value === true;
-        break;
-      }
-
-      case "sceneVisited": {
-        const visitedScenes = getSaveData()?.playerData.scenesVisited ?? [];
-        isDone = isArray(visitedScenes) && visitedScenes.includes(item.scene);
-        break;
-      }
-
-      default: {
-        isDone = value === true;
-        break;
-      }
-    }
+    const done = isDone(item);
+    const accepted = isAccepted(item);
 
     // Unobtainable icon
     if (item.unobtainable === true) {
@@ -842,13 +670,13 @@ function renderGenericGrid(
       && item.unobtainable === true
       && typeof item.group === "string"
       && obtainedGroups.has(item.group)
-      && !isDone
+      && !done
     ) {
       div.classList.add("unobtainable", "done");
     }
 
     // Hide done items if "Only Missing" is checked.
-    if (showOnlyMissing.checked && isDone) {
+    if (showOnlyMissing.checked && isObtained(item)) {
       continue;
     }
 
@@ -865,10 +693,10 @@ function renderGenericGrid(
     const iconPath = resolveIconSrc(item.icon);
     const lockedPath = `${BASE_PATH}/assets/icons/locked.png`;
 
-    if (isDone) {
+    if (done) {
       img.src = iconPath;
       div.classList.add("done");
-    } else if (isAccepted) {
+    } else if (accepted) {
       img.src = iconPath;
       div.classList.add("accepted");
     } else if (item.unobtainable === true && saveData !== undefined) {
@@ -904,7 +732,7 @@ function renderGenericGrid(
 
     // Journal counter
     if (item.type === "journal") {
-      const current = Number.isFinite(Number(value)) ? Number(value) : 0;
+      const current = getNumericValue(item);
       const counter = document.createElement("span");
       counter.className = "journal-counter";
       counter.textContent =
@@ -1045,16 +873,9 @@ function matchMode(item: Item) {
 }
 
 function collectAllItems(): readonly Item[] {
-  const categories = [
-    ...(mainJSON.categories as Category[]),
-    ...(essentialsJSON.categories as Category[]),
-    ...(bossesJSON.categories as Category[]),
-    ...(miniBossesJSON.categories as Category[]),
-    ...(completionJSON.categories as Category[]),
-    ...(wishesJSON.categories as Category[]),
-    ...(journalJSON.categories as Category[]),
-    ...(scenesJSON.categories as Category[]),
-  ];
+  const categories = getProgressSections().flatMap(
+    (section) => section.categories,
+  );
 
   return categories.flatMap((c) => c.items);
 }
@@ -1080,7 +901,6 @@ function renderWorldMapPins() {
 
   const items = collectAllItems();
   const saveData = getSaveData();
-  const saveDataFlags = getSaveDataFlags();
   const activeFilters = new Set<string>();
 
   // eslint-disable-next-line unicorn/prefer-spread
@@ -1134,12 +954,8 @@ function renderWorldMapPins() {
     pin.style.left = `${item.mapViewer.x * 100}%`;
     pin.style.top = `${item.mapViewer.y * 100}%`;
 
-    if (saveData !== undefined) {
-      const value = getSaveDataValue(saveData, saveDataFlags, item);
-      const unlocked = getUnlocked(item, value);
-      if (unlocked) {
-        pin.classList.add("obtained");
-      }
+    if (saveData !== undefined && isObtained(item)) {
+      pin.classList.add("obtained");
     }
 
     pin.addEventListener("click", (e) => {

@@ -9,7 +9,7 @@ import { getFilePathsInDirectory, readFile } from "complete-node";
 import { execFile } from "node:child_process";
 import path from "node:path";
 
-import { WEB_APP_ROOT } from "./paths.ts";
+import { CORE_PACKAGE_ROOT } from "./paths.ts";
 
 interface CommandErrorOutput {
   readonly stderr?: unknown;
@@ -30,8 +30,8 @@ async function execFileAsync(file: string, args: readonly string[]) {
   });
 }
 
-async function getWebDataJSONFilePaths(): Promise<readonly string[]> {
-  const dataPath = path.join(WEB_APP_ROOT, "src", "data");
+async function getCoreMappingJSONFilePaths(): Promise<readonly string[]> {
+  const dataPath = path.join(CORE_PACKAGE_ROOT, "src", "data");
   const filePaths = await getFilePathsInDirectory(dataPath);
 
   return filePaths.filter(
@@ -40,8 +40,8 @@ async function getWebDataJSONFilePaths(): Promise<readonly string[]> {
   );
 }
 
-export async function checkWebJSONSchemas(): Promise<void> {
-  const jsonFilePaths = await getWebDataJSONFilePaths();
+export async function checkCoreMappingJSONSchemas(): Promise<void> {
+  const jsonFilePaths = await getCoreMappingJSONFilePaths();
 
   const schemaChecks = jsonFilePaths.map(async (jsonFilePath) => {
     const { dir, name } = path.parse(jsonFilePath);
@@ -86,8 +86,8 @@ function getCommandErrorDetails(error: unknown) {
   return error instanceof Error ? `\n${error.message}` : "";
 }
 
-export async function checkWebJSONFiles(): Promise<void> {
-  const jsonFilePaths = await getWebDataJSONFilePaths();
+export async function checkCoreMappingJSONFiles(): Promise<void> {
+  const jsonFilePaths = await getCoreMappingJSONFilePaths();
 
   const fileChecks = jsonFilePaths.map(async (jsonFilePath) => {
     const fileContents = await readFile(jsonFilePath);

@@ -12,13 +12,14 @@ import type {
 
 import { isArray } from "complete-common";
 
-const SUMMARY_METRIC_SOURCE_FIELDS = {
-  completionPercentage: "completionPercentage",
-  permadeathMode: "permadeathMode",
-  playTime: "playTime",
-  rosaries: "geo",
-  shellShards: "ShellShards",
-} as const satisfies Record<SaveSummaryMetricName, string>;
+const SUMMARY_METRIC_SOURCE_FIELDS: ReadonlyMap<SaveSummaryMetricName, string> =
+  new Map<SaveSummaryMetricName, string>([
+    ["completionPercentage", "completionPercentage"],
+    ["permadeathMode", "permadeathMode"],
+    ["playTime", "playTime"],
+    ["rosaries", "geo"],
+    ["shellShards", "ShellShards"],
+  ]);
 
 const SUMMARY_METRIC_ORDER = [
   "completionPercentage",
@@ -114,10 +115,19 @@ function createSummaryMetricSourceReferences(
 ): readonly SourceReference[] {
   return [
     {
-      field: SUMMARY_METRIC_SOURCE_FIELDS[metric],
+      field: getSummaryMetricSourceField(metric),
       kind: "playerData",
     },
   ];
+}
+
+function getSummaryMetricSourceField(metric: SaveSummaryMetricName): string {
+  const field = SUMMARY_METRIC_SOURCE_FIELDS.get(metric);
+  if (field === undefined) {
+    throw new Error(`Unknown summary metric: ${metric}`);
+  }
+
+  return field;
 }
 
 function createItemEvent(

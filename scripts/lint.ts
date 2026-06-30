@@ -1,7 +1,10 @@
 import { lintCommands } from "complete-node";
 
+import {
+  checkCoreMappingJSONFiles,
+  checkCoreMappingJSONSchemas,
+} from "./lint/core-mapping-json.ts";
 import { checkForIllegalCharacters } from "./lint/illegal-characters.ts";
-import { checkWebJSONFiles, checkWebJSONSchemas } from "./lint/web-json.ts";
 
 await lintCommands(import.meta.dirname, [
   // Use TypeScript to type-check the code.
@@ -11,7 +14,7 @@ await lintCommands(import.meta.dirname, [
   // Use ESLint to lint the code.
   // - "--max-warnings 0" makes warnings fail, since we set all ESLint errors to warnings.
   "eslint --cache --cache-location .eslintcache --max-warnings 0 .",
-  "eslint --max-warnings 0 --config eslint.config.json.mjs apps/web/src/data/*.json",
+  "eslint --max-warnings 0 --config eslint.config.json.mjs packages/core/src/data/*.json",
 
   // Use Prettier to check formatting.
   // - "--log-level=warn" makes it only output errors.
@@ -25,12 +28,12 @@ await lintCommands(import.meta.dirname, [
   // Use stylelint to lint the CSS.
   "stylelint ./apps/web/public/assets/css/style.css",
 
-  // Ensure that the Web data JSON files satisfy their schemas.
-  ["check Web JSON schemas", checkWebJSONSchemas()],
+  // Ensure that the core mapping JSON files satisfy their schemas.
+  ["check core mapping JSON schemas", checkCoreMappingJSONSchemas()],
 
   // Ensure that certain characters do not appear in any files.
   ["check for illegal characters", checkForIllegalCharacters()],
 
-  // Ensure that the Web data JSON files adhere to certain quality standards.
-  ["check Web JSON files", checkWebJSONFiles()],
+  // Ensure that the core mapping JSON files adhere to certain quality standards.
+  ["check core mapping JSON files", checkCoreMappingJSONFiles()],
 ]);

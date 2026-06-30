@@ -6,8 +6,8 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 ## Current Status
 
-- Current phase: P5 CLI
-- Next task: P5-T1 Implement Save CLI Commands
+- Current phase: P6 Web Integration
+- Next task: P6-T2 Add Local History Web Mode
 - Last updated: 2026-06-30
 
 ## Phase Overview
@@ -19,7 +19,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 | P3 Core Semantic Module               | complete    | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface. |
 | P4 History Module                     | complete    | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.           |
 | P5 CLI                                | in progress | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                          |
-| P6 Web Integration                    | pending     | P3, P4     | Web UI uses core and supports static and local history modes.                                        |
+| P6 Web Integration                    | in progress | P3, P4     | Web UI uses core and supports static and local history modes.                                        |
 
 ## Task Rules
 
@@ -617,7 +617,7 @@ Verification:
 
 ### P6-T1 Route Current Save Flow Through Core
 
-Status: pending
+Status: complete
 
 Depends on:
 
@@ -643,9 +643,19 @@ Acceptance criteria:
 
 Verification:
 
-- Web test/build command: pending
-- `pnpm format`: pending
-- `pnpm lint`: pending
+- `pnpm --filter @silksong-git/web build`: passed
+- `pnpm --filter @silksong-git/core test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- Static Web Mode smoke test with committed encoded and decoded fixtures: passed; manually verified by the user with no issues found.
+
+Notes:
+
+- Static Web Mode now calls `decodeEncodedSave`, `parseDecodedSave`, `getBuiltinMappingData`, and `createSemanticSnapshot` from `@silksong-git/core`.
+- Raw Save tab still renders the raw Decoded Save JSON rather than Semantic Snapshot JSON.
+- Progress cards, category counts, missing filter, mode filter, and map pins read from Semantic Snapshot items while preserving the old Web presentation behavior, including collected relic/materium/device compatibility.
+- Mapping JSON and schema validation ownership moved to `packages/core/src/data`; duplicated Web data files and Web-local decoder/parser files were removed.
+- `apps/web` now depends on `@silksong-git/core` and no longer directly depends on `crypto-js`, `zod`, or `@types/crypto-js`.
 
 ### P6-T2 Add Local History Web Mode
 
