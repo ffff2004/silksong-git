@@ -428,7 +428,7 @@ TDD Vertical Slices:
   - Assert: restored file bytes equal the original Encoded Save bytes and result includes the target path, commit, and written hash.
   - Fixture: `packages/core/src/decode/fixtures/minimal-valid-save.dat`.
   - Other information: this completes the minimal P4-T1 end-to-end path: init -> observe -> restore.
-- [ ] Observe skips an unchanged save
+- [x] Observe skips an unchanged save
   - Public call: call `observeSave({ repoPath })` twice after `initSaveHistory`.
   - Assert: the second result is `status: "skipped"` with `reason: "unchanged"` and returns the encoded hash.
   - Fixture: `packages/core/src/decode/fixtures/minimal-valid-save.dat`.

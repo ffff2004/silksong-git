@@ -113,3 +113,29 @@ test("restoreEncodedSave writes the observed Encoded Save byte-for-byte", async 
     await readFile(minimalEncodedSavePath),
   );
 });
+
+test("observeSave skips an unchanged Encoded Save", async () => {
+  const tempDirectory = await createTempDirectory();
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath: minimalEncodedSavePath,
+  });
+  const firstResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  const secondResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  assert.equal(firstResult.status, "committed");
+  assert.equal(secondResult.status, "skipped");
+  assert.equal(secondResult.reason, "unchanged");
+  assert.equal(
+    secondResult.encodedSha256,
+    firstResult.observation.encodedSha256,
+  );
+});

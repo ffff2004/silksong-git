@@ -160,6 +160,20 @@ export async function observeSave(
   const config = await readProjectConfig(input.repoPath);
   const observedAt = input.observedAt ?? new Date();
   const encodedBytes = await readFile(config.watchedSavePath);
+  const encodedSha256 = sha256Hex(encodedBytes);
+  const lastObservation = await readLastObservation(input.repoPath);
+
+  if (
+    input.force !== true
+    && lastObservation?.encodedSha256 === encodedSha256
+  ) {
+    return {
+      status: "skipped",
+      reason: "unchanged",
+      encodedSha256,
+    };
+  }
+
   const decoded = decodeEncodedSave(encodedBytes);
   const parsed = parseDecodedSave(decoded.decodedSave);
   const decodedJson = `${JSON.stringify(decoded.decodedSave, undefined, 2)}\n`;
@@ -167,7 +181,7 @@ export async function observeSave(
   const observationMetadata: ObservationMetadata = {
     observedAt: observedAt.toISOString(),
     sourcePath: config.watchedSavePath,
-    encodedSha256: sha256Hex(encodedBytes),
+    encodedSha256,
     decodedSha256: sha256Hex(decodedJson),
     previousCommit,
     decoderVersion: decoded.version.decoderVersion,
@@ -271,6 +285,21 @@ async function readProjectConfig(repoPath: string): Promise<ProjectConfig> {
   );
 
   return JSON.parse(configJson) as ProjectConfig;
+}
+
+async function readLastObservation(
+  repoPath: string,
+): Promise<ObservationMetadata | undefined> {
+  try {
+    const observationJson = await readFile(
+      path.join(repoPath, "observation.json"),
+      "utf8",
+    );
+
+    return JSON.parse(observationJson) as ObservationMetadata;
+  } catch {
+    return undefined;
+  }
 }
 
 async function readCurrentHead(repoPath: string): Promise<string | undefined> {
