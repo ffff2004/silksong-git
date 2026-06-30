@@ -219,6 +219,38 @@ test("observeSave commits an Unrecognized Schema Observation without semantic up
   );
 });
 
+test("restoreEncodedSave refuses to overwrite an existing target implicitly", async () => {
+  const tempDirectory = await createTempDirectory();
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const restorePath = path.join(tempDirectory, "existing-save.dat");
+  const existingBytes = new Uint8Array([9, 8, 7, 6]);
+
+  await writeFile(restorePath, existingBytes);
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath: minimalEncodedSavePath,
+  });
+  const observationResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  assert.equal(observationResult.status, "committed");
+
+  await assert.rejects(
+    async () =>
+      await restoreEncodedSave({
+        repoPath,
+        commitRef: observationResult.observation.commit.ref,
+        target: {
+          kind: "path",
+          path: restorePath,
+        },
+      }),
+  );
+  assert.deepEqual(await readFile(restorePath), Buffer.from(existingBytes));
+});
+
 function encodeSilksongSave(decodedSave: unknown): Uint8Array {
   const cipher = createCipheriv(
     "aes-256-ecb",

@@ -443,7 +443,7 @@ TDD Vertical Slices:
   - Assert: result is `status: "committed"`; schema is `unrecognized`; `semanticUpdate.status` is `notAvailable`; restore remains byte-for-byte from the committed observation.
   - Fixture: generated encoded save fixture with an unsupported decoded shape.
   - Other information: covers ADR-0016 and should still commit `save.dat`, `decoded-save.json`, and `observation.json`.
-- [ ] Restore refuses implicit overwrite
+- [x] Restore refuses implicit overwrite
   - Public call: `restoreEncodedSave({ repoPath, commitRef, target: { kind: "path", path } })` where the target path already exists.
   - Assert: restore fails without changing the existing target file unless overwrite is explicit.
   - Fixture: observed minimal encoded save plus a pre-existing temporary restore target.

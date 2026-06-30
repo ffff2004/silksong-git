@@ -289,7 +289,9 @@ export async function restoreEncodedSave(
     "save.dat",
   );
 
-  await writeFile(input.target.path, encodedSave);
+  await writeFile(input.target.path, encodedSave, {
+    flag: input.target.overwrite === true ? "w" : "wx",
+  });
 
   return {
     commit: await readHistoryCommit(input.repoPath, input.commitRef),
