@@ -438,7 +438,7 @@ TDD Vertical Slices:
   - Assert: result is `status: "watcherError"` with a decode-failure reason, and no new Raw Save Observation is committed.
   - Fixture: temporary invalid `.dat` file.
   - Other information: covers the distinction between Watcher Error and Unrecognized Schema Observation.
-- [ ] Unrecognized schema is committed without semantic update
+- [x] Unrecognized schema is committed without semantic update
   - Public call: `observeSave({ repoPath })` with bytes that decode successfully but fail `parseDecodedSave`.
   - Assert: result is `status: "committed"`; schema is `unrecognized`; `semanticUpdate.status` is `notAvailable`; restore remains byte-for-byte from the committed observation.
   - Fixture: generated encoded save fixture with an unsupported decoded shape.

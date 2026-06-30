@@ -1,6 +1,7 @@
 import type { DecodedSaveVersion } from "@silksong-git/core";
 import {
   DecodeEncodedSaveError,
+  UnrecognizedSaveSchemaError,
   decodeEncodedSave,
   parseDecodedSave,
 } from "@silksong-git/core";
@@ -195,8 +196,34 @@ export async function observeSave(
     throw error;
   }
 
-  const parsed = parseDecodedSave(decoded.decodedSave);
   const decodedJson = `${JSON.stringify(decoded.decodedSave, undefined, 2)}\n`;
+  let schema: ObservationMetadata["schema"];
+  let semanticUpdate: SemanticUpdateResult;
+  try {
+    const parsed = parseDecodedSave(decoded.decodedSave);
+    schema = {
+      status: "recognized",
+      ...parsed.version,
+    };
+    semanticUpdate = {
+      status: "notAvailable",
+      reason: "readModelUnavailable",
+    };
+  } catch (error) {
+    if (!(error instanceof UnrecognizedSaveSchemaError)) {
+      throw error;
+    }
+
+    schema = {
+      status: "unrecognized",
+      reason: error.message,
+    };
+    semanticUpdate = {
+      status: "notAvailable",
+      reason: "unrecognizedSchema",
+    };
+  }
+
   const previousCommit = await readCurrentHead(input.repoPath);
   const observationMetadata: ObservationMetadata = {
     observedAt: observedAt.toISOString(),
@@ -205,10 +232,7 @@ export async function observeSave(
     decodedSha256: sha256Hex(decodedJson),
     previousCommit,
     decoderVersion: decoded.version.decoderVersion,
-    schema: {
-      status: "recognized",
-      ...parsed.version,
-    },
+    schema,
   };
 
   await copyFile(config.watchedSavePath, path.join(input.repoPath, "save.dat"));
@@ -248,10 +272,7 @@ export async function observeSave(
       commit: await readHistoryCommit(input.repoPath, "HEAD"),
       ...observationMetadata,
     },
-    semanticUpdate: {
-      status: "notAvailable",
-      reason: "readModelUnavailable",
-    },
+    semanticUpdate,
   };
 }
 

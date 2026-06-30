@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { createCipheriv } from "node:crypto";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,6 +15,10 @@ const minimalEncodedSavePath = path.join(
   fixtureDirectory,
   "minimal-valid-save.dat",
 );
+const csharpHeader = new Uint8Array([
+  0, 1, 0, 0, 0, 255, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0, 0, 6, 1, 0, 0, 0,
+]);
+const aesKeyString = "UKu52ePUBwetZ9wNX88o54dnfKRu0T1l";
 
 async function createTempDirectory(): Promise<string> {
   return await mkdtemp(path.join(tmpdir(), "silksong-history-test-"));
@@ -159,3 +164,98 @@ test("observeSave reports decode failures as Watcher Errors without committing",
     async () => await stat(path.join(repoPath, "observation.json")),
   );
 });
+
+test("observeSave commits an Unrecognized Schema Observation without semantic update", async () => {
+  const tempDirectory = await createTempDirectory();
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const unrecognizedSavePath = path.join(
+    tempDirectory,
+    "unrecognized-save.dat",
+  );
+  const restorePath = path.join(tempDirectory, "restored-unrecognized.dat");
+
+  await writeFile(
+    unrecognizedSavePath,
+    encodeSilksongSave({ playerData: { completionPercentage: 39 } }),
+  );
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath: unrecognizedSavePath,
+  });
+
+  const result = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  assert.equal(result.status, "committed");
+  assert.equal(result.observation.schema.status, "unrecognized");
+  assert.notEqual(result.observation.schema.reason, "");
+  assert.equal(result.semanticUpdate.status, "notAvailable");
+  assert.equal(result.semanticUpdate.reason, "unrecognizedSchema");
+  await assert.doesNotReject(
+    async () => await stat(path.join(repoPath, "save.dat")),
+  );
+  await assert.doesNotReject(
+    async () => await stat(path.join(repoPath, "decoded-save.json")),
+  );
+  await assert.doesNotReject(
+    async () => await stat(path.join(repoPath, "observation.json")),
+  );
+
+  const restoreResult = await restoreEncodedSave({
+    repoPath,
+    commitRef: result.observation.commit.ref,
+    target: {
+      kind: "path",
+      path: restorePath,
+    },
+  });
+
+  assert.equal(restoreResult.writtenSha256, result.observation.encodedSha256);
+  assert.deepEqual(
+    await readFile(restorePath),
+    await readFile(unrecognizedSavePath),
+  );
+});
+
+function encodeSilksongSave(decodedSave: unknown): Uint8Array {
+  const cipher = createCipheriv(
+    "aes-256-ecb",
+    Buffer.from(aesKeyString, "utf8"),
+    // eslint-disable-next-line unicorn/no-null
+    null,
+  );
+  const jsonString = JSON.stringify(decodedSave);
+  const encrypted = Buffer.concat([
+    cipher.update(jsonString, "utf8"),
+    cipher.final(),
+  ]);
+  // eslint-disable-next-line unicorn/prefer-uint8array-base64
+  const base64Bytes = Buffer.from(encrypted.toString("base64"), "utf8");
+  const lengthPrefix = encode7BitLength(base64Bytes.length);
+  const encoded = new Uint8Array(
+    csharpHeader.length + lengthPrefix.length + base64Bytes.length + 1,
+  );
+
+  encoded.set(csharpHeader);
+  encoded.set(lengthPrefix, csharpHeader.length);
+  encoded.set(base64Bytes, csharpHeader.length + lengthPrefix.length);
+
+  return encoded;
+}
+
+function encode7BitLength(length: number): Uint8Array {
+  const bytes: number[] = [];
+  let value = length;
+
+  while (value >= 0x80) {
+    // eslint-disable-next-line no-bitwise
+    bytes.push((value & 0x7f) | 0x80);
+    // eslint-disable-next-line no-bitwise
+    value >>= 7;
+  }
+
+  bytes.push(value);
+  return new Uint8Array(bytes);
+}
