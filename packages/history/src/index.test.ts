@@ -12,7 +12,13 @@ import path from "node:path";
 import type { TestContext } from "node:test";
 import test from "node:test";
 
-import { initSaveHistory, observeSave, restoreEncodedSave } from "./index.ts";
+import {
+  initSaveHistory,
+  observeSave,
+  queryHistory,
+  rebuildSemanticReadModel,
+  restoreEncodedSave,
+} from "./index.ts";
 
 const fixtureDirectory = path.join(
   import.meta.dirname,
@@ -25,6 +31,10 @@ const minimalEncodedSavePath = path.join(
 const unrecognizedEncodedSavePath = path.join(
   fixtureDirectory,
   "unrecognized-schema-save.dat",
+);
+const maskShard2CollectedEncodedSavePath = path.join(
+  fixtureDirectory,
+  "mask-shard-2-collected-save.dat",
 );
 
 async function createTempDirectory(t: TestContext): Promise<string> {
@@ -261,4 +271,60 @@ test("restoreEncodedSave refuses to overwrite an existing target implicitly", as
       }),
   );
   assert.deepEqual(await readFile(restorePath), Buffer.from(existingBytes));
+});
+
+test("rebuildSemanticReadModel rebuilds recognized Semantic Events for queryHistory", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath,
+  });
+  const beforeResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
+  const afterResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  assert.equal(beforeResult.status, "committed");
+  assert.equal(afterResult.status, "committed");
+
+  const rebuildResult = await rebuildSemanticReadModel({ repoPath });
+  const history = await queryHistory({ repoPath });
+
+  assert.equal(rebuildResult.observationCount, 2);
+  assert.equal(rebuildResult.recognizedObservationCount, 2);
+  assert.equal(rebuildResult.unrecognizedObservationCount, 0);
+  assert.equal(rebuildResult.snapshotCount, 2);
+  assert.equal(rebuildResult.eventCount, 1);
+  assert.equal(history.events.length, 1);
+
+  const [historicalEvent] = history.events;
+
+  assert.ok(historicalEvent !== undefined);
+  assert.equal(historicalEvent.commit.ref, afterResult.observation.commit.ref);
+  assert.equal(
+    historicalEvent.previousCommit?.ref,
+    beforeResult.observation.commit.ref,
+  );
+  assert.equal(
+    historicalEvent.observation.commit.ref,
+    afterResult.observation.commit.ref,
+  );
+  assert.equal(historicalEvent.event.kind, "item");
+  assert.equal(historicalEvent.event.eventType, "itemStatusChanged");
+  assert.equal(historicalEvent.event.item.id, "mask-shard-2");
+  assert.equal(historicalEvent.event.after.status, "done");
+  assert.deepEqual(historicalEvent.visibility, {
+    defaultVisible: true,
+    filterReasons: [],
+  });
 });

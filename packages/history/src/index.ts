@@ -11,26 +11,40 @@ import { encodedSaveArtifactPath, getRepositoryLayout } from "./layout.ts";
 import { decodeObservation } from "./observation-decoder.ts";
 import type { ObservationMetadata } from "./observation.ts";
 import { commitRawSaveObservation } from "./raw-observation-store.ts";
+import { queryReadModelHistory, rebuildReadModel } from "./read-model.ts";
 import type {
+  HistoryResult,
   InitSaveHistoryInput,
   InitSaveHistoryResult,
   ObserveSaveInput,
   ObserveSaveResult,
+  QueryHistoryInput,
+  RebuildSemanticReadModelInput,
+  RebuildSemanticReadModelResult,
   RestoreEncodedSaveInput,
   RestoreEncodedSaveResult,
 } from "./types.ts";
 
 export type {
+  DiffCommitsInput,
+  DiffCommitsResult,
+  HistoricalSemanticEvent,
   HistoryCommit,
+  HistoryResult,
   InitSaveHistoryInput,
   InitSaveHistoryResult,
   ObserveSaveInput,
   ObserveSaveResult,
   ProjectConfigOverrides,
+  QueryHistoryInput,
   RawSaveObservation,
+  RebuildSemanticReadModelInput,
+  RebuildSemanticReadModelResult,
   RestoreEncodedSaveInput,
   RestoreEncodedSaveResult,
   RestoreTarget,
+  SearchSemanticEventsInput,
+  SearchSemanticEventsResult,
   SemanticUpdateResult,
   WatcherError,
 } from "./types.ts";
@@ -87,8 +101,8 @@ export async function observeSave(
     observedAt: observedAt.toISOString(),
     sourcePath: config.watchedSavePath,
     encodedSha256,
-    decodedSha256: decoded.decodedSha256,
     previousCommit,
+    decodedSha256: decoded.decodedSha256,
     decoderVersion: decoded.decoderVersion,
     schema: decoded.schema,
   };
@@ -127,6 +141,18 @@ export async function restoreEncodedSave(
     targetPath: input.target.path,
     writtenSha256: sha256Hex(encodedSave),
   };
+}
+
+export async function rebuildSemanticReadModel(
+  input: RebuildSemanticReadModelInput,
+): Promise<RebuildSemanticReadModelResult> {
+  return await rebuildReadModel(input.repoPath);
+}
+
+export async function queryHistory(
+  input: QueryHistoryInput,
+): Promise<HistoryResult> {
+  return await Promise.resolve(queryReadModelHistory(input.repoPath, input));
 }
 
 async function readLastObservation(

@@ -57,6 +57,24 @@ async function runGitOutput(
   return output.stdout.trim();
 }
 
+export async function readObservationCommitRefs(
+  repoPath: string,
+): Promise<readonly string[]> {
+  const head = await readCurrentHead(repoPath);
+
+  if (head === undefined) {
+    return [];
+  }
+
+  const output = await runGitOutput(repoPath, [
+    "rev-list",
+    "--reverse",
+    "HEAD",
+  ]);
+
+  return output === "" ? [] : output.split("\n");
+}
+
 export async function readCurrentHead(
   repoPath: string,
 ): Promise<string | undefined> {

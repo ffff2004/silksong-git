@@ -1,4 +1,10 @@
-import type { DecodedSaveVersion } from "@silksong-git/core";
+import type {
+  DecodedSaveVersion,
+  SemanticEvent,
+  SemanticEventDirection,
+  SemanticSnapshot,
+  SemanticSnapshotItemStatus,
+} from "@silksong-git/core";
 
 export type ProjectConfigOverrides = Record<string, unknown>;
 
@@ -46,6 +52,76 @@ export type SemanticUpdateResult =
       readonly reason: "unrecognizedSchema" | "readModelUnavailable";
     };
 
+export interface HistoricalSemanticEvent {
+  readonly id: string;
+  readonly commit: HistoryCommit;
+  readonly previousCommit?: HistoryCommit;
+  readonly observation: RawSaveObservation;
+  readonly event: SemanticEvent;
+  readonly visibility: {
+    readonly defaultVisible: boolean;
+    readonly filterReasons: readonly string[];
+  };
+}
+
+export interface RebuildSemanticReadModelInput {
+  readonly repoPath: string;
+}
+
+export interface RebuildSemanticReadModelResult {
+  readonly observationCount: number;
+  readonly recognizedObservationCount: number;
+  readonly unrecognizedObservationCount: number;
+  readonly snapshotCount: number;
+  readonly eventCount: number;
+}
+
+export interface QueryHistoryInput {
+  readonly repoPath: string;
+  readonly includeFiltered?: boolean;
+  readonly includeRawObservations?: boolean;
+  readonly limit?: number;
+  readonly cursor?: string;
+}
+
+export interface HistoryResult {
+  readonly events: readonly HistoricalSemanticEvent[];
+  readonly rawObservations?: readonly RawSaveObservation[];
+  readonly nextCursor?: string;
+}
+
+export interface DiffCommitsInput {
+  readonly repoPath: string;
+  readonly fromRef: string;
+  readonly toRef: string;
+}
+
+export interface DiffCommitsResult {
+  readonly from: HistoryCommit;
+  readonly to: HistoryCommit;
+  readonly before: SemanticSnapshot;
+  readonly after: SemanticSnapshot;
+  readonly events: readonly HistoricalSemanticEvent[];
+}
+
+export interface SearchSemanticEventsInput {
+  readonly repoPath: string;
+  readonly query: {
+    readonly itemId?: string;
+    readonly label?: string;
+    readonly type?: string;
+    readonly statusTo?: SemanticSnapshotItemStatus;
+    readonly eventType?: string;
+    readonly direction?: SemanticEventDirection;
+    readonly text?: string;
+  };
+  readonly includeFiltered?: boolean;
+}
+
+export interface SearchSemanticEventsResult {
+  readonly events: readonly HistoricalSemanticEvent[];
+}
+
 export interface WatcherError {
   readonly message: string;
   readonly reason: "decodeFailure" | "readFailure";
@@ -62,8 +138,8 @@ export interface RawSaveObservation {
   readonly observedAt: string;
   readonly sourcePath: string;
   readonly encodedSha256: string;
-  readonly decodedSha256: string;
   readonly previousCommit?: string;
+  readonly decodedSha256: string;
   readonly decoderVersion: string;
   readonly schema:
     | ({

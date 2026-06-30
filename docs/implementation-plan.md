@@ -494,7 +494,7 @@ Acceptance criteria:
 
 TDD Vertical Slices:
 
-- [ ] Rebuild and query recognized Semantic Events
+- [x] Rebuild and query recognized Semantic Events
   - Public call: `initSaveHistory({ repoPath, watchedSavePath })`, `observeSave({ repoPath })` for two recognized Encoded Saves, then `rebuildSemanticReadModel({ repoPath })` and `queryHistory({ repoPath })`.
   - Assert: rebuild reports two recognized observations, two snapshots, and one or more Semantic Events; query returns events with `commit`, `previousCommit`, `observation`, `event`, and `visibility` metadata.
   - Fixture: generated committed encoded save pair whose decoded saves differ by one stable semantic item.
