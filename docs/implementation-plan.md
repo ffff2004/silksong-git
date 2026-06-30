@@ -519,7 +519,7 @@ TDD Vertical Slices:
   - Assert: search returns only matching `HistoricalSemanticEvent` rows and preserves commit, previous commit, observation, event, and visibility metadata.
   - Fixture: generated committed encoded save sequence with at least two distinct event types or items.
   - Other information: structured fields are the stable programmatic Interface.
-- [ ] Search Semantic Events by free text
+- [x] Search Semantic Events by free text
   - Public call: rebuild a repository with multiple Semantic Events, then `searchSemanticEvents({ repoPath, query: { text } })`.
   - Assert: free-text search finds matching event labels or related searchable event text and excludes unrelated events.
   - Fixture: generated committed encoded save sequence with distinguishable labels.

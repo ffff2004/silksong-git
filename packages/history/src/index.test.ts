@@ -552,3 +552,58 @@ test("searchSemanticEvents finds events by structured fields", async (t) => {
   assert.equal(summaryEvent.event.kind, "summaryMetric");
   assert.equal(summaryEvent.event.direction, "progression");
 });
+
+test("searchSemanticEvents finds events by free text", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath,
+  });
+  await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
+  await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  await copyFile(maskShard2CollectedRosariesEncodedSavePath, watchedSavePath);
+  await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:02:00.000Z"),
+  });
+
+  await rebuildSemanticReadModel({ repoPath });
+
+  const maskShardSearch = await searchSemanticEvents({
+    repoPath,
+    query: {
+      text: "Mask Shard",
+    },
+  });
+  const rosariesSearch = await searchSemanticEvents({
+    repoPath,
+    query: {
+      text: "rosaries",
+    },
+  });
+  const unrelatedSearch = await searchSemanticEvents({
+    repoPath,
+    query: {
+      text: "definitely not present",
+    },
+  });
+
+  assert.equal(maskShardSearch.events.length, 1);
+  assert.equal(maskShardSearch.events[0]?.event.kind, "item");
+  assert.equal(rosariesSearch.events.length, 1);
+  assert.equal(rosariesSearch.events[0]?.event.kind, "summaryMetric");
+  assert.equal(unrelatedSearch.events.length, 0);
+});

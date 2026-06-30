@@ -560,6 +560,11 @@ function selectSearchEventRows(
     parameters.push(query.direction);
   }
 
+  if (query.text !== undefined) {
+    conditions.push("lower(events.search_text) like ?");
+    parameters.push(`%${query.text.toLowerCase()}%`);
+  }
+
   return db
     .prepare(
       `
