@@ -423,7 +423,7 @@ TDD Vertical Slices:
   - Assert: result is `status: "committed"`; schema is `recognized`; `decoderVersion`, `saveSchemaVersion`, hashes, and commit metadata are present; `save.dat`, `decoded-save.json`, and `observation.json` exist in the repository worktree.
   - Fixture: `packages/core/src/decode/fixtures/minimal-valid-save.dat`.
   - Other information: tests should not inspect internal Git adapter calls.
-- [ ] Restore writes the observed Encoded Save byte-for-byte
+- [x] Restore writes the observed Encoded Save byte-for-byte
   - Public call: `restoreEncodedSave({ repoPath, commitRef, target: { kind: "path", path } })` after a recognized observation commit.
   - Assert: restored file bytes equal the original Encoded Save bytes and result includes the target path, commit, and written hash.
   - Fixture: `packages/core/src/decode/fixtures/minimal-valid-save.dat`.

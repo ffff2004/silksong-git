@@ -222,10 +222,25 @@ export async function observeSave(
 }
 
 export async function restoreEncodedSave(
-  _input: RestoreEncodedSaveInput,
+  input: RestoreEncodedSaveInput,
 ): Promise<RestoreEncodedSaveResult> {
-  await Promise.resolve();
-  throw new Error("restoreEncodedSave is not implemented yet.");
+  if (input.target.kind !== "path") {
+    throw new Error("In-place restore is not implemented yet.");
+  }
+
+  const encodedSave = await readGitBlob(
+    input.repoPath,
+    input.commitRef,
+    "save.dat",
+  );
+
+  await writeFile(input.target.path, encodedSave);
+
+  return {
+    commit: await readHistoryCommit(input.repoPath, input.commitRef),
+    targetPath: input.target.path,
+    writtenSha256: sha256Hex(encodedSave),
+  };
 }
 
 function createProjectConfig(input: InitSaveHistoryInput): ProjectConfig {
@@ -329,4 +344,34 @@ async function runGitOutput(
 
 function sha256Hex(input: Uint8Array | string): string {
   return createHash("sha256").update(input).digest("hex");
+}
+
+async function readGitBlob(
+  repoPath: string,
+  commitRef: string,
+  artifactPath: string,
+): Promise<Buffer> {
+  const output = await new Promise<{ stdout: Buffer }>((resolve, reject) => {
+    execFile(
+      "git",
+      ["show", `${commitRef}:${artifactPath}`],
+      {
+        encoding: "buffer",
+        maxBuffer: 10 * 1024 * 1024,
+        cwd: repoPath,
+      },
+      (error, stdout) => {
+        if (error) {
+          reject(
+            error instanceof Error ? error : new Error("Git command failed."),
+          );
+          return;
+        }
+
+        resolve({ stdout });
+      },
+    );
+  });
+
+  return output.stdout;
 }

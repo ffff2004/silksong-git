@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { initSaveHistory, observeSave } from "./index.ts";
+import { initSaveHistory, observeSave, restoreEncodedSave } from "./index.ts";
 
 const fixtureDirectory = path.join(
   import.meta.dirname,
@@ -71,5 +71,45 @@ test("observeSave commits a recognized Raw Save Observation", async () => {
   );
   await assert.doesNotReject(
     async () => await stat(path.join(repoPath, "observation.json")),
+  );
+});
+
+test("restoreEncodedSave writes the observed Encoded Save byte-for-byte", async () => {
+  const tempDirectory = await createTempDirectory();
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const restorePath = path.join(tempDirectory, "restored-save.dat");
+
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath: minimalEncodedSavePath,
+  });
+  const observationResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  assert.equal(observationResult.status, "committed");
+
+  const restoreResult = await restoreEncodedSave({
+    repoPath,
+    commitRef: observationResult.observation.commit.ref,
+    target: {
+      kind: "path",
+      path: restorePath,
+    },
+  });
+
+  assert.equal(restoreResult.targetPath, restorePath);
+  assert.equal(
+    restoreResult.commit.ref,
+    observationResult.observation.commit.ref,
+  );
+  assert.equal(
+    restoreResult.writtenSha256,
+    observationResult.observation.encodedSha256,
+  );
+  assert.deepEqual(
+    await readFile(restorePath),
+    await readFile(minimalEncodedSavePath),
   );
 });
