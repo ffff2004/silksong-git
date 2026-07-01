@@ -8,7 +8,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 - Current phase: P6 Web Integration
 - Next task: P6-T2 Add Local History Web Mode
-- Last updated: 2026-06-30
+- Last updated: 2026-07-01
 
 ## Phase Overview
 
@@ -482,7 +482,7 @@ Owned files or likely files:
 Relevant docs and ADRs:
 
 - [ADR-0001](adr/0001-save-history-artifacts.md)
-- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-ui.md)
+- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-history-api.md)
 - [ADR-0013](adr/0013-history-module-interface-and-testing.md)
 - [ADR-0015](adr/0015-version-stamps-for-decoding-and-semantic-mapping.md)
 
@@ -670,19 +670,22 @@ Owned files or likely files:
 
 - `apps/web/`
 - local HTTP adapter
+- local endpoint connection and capability handling
 - local history UI views
 
 Relevant docs and ADRs:
 
-- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-ui.md)
+- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-history-api.md)
 - [ADR-0009](adr/0009-one-web-ui-with-static-and-local-history-modes.md)
 - [ADR-0013](adr/0013-history-module-interface-and-testing.md)
 
 Acceptance criteria:
 
+- Local History Web Mode is enabled when the frontend connects to a compatible local HTTP endpoint.
 - Local History Web Mode shows Current Save, History, Diff, Search, Watcher, and Restore/Export views.
 - HTTP endpoints are adapters over `packages/history`.
 - Web code does not query SQLite or run Git operations directly.
+- Frontend serving stays decoupled from the Local History API Process; Vite is acceptable for implementation and debugging.
 
 Verification:
 

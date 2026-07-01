@@ -41,7 +41,7 @@ A Raw Save Observation whose Encoded Save decoded successfully but whose Decoded
 _Avoid_: Corrupted save, semantic event
 
 **Watcher Error**:
-A non-committed failure observed by the Local History Process, such as a decode failure, transient half-written file, unreadable path, or corrupted/non-save input.
+A non-committed failure observed by the Local History API Process, such as a decode failure, transient half-written file, unreadable path, or corrupted/non-save input.
 _Avoid_: Raw save observation, unrecognized schema observation
 
 **Observation Metadata**:
@@ -100,16 +100,16 @@ _Avoid_: Watched save, history repo
 A restore operation that overwrites the Watched Save path from Project Config. It requires explicit user intent and creates a backup before writing.
 _Avoid_: Default restore
 
-**Local History Process**:
-The long-running process that owns watching the Watched Save, committing Raw Save Observations, updating the Semantic Read Model, and serving the local Web UI.
-_Avoid_: Web-only server, CLI command
+**Local History API Process**:
+The long-running process that owns watching one Watched Save, committing Raw Save Observations, updating the Semantic Read Model, and serving local HTTP API endpoints for that save's history workflows.
+_Avoid_: Web UI server, frontend server, CLI command
 
 **Offline Command**:
-A CLI command that reads the Save History Repository and Semantic Read Model directly without requiring the Local History Process to be running.
+A CLI command that reads the Save History Repository and Semantic Read Model directly without requiring the Local History API Process to be running.
 _Avoid_: Watcher
 
 **Command Set**:
-The first-version object-grouped CLI surface for initializing a repository, watching a save, decoding saves for debugging, producing one-off snapshots, viewing history, diffing commits, searching events, restoring saves, rebuilding the Semantic Read Model, and launching the local Web UI.
+The first-version object-grouped CLI surface for initializing a repository, watching a save, decoding saves for debugging, producing one-off snapshots, viewing history, diffing commits, searching events, restoring saves, rebuilding the Semantic Read Model, and opening the local Web UI client.
 _Avoid_: Internal module interface
 
 **Static Web Mode**:
@@ -117,7 +117,7 @@ The browser-only mode of the Web UI where a user uploads an Encoded Save or Deco
 _Avoid_: Local history mode
 
 **Local History Web Mode**:
-The local Web UI mode served by the Local History Process, connected to local HTTP endpoints for watcher status, history, semantic diff, search, and restore/export workflows.
+The Web UI mode enabled when the frontend is connected to compatible local HTTP endpoints for watcher status, history, semantic diff, search, and restore/export workflows.
 _Avoid_: Static web mode
 
 **Semantic Read Model**:

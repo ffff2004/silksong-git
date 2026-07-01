@@ -28,7 +28,7 @@ The fork should support:
 - Building a SQLite Semantic Read Model from Git history.
 - Viewing Semantic Events, semantic diffs, history, reverse event lookup, and restore/export workflows from CLI and local Web UI.
 - Preserving the existing static Web UI upload workflow for current-save inspection.
-- Sharing one semantic core between CLI, local Web UI, static Web UI, and tests.
+- Sharing one semantic core between CLI, API-connected Web UI, static Web UI, and tests.
 
 ## Non-Goals For The First Version
 
@@ -58,7 +58,7 @@ packages/history
   write raw observation commits
   rebuild/query SQLite Semantic Read Model
   restore Encoded Saves
-  start Local History Process
+  start Local History API Process
 
 apps/cli
   parse CLI args
@@ -66,9 +66,10 @@ apps/cli
   render text or JSON output
 
 apps/web
-  existing Vite Web UI
+  existing Vite Web UI frontend
   Static Web Mode for upload-only current-save inspection
-  Local History Web Mode through local HTTP endpoints
+  Local History Web Mode through compatible local HTTP endpoints
+  frontend serve mechanism intentionally separate from history process
 ```
 
 This follows ADR-0011. The important seam is `packages/core`: Web, CLI, and history code should not need to understand raw save shapes such as `sceneBool`, `savedData[]`, quest state fields, journal counters, relic fields, or quill state internals.
@@ -404,9 +405,9 @@ restoreEncodedSave(
   input: RestoreEncodedSaveInput,
 ): Promise<RestoreEncodedSaveResult>;
 
-startLocalHistoryProcess(
-  input: StartLocalHistoryProcessInput,
-): Promise<LocalHistoryProcess>;
+startLocalHistoryApiProcess(
+  input: StartLocalHistoryApiProcessInput,
+): Promise<LocalHistoryApiProcess>;
 
 interface InitSaveHistoryInput {
   repoPath: string;
@@ -615,21 +616,22 @@ const snapshot = createSemanticSnapshot(parsed, mappingData, {
 
 Rebuilding the Semantic Read Model iterates Raw Save Observation commits from oldest to newest, parses each `decoded-save.json`, creates Semantic Snapshots for recognized schemas, and calls `diffSemanticSnapshots` between adjacent recognized snapshots. Display Semantic Event Filters are applied when querying, not when committing Git history and not inside `packages/core`.
 
-## Local History Process
+## Local History API Process
 
-One Local History Process owns:
+One Local History API Process owns:
 
 ```txt
 watching the Watched Save
 committing Raw Save Observations
 updating SQLite Semantic Read Model
-serving local Web UI
 serving local HTTP endpoints
 ```
 
 No second process should independently watch the same save and write Git or SQLite.
 
 Local HTTP endpoints are thin Adapters over `packages/history`. They should call history functions and should not directly query SQLite or run Git operations.
+
+The Web UI frontend is a client of these endpoints. Serving the frontend is not part of the single-writer invariant: implementation and debugging can use Vite, and a later release can add static hosting or a small frontend-serving process without changing the Local History API Process contract.
 
 CLI history/diff/search/restore commands can also run as Offline Commands that read the Save History Repository and Semantic Read Model directly through `packages/history`.
 
@@ -639,18 +641,18 @@ ADR-0010 decides that the first CLI is object-grouped and lifecycle-oriented. Th
 
 First-version commands:
 
-| Group     | Action     | User-facing object        | Responsibility                                                    |
-| --------- | ---------- | ------------------------- | ----------------------------------------------------------------- |
-| `repo`    | `init`     | Save History Repository   | Create a single-save Save History Repository and Project Config.  |
-| `save`    | `decode`   | Encoded Save              | Decode one save to raw Decoded Save JSON for debugging.           |
-| `save`    | `snapshot` | Encoded Save              | Decode and map one save without writing Git history.              |
-| `watch`   | `start`    | Local History Process     | Start watching the Watched Save and updating history.             |
-| `history` | `list`     | Semantic Events           | Show Semantic Event history and optionally raw observations.      |
-| `history` | `diff`     | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                   |
-| `history` | `search`   | Semantic Events           | Find events and corresponding commits.                            |
-| `history` | `restore`  | Encoded Save restore      | Write a commit's `save.dat` to an explicit Restore Target.        |
-| `history` | `rebuild`  | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations. |
-| `ui`      | `open`     | Local History Web Mode    | Start or connect to the local Web UI.                             |
+| Group     | Action     | User-facing object        | Responsibility                                                            |
+| --------- | ---------- | ------------------------- | ------------------------------------------------------------------------- |
+| `repo`    | `init`     | Save History Repository   | Create a single-save Save History Repository and Project Config.          |
+| `save`    | `decode`   | Encoded Save              | Decode one save to raw Decoded Save JSON for debugging.                   |
+| `save`    | `snapshot` | Encoded Save              | Decode and map one save without writing Git history.                      |
+| `watch`   | `start`    | Local History API Process | Start watching the Watched Save and updating history.                     |
+| `history` | `list`     | Semantic Events           | Show Semantic Event history and optionally raw observations.              |
+| `history` | `diff`     | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                           |
+| `history` | `search`   | Semantic Events           | Find events and corresponding commits.                                    |
+| `history` | `restore`  | Encoded Save restore      | Write a commit's `save.dat` to an explicit Restore Target.                |
+| `history` | `rebuild`  | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations.         |
+| `ui`      | `open`     | Web UI client             | Open the Web UI client and connect it to a local endpoint when available. |
 
 First-version command forms:
 
@@ -722,15 +724,15 @@ error: repository path required
 
 Commands should make side effects visible in their names, arguments, and confirmation behavior:
 
-| Safety class           | Commands                                                                         | Requirements                                                               |
-| ---------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Read-only              | `save decode`, `save snapshot`, `history list`, `history diff`, `history search` | No writes to Git, SQLite, or user save files.                              |
-| Debug file write       | `save decode --out <decoded-save.json>`                                          | Writes only the explicit Decoded Save output path.                         |
-| Repository creation    | `repo init`                                                                      | Requires explicit `--save` and `--repo`.                                   |
-| Read-model mutation    | `history rebuild`                                                                | May rewrite the SQLite Semantic Read Model; does not rewrite Git history.  |
-| Process start          | `watch start`, `ui open`                                                         | May start the Local History Process or local Web UI.                       |
-| Filesystem write       | `history restore <commit> --to <path>`                                           | Requires an explicit Restore Target.                                       |
-| High-risk save rewrite | `history restore <commit> --in-place`                                            | Requires explicit in-place intent and must create a backup before writing. |
+| Safety class           | Commands                                                                         | Requirements                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Read-only              | `save decode`, `save snapshot`, `history list`, `history diff`, `history search` | No writes to Git, SQLite, or user save files.                                                                                                    |
+| Debug file write       | `save decode --out <decoded-save.json>`                                          | Writes only the explicit Decoded Save output path.                                                                                               |
+| Repository creation    | `repo init`                                                                      | Requires explicit `--save` and `--repo`.                                                                                                         |
+| Read-model mutation    | `history rebuild`                                                                | May rewrite the SQLite Semantic Read Model; does not rewrite Git history.                                                                        |
+| Process start          | `watch start`, `ui open`                                                         | `watch start` may start the Local History API Process; `ui open` may open or serve the frontend client without becoming a second history writer. |
+| Filesystem write       | `history restore <commit> --to <path>`                                           | Requires an explicit Restore Target.                                                                                                             |
+| High-risk save rewrite | `history restore <commit> --in-place`                                            | Requires explicit in-place intent and must create a backup before writing.                                                                       |
 
 ## CLI Error Behavior
 
@@ -810,10 +812,12 @@ Static Web Mode
   no Git, SQLite, filesystem, or local API
 
 Local History Web Mode
-  served by Local History Process
+  enabled by connecting to a compatible local HTTP endpoint
   uses local HTTP Adapter over packages/history
   shows Current Save plus history workflows
 ```
+
+The Web UI's mode is determined by endpoint availability and compatibility, not by the mechanism that serves the frontend. During implementation and debugging the frontend can run through Vite; future releases may serve it statically or through a small frontend-serving process.
 
 First-version views:
 
@@ -902,7 +906,7 @@ The current accepted decisions are:
 - ADR-0005: Use one save history repository per watched save.
 - ADR-0006: Use a small raw-observation repository layout.
 - ADR-0007: Require an explicit restore target unless in-place restore is requested.
-- ADR-0008: Use one local process for watching and the local Web UI.
+- ADR-0008: Use one local process for watching and the local history API.
 - ADR-0009: Use one Web UI with static and local history modes.
 - ADR-0010: Keep the first CLI command set small and lifecycle-oriented.
 - ADR-0011: Split the fork into core, history, CLI, and Web workspace packages.
@@ -920,5 +924,8 @@ These are intentionally left for later design or implementation:
 - Exact TypeScript shapes for `SemanticSnapshot`, `SemanticEvent`, `MappingData`, and config.
 - Exact SQLite schema and migration strategy inside `packages/history`.
 - Exact local HTTP route names and payloads.
+- Exact local HTTP endpoint discovery, capability/version negotiation, and connection UX.
+- Exact frontend serving strategy outside development.
+- Whether watcher status uses polling first or a later streaming mechanism such as SSE/WebSocket.
 - Exact text output formatting for CLI commands.
 - Whether and how to support multi-save workspaces after the first version.
