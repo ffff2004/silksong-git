@@ -269,15 +269,12 @@ These stamps let rebuilds detect stale SQLite data and explain why the same raw 
 Config is resolved into an Effective Config:
 
 ```txt
-CLI args > Project Config > User Config > built-in defaults
+CLI args > Project Config > built-in defaults
 ```
 
 Recommended locations:
 
 ```txt
-User Config:
-  ~/.config/silksong-git/config.json
-
 Project Config:
   history-repo/.silksong-git/config.json
 ```
@@ -902,7 +899,7 @@ The current accepted decisions are:
 - ADR-0001: Store raw save observations in Git and semantic history in SQLite.
 - ADR-0002: Model semantic events as item-level state transitions.
 - ADR-0003: Cover Web UI items and save summary metrics in semantic snapshots.
-- ADR-0004: Resolve config from built-in defaults, user config, project config, and CLI args.
+- ADR-0004: Resolve config from built-in defaults, project config, and CLI args.
 - ADR-0005: Use one save history repository per watched save.
 - ADR-0006: Use a small raw-observation repository layout.
 - ADR-0007: Require an explicit restore target unless in-place restore is requested.

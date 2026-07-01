@@ -73,16 +73,12 @@ A Capture Policy setting that limits how frequently Raw Save Observations are co
 _Avoid_: Debounce, semantic filter
 
 **Effective Config**:
-The resolved configuration used by a command or local Web UI session after applying built-in defaults, User Config, Project Config, and CLI argument overrides.
+The resolved configuration used by a command or local Web UI session after applying built-in defaults, Project Config, and CLI argument overrides.
 _Avoid_: Config file
-
-**User Config**:
-The user's global default configuration, stored outside any one Save History Repository.
-_Avoid_: Project config, effective config
 
 **Project Config**:
 The configuration stored with a Save History Repository for one watched save, including capture policy, display event filters, and restore defaults.
-_Avoid_: User config, effective config
+_Avoid_: Effective config
 
 **Save History Repository**:
 A local Git repository created for one watched save file. It stores Raw Save Observations made of Encoded Saves, Decoded Saves, and observation metadata for durable history and restore workflows.
