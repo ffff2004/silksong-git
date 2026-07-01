@@ -21,6 +21,7 @@ import {
   restoreEncodedSave,
   searchSemanticEvents,
 } from "./index.ts";
+import type { ProjectConfigOverrides } from "./types.ts";
 
 const fixtureDirectory = path.join(
   import.meta.dirname,
@@ -144,10 +145,17 @@ async function observeFixtureSequence(
 test("initSaveHistory creates a Save History Repository project config", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
+  const configWithRuntimePort = {
+    localApi: {
+      host: "127.0.0.1",
+      port: 43_117,
+    },
+  } as unknown as ProjectConfigOverrides;
 
   const result = await initSaveHistory({
     repoPath,
     watchedSavePath: minimalEncodedSavePath,
+    config: configWithRuntimePort,
   });
 
   assert.equal(result.repoPath, repoPath);
@@ -157,9 +165,14 @@ test("initSaveHistory creates a Save History Repository project config", async (
   );
   await assert.doesNotReject(async () => await stat(repoPath));
   const configJson = await readFile(result.configPath, "utf8");
-  const config = JSON.parse(configJson) as { watchedSavePath?: unknown };
+  const config = JSON.parse(configJson) as {
+    watchedSavePath?: unknown;
+    localApi?: { host?: unknown; port?: unknown };
+  };
 
   assert.equal(config.watchedSavePath, minimalEncodedSavePath);
+  assert.equal(config.localApi?.host, "127.0.0.1");
+  assert.equal("port" in (config.localApi ?? {}), false);
 });
 
 test("observeSave commits a recognized Raw Save Observation", async (t) => {

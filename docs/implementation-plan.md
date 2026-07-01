@@ -690,6 +690,6 @@ Acceptance criteria:
 Verification:
 
 - Web test/build command: pending
-- local UI smoke test: pending
+- local Web UI smoke test: pending
 - `pnpm format`: pending
 - `pnpm lint`: pending

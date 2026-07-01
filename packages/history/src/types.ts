@@ -6,7 +6,35 @@ import type {
   SemanticSnapshotItemStatus,
 } from "@silksong-git/core";
 
-export type ProjectConfigOverrides = Record<string, unknown>;
+export interface ProjectConfig {
+  readonly watchedSavePath: string;
+  readonly capturePolicy: {
+    readonly debounceWriteMs: number;
+    readonly minCommitIntervalMs: number;
+  };
+  readonly displaySemanticEventFilters: {
+    readonly hideEventTypes: readonly string[];
+    readonly hideItemTypes: readonly string[];
+    readonly hideSummaryMetrics: readonly string[];
+    readonly minJournalDelta?: number;
+    readonly hideCurrencyOnlyEvents: boolean;
+  };
+  readonly restore: {
+    readonly backupDirectory?: string;
+  };
+  readonly localApi: {
+    readonly host: "127.0.0.1";
+  };
+}
+
+export interface ProjectConfigOverrides {
+  readonly capturePolicy?: Partial<ProjectConfig["capturePolicy"]>;
+  readonly displaySemanticEventFilters?: Partial<
+    ProjectConfig["displaySemanticEventFilters"]
+  >;
+  readonly restore?: ProjectConfig["restore"];
+  readonly localApi?: Partial<ProjectConfig["localApi"]>;
+}
 
 export interface InitSaveHistoryInput {
   readonly repoPath: string;

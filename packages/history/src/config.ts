@@ -1,50 +1,33 @@
 import { readFile } from "node:fs/promises";
 
 import { getRepositoryLayout } from "./layout.ts";
-import type { InitSaveHistoryInput } from "./types.ts";
-
-interface ProjectConfig {
-  readonly watchedSavePath: string;
-  readonly capturePolicy: {
-    readonly debounceWriteMs: number;
-    readonly minCommitIntervalMs: number;
-  };
-  readonly displaySemanticEventFilters: {
-    readonly hideEventTypes: readonly string[];
-    readonly hideItemTypes: readonly string[];
-    readonly hideSummaryMetrics: readonly string[];
-    readonly minJournalDelta?: number;
-    readonly hideCurrencyOnlyEvents: boolean;
-  };
-  readonly restore: {
-    readonly backupDirectory?: string;
-  };
-  readonly localUi: {
-    readonly host: "127.0.0.1";
-    readonly port?: number;
-  };
-}
+import type { InitSaveHistoryInput, ProjectConfig } from "./types.ts";
 
 export function createProjectConfig(
   input: InitSaveHistoryInput,
 ): ProjectConfig {
+  const overrides = input.config ?? {};
+
   return {
     watchedSavePath: input.watchedSavePath,
     capturePolicy: {
       debounceWriteMs: 500,
       minCommitIntervalMs: 0,
+      ...overrides.capturePolicy,
     },
     displaySemanticEventFilters: {
       hideEventTypes: [],
       hideItemTypes: [],
       hideSummaryMetrics: ["rosaries", "shellShards", "playTime"],
       hideCurrencyOnlyEvents: true,
+      ...overrides.displaySemanticEventFilters,
     },
-    restore: {},
-    localUi: {
-      host: "127.0.0.1",
+    restore: {
+      ...overrides.restore,
     },
-    ...input.config,
+    localApi: {
+      host: overrides.localApi?.host ?? "127.0.0.1",
+    },
   };
 }
 

@@ -2,7 +2,7 @@
 
 We decided that the first version of the CLI is object-grouped and lifecycle-oriented: it should group commands by user-facing operation object while covering setup, raw observation capture, raw decoded-save inspection for debugging, one-off semantic mapping, semantic history browsing, event reverse lookup, restore, read-model rebuilds, starting the Local History API Process, and opening the local Web UI client.
 
-Object grouping reduces the amount of implicit knowledge a user must remember. A user can first choose the object they are operating on, such as a Save History Repository, an Encoded Save, history, the watcher, or the local UI, and then choose the action for that object.
+Object grouping reduces the amount of implicit knowledge a user must remember. A user can first choose the object they are operating on, such as a Save History Repository, an Encoded Save, history, the watcher, or the local Web UI client, and then choose the action for that object.
 
 This keeps the first release focused on the core save-history workflow without committing to an interactive TUI, a broader multi-save workspace, or a general-purpose command tree before those workflows prove necessary. The grouping should follow the domain language in `CONTEXT.md` rather than internal package names such as `core`, `history`, or `read-model`.
 

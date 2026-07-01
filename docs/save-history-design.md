@@ -298,12 +298,13 @@ First-version Project Config fields:
   restore: {
     backupDirectory?: string;
   };
-  localUi: {
+  localApi: {
     host: "127.0.0.1";
-    port?: number;
   };
 }
 ```
+
+`localApi.host` is persisted because it is a security-relevant binding constraint. The local API port is a runtime binding, not a Project Config field; it may be assigned dynamically or provided through a process-start override such as a CLI flag, and the running process should report the concrete endpoint it bound to.
 
 ## Core Module Interface
 

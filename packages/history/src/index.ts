@@ -44,6 +44,7 @@ export type {
   InitSaveHistoryResult,
   ObserveSaveInput,
   ObserveSaveResult,
+  ProjectConfig,
   ProjectConfigOverrides,
   QueryHistoryInput,
   RawSaveObservation,
