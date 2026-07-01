@@ -105,6 +105,8 @@ pnpm lint
 
 `pnpm format` runs ESLint fixes and Prettier. `pnpm lint` runs TypeScript, ESLint, JSON schema validation, stylelint, knip, Prettier checks, and custom repository checks.
 
+If code or tests changed, run `pnpm test` after `pnpm format` and `pnpm lint`.
+
 If `pnpm format` modified files, read it before editing again.
 
 If validation fails because of unrelated local files or pre-existing issues, report the exact failing paths and checks.

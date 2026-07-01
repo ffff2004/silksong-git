@@ -20,7 +20,8 @@
     "format": "tsx ./scripts/format.ts",
     "lint": "tsx ./scripts/lint.ts",
     "preview": "pnpm --filter @silksong-git/web preview",
-    "start": "pnpm --filter @silksong-git/web start"
+    "start": "pnpm --filter @silksong-git/web start",
+    "test": "pnpm --recursive --if-present run test"
   },
   "devDependencies": {
     "@eslint/json": "2.0.0",
