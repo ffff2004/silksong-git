@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import type { ExecFileException } from "node:child_process";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
@@ -72,6 +72,79 @@ function parseStdoutJson(result: CliResult): unknown {
 async function readJsonFile(filePath: string): Promise<unknown> {
   return JSON.parse(await readFile(filePath, "utf8")) as unknown;
 }
+
+test("repo init creates a Save History Repository with JSON output", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  const result = await runCli([
+    "repo",
+    "init",
+    "--save",
+    minimalEncodedSavePath,
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  const initResult = parseStdoutJson(result) as {
+    readonly repoPath?: unknown;
+    readonly configPath?: unknown;
+  };
+
+  assert.equal(initResult.repoPath, repoPath);
+  assert.equal(
+    initResult.configPath,
+    path.join(repoPath, ".silksong-git/config.json"),
+  );
+  const config = (await readJsonFile(initResult.configPath)) as {
+    readonly watchedSavePath?: unknown;
+  };
+
+  assert.equal(config.watchedSavePath, minimalEncodedSavePath);
+});
+
+test("repo init refuses an invalid Watched Save path", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const missingSavePath = path.join(tempDirectory, "missing-save.dat");
+
+  const result = await runCli([
+    "repo",
+    "init",
+    "--save",
+    missingSavePath,
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /save path must be readable/v);
+});
+
+test("repo init refuses a non-empty repository directory", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await mkdir(repoPath);
+  await writeFile(path.join(repoPath, ".gitkeep"), "");
+
+  const result = await runCli([
+    "repo",
+    "init",
+    "--save",
+    minimalEncodedSavePath,
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /repository path must be empty/v);
+});
 
 test("save decode prints pretty Decoded Save JSON for an Encoded Save", async () => {
   const result = await runCli(["save", "decode", minimalEncodedSavePath]);

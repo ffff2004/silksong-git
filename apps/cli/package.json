@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@silksong-git/core": "workspace:*",
+    "@silksong-git/history": "workspace:*",
     "commander": "^14.0.3"
   }
 }

@@ -674,19 +674,19 @@ Phase A: History Interface Semantics
 
 Phase B: CLI Structure And Repository Entry
 
-- [ ] CLI source is split while existing save commands stay green
+- [x] CLI source is split while existing save commands stay green
   - Public call: existing CLI process tests.
   - Assert: current save command behavior is unchanged after moving command registration, save command handlers, output helpers, and exit-code constants behind smaller CLI Modules.
   - Other information: refactor only while green; this prepares the CLI Adapter for repo/history commands without changing user behavior.
-- [ ] CLI can initialize a Save History Repository
+- [x] CLI can initialize a Save History Repository
   - Public call: CLI process.
   - Assert: repo initialization succeeds, writes Project Config, emits stable JSON when requested, and stores absolute Watched Save and repository paths.
   - Other information: `repo init` does not decode the save and does not create an initial observation.
-- [ ] CLI refuses unsafe or invalid repository initialization
+- [x] CLI refuses unsafe or invalid repository initialization
   - Public call: CLI process.
   - Assert: invalid Watched Save paths and non-empty target directories fail with usage/configuration behavior.
   - Other information: cover representative safety failures instead of every filesystem error.
-- [ ] CLI resolves repository context consistently
+- [x] CLI resolves repository context consistently
   - Public call: repo context resolver Module and at least one repository-scoped CLI command.
   - Assert: explicit repo path wins, cwd discovery walks upward to the nearest Save History Repository, and missing context fails as documented.
   - Other information: keep this as a small shared CLI Module with focused tests.
