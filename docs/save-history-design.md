@@ -657,8 +657,8 @@ First-version command forms:
 ```txt
 silksong-git repo init --save <save.dat> --repo <history-repo>
 
-silksong-git save decode --save <save.dat> [--out <decoded-save.json>] [--compact] [--schema-check]
-silksong-git save snapshot --save <save.dat> --json
+silksong-git save decode <save.dat> [--out <decoded-save.json>] [--compact] [--schema-check]
+silksong-git save snapshot <save.dat> --json
 
 silksong-git watch start [--repo <history-repo>]
 
@@ -682,8 +682,8 @@ Default command output is human-readable text. `--json` provides stable machine-
 `save decode` supports:
 
 ```txt
---save <save.dat>
-  required input Encoded Save path
+<save.dat>
+  required positional input Encoded Save path
 
 --out <decoded-save.json>
   optional output path; stdout is used when omitted
@@ -734,7 +734,7 @@ Commands should make side effects visible in their names, arguments, and confirm
 
 ## CLI Error Behavior
 
-`save decode --save` behavior:
+`save decode <save.dat>` behavior:
 
 ```txt
 success:
@@ -757,7 +757,7 @@ decode failure:
   stderr: warning: decoded save does not match a recognized schema
 ```
 
-`save snapshot --save` behavior:
+`save snapshot <save.dat>` behavior:
 
 ```txt
 success:
@@ -771,7 +771,7 @@ decode failure:
 
 unknown schema:
   exit 3 by default
-  stderr suggests using save decode --save <save.dat> for raw debugging
+  stderr suggests using save decode <save.dat> for raw debugging
 ```
 
 History-oriented commands should report rebuild-required or stale-read-model cases clearly instead of silently returning incomplete results.
