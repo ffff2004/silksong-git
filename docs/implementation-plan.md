@@ -7,8 +7,8 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P6 Web Integration
-- Next task: P5-T1 Implement Save CLI Commands
-- Last updated: 2026-07-01
+- Next task: P5-T2 Implement History CLI Commands
+- Last updated: 2026-07-02
 
 ## Phase Overview
 
@@ -592,7 +592,7 @@ Notes:
 
 ### P5-T1 Implement Save CLI Commands
 
-Status: pending
+Status: complete
 
 Depends on:
 
@@ -617,9 +617,17 @@ Acceptance criteria:
 
 Verification:
 
-- `pnpm format`: pending
-- `pnpm lint`: pending
-- CLI test command: pending
+- `pnpm --filter @silksong-git/cli test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- `pnpm test`: passed
+
+Notes:
+
+- Added `apps/cli/src/main.ts` with Commander-backed `save decode` and `save snapshot` commands.
+- `save decode` outputs `decodeEncodedSave(bytes).decodedSave`, supports `--compact`, `--out`, and `--schema-check`, and maps decode failures to exit 2.
+- `save snapshot` requires `--json`, outputs the `SemanticSnapshot` object directly, maps decode failures to exit 2, and maps unrecognized schema to exit 3 with a `save decode` suggestion.
+- Added end-to-end CLI tests that execute the CLI entry point through `tsx`.
 
 ### P5-T2 Implement History CLI Commands
 

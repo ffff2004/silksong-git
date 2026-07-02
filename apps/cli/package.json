@@ -1,5 +1,15 @@
 {
   "name": "@silksong-git/cli",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "bin": {
+    "silksong-git": "./src/main.ts"
+  },
+  "scripts": {
+    "test": "tsx --test --test-reporter=dot src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@silksong-git/core": "workspace:*",
+    "commander": "^14.0.3"
+  }
 }

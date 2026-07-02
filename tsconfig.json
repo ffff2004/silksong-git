@@ -31,6 +31,7 @@
   },
 
   "include": [
+    "apps/cli/src/**/*.ts",
     "apps/web/*.ts",
     "apps/web/src/**/*.ts",
     "packages/core/src/**/*.ts",
