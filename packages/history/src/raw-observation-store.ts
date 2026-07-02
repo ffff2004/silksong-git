@@ -33,7 +33,7 @@ export async function commitRawSaveObservation(
       "user.email=silksong-git@example.invalid",
       "commit",
       "-m",
-      `Observe save ${input.metadata.observedAt}`,
+      createCommitMessage(input.metadata),
     ],
     {
       GIT_AUTHOR_DATE: input.metadata.observedAt,
@@ -45,4 +45,15 @@ export async function commitRawSaveObservation(
     commit: await readHistoryCommit(input.repoPath, "HEAD"),
     ...input.metadata,
   };
+}
+
+function createCommitMessage(metadata: ObservationMetadata): string {
+  if (metadata.trigger === "manualCheckpoint") {
+    const suffix =
+      metadata.message === undefined ? "" : `: ${metadata.message}`;
+
+    return `Checkpoint save ${metadata.observedAt}${suffix}`;
+  }
+
+  return `Observe save ${metadata.observedAt}`;
 }

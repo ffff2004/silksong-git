@@ -16,6 +16,7 @@ interface RepositoryLayout {
   readonly silksongGitDirectory: string;
   readonly configPath: string;
   readonly readModelPath: string;
+  readonly writeLockPath: string;
   readonly gitignorePath: string;
   readonly encodedSavePath: string;
   readonly decodedSavePath: string;
@@ -29,6 +30,7 @@ export function getRepositoryLayout(repoPath: string): RepositoryLayout {
     silksongGitDirectory,
     configPath: path.join(silksongGitDirectory, "config.json"),
     readModelPath: path.join(silksongGitDirectory, "read-model.sqlite"),
+    writeLockPath: path.join(silksongGitDirectory, "write.lock"),
     gitignorePath: path.join(repoPath, ".gitignore"),
     encodedSavePath: path.join(repoPath, encodedSaveArtifactPath),
     decodedSavePath: path.join(repoPath, decodedSaveArtifactPath),

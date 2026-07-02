@@ -23,6 +23,7 @@ When these documents disagree, prefer the ADR for decision rationale and update 
 The fork should support:
 
 - Watching one local `.dat` save file continuously.
+- Creating a manual checkpoint before high-risk in-game actions.
 - Creating a local Git-backed Save History Repository for that Watched Save.
 - Committing stable Raw Save Observations so future semantic mapping changes can rebuild history.
 - Building a SQLite Semantic Read Model from Git history.
@@ -111,9 +112,10 @@ history-repo/
   .silksong-git/
     config.json
     read-model.sqlite
+    write.lock
 ```
 
-`save.dat`, `decoded-save.json`, `observation.json`, and `.silksong-git/config.json` are committed. `read-model.sqlite` is ignored by Git because it is rebuildable.
+`save.dat`, `decoded-save.json`, `observation.json`, and `.silksong-git/config.json` are committed. `read-model.sqlite` is ignored by Git because it is rebuildable. `write.lock` is ignored because it is a runtime repository-write lock.
 
 `save.dat` is the canonical restore artifact. `decoded-save.json` is raw decoded JSON for inspection and semantic rebuilds. `observation.json` stores Observation Metadata such as observation time, source path, hashes, previous commit, decoder version, and save/game schema context.
 
@@ -131,6 +133,8 @@ file changed
   -> commit Raw Save Observation
   -> update Semantic Read Model when semantic mapping is possible
 ```
+
+A manual checkpoint uses the same decode, classify, commit, and read-model update behavior, but is triggered by the user instead of the file watcher. It does not wait for watcher debounce and may bypass Capture Policy skip rules.
 
 Decode failure is a Watcher Error and must not be committed. It usually means a half-written file, corrupted input, wrong path, or non-save file.
 
@@ -154,6 +158,8 @@ First-version settings:
 ```
 
 If multiple stable save changes occur inside `minCommitIntervalMs`, only the latest Raw Save Observation is committed. This is an explicit fidelity trade-off: the user gets fewer commits but loses intermediate raw states.
+
+Manual checkpoints bypass Capture Policy skip rules such as unchanged-save and minimum-interval suppression. They still must decode successfully, use the same schema handling, and acquire the same repository write lock as watcher observations.
 
 Display filters must not decide whether Git commits happen.
 
@@ -421,6 +427,8 @@ interface InitSaveHistoryResult {
 interface ObserveSaveInput {
   repoPath: string;
   observedAt?: Date;
+  trigger?: "watcher" | "manualCheckpoint";
+  message?: string;
   force?: boolean;
 }
 
@@ -460,6 +468,8 @@ interface HistoryCommit {
 interface RawSaveObservation {
   commit: HistoryCommit;
   observedAt: string;
+  trigger: "watcher" | "manualCheckpoint";
+  message?: string;
   sourcePath: string;
   encodedSha256: string;
   decodedSha256: string;
@@ -627,6 +637,8 @@ serving local HTTP endpoints
 
 No second process should independently watch the same save and write Git or SQLite.
 
+All history writers must acquire one Save History Repository write lock before mutating Git artifacts or SQLite. This includes watcher observations and manual checkpoints.
+
 Local HTTP endpoints are thin Adapters over `packages/history`. They should call history functions and should not directly query SQLite or run Git operations.
 
 The Web UI frontend is a client of these endpoints. Serving the frontend is not part of the single-writer invariant: implementation and debugging can use Vite, and a later release can add static hosting or a small frontend-serving process without changing the Local History API Process contract.
@@ -639,18 +651,19 @@ ADR-0010 decides that the first CLI is object-grouped and lifecycle-oriented. Th
 
 First-version commands:
 
-| Group     | Action     | User-facing object        | Responsibility                                                            |
-| --------- | ---------- | ------------------------- | ------------------------------------------------------------------------- |
-| `repo`    | `init`     | Save History Repository   | Create a single-save Save History Repository and Project Config.          |
-| `save`    | `decode`   | Encoded Save              | Decode one save to raw Decoded Save JSON for debugging.                   |
-| `save`    | `snapshot` | Encoded Save              | Decode and map one save without writing Git history.                      |
-| `watch`   | `start`    | Local History API Process | Start watching the Watched Save and updating history.                     |
-| `history` | `list`     | Semantic Events           | Show Semantic Event history and optionally raw observations.              |
-| `history` | `diff`     | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                           |
-| `history` | `search`   | Semantic Events           | Find events and corresponding commits.                                    |
-| `history` | `restore`  | Encoded Save restore      | Write a commit's `save.dat` to an explicit Restore Target.                |
-| `history` | `rebuild`  | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations.         |
-| `ui`      | `open`     | Web UI client             | Open the Web UI client and connect it to a local endpoint when available. |
+| Group     | Action       | User-facing object        | Responsibility                                                            |
+| --------- | ------------ | ------------------------- | ------------------------------------------------------------------------- |
+| `repo`    | `init`       | Save History Repository   | Create a single-save Save History Repository and Project Config.          |
+| `save`    | `decode`     | Encoded Save              | Decode one save to raw Decoded Save JSON for debugging.                   |
+| `save`    | `snapshot`   | Encoded Save              | Decode and map one save without writing Git history.                      |
+| `watch`   | `start`      | Local History API Process | Start watching the Watched Save and updating history.                     |
+| `history` | `list`       | Semantic Events           | Show Semantic Event history and optionally raw observations.              |
+| `history` | `diff`       | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                           |
+| `history` | `search`     | Semantic Events           | Find events and corresponding commits.                                    |
+| `history` | `checkpoint` | Raw Save Observation      | Commit the current Watched Save as a manual checkpoint.                   |
+| `history` | `restore`    | Encoded Save restore      | Write a commit's `save.dat` to an explicit Restore Target.                |
+| `history` | `rebuild`    | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations.         |
+| `ui`      | `open`       | Web UI client             | Open the Web UI client and connect it to a local endpoint when available. |
 
 First-version command forms:
 
@@ -665,6 +678,7 @@ silksong-git watch start [--repo <history-repo>]
 silksong-git history list [--repo <history-repo>]
 silksong-git history diff <from> <to> [--repo <history-repo>]
 silksong-git history search [--repo <history-repo>] --event <text>
+silksong-git history checkpoint [--repo <history-repo>] [--message <text>]
 silksong-git history restore <commit> --to <path> [--repo <history-repo>]
 silksong-git history rebuild [--repo <history-repo>]
 
@@ -727,6 +741,7 @@ Commands should make side effects visible in their names, arguments, and confirm
 | Read-only              | `save decode`, `save snapshot`, `history list`, `history diff`, `history search` | No writes to Git, SQLite, or user save files.                                                                                                    |
 | Debug file write       | `save decode --out <decoded-save.json>`                                          | Writes only the explicit Decoded Save output path.                                                                                               |
 | Repository creation    | `repo init`                                                                      | Requires explicit `--save` and `--repo`.                                                                                                         |
+| Raw observation write  | `history checkpoint`                                                             | Writes Git raw-observation artifacts and may update SQLite; bypasses Capture Policy skip rules but not decode failure or repository locking.     |
 | Read-model mutation    | `history rebuild`                                                                | May rewrite the SQLite Semantic Read Model; does not rewrite Git history.                                                                        |
 | Process start          | `watch start`, `ui open`                                                         | `watch start` may start the Local History API Process; `ui open` may open or serve the frontend client without becoming a second history writer. |
 | Filesystem write       | `history restore <commit> --to <path>`                                           | Requires an explicit Restore Target.                                                                                                             |
@@ -775,6 +790,24 @@ unknown schema:
 ```
 
 History-oriented commands should report rebuild-required or stale-read-model cases clearly instead of silently returning incomplete results.
+
+`history checkpoint` behavior:
+
+```txt
+success:
+  exit 0
+  commit the current Watched Save as a Raw Save Observation
+  mark observation.json with trigger: "manualCheckpoint"
+
+decode failure:
+  exit 2
+  stderr: cannot decode save
+  no Raw Save Observation is committed
+
+repository busy:
+  exit 4
+  stderr: history repository is busy
+```
 
 ## Restore Safety
 

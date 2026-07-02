@@ -545,6 +545,49 @@ Notes:
 - Follow-up alignment: `diffCommits` now accepts `includeFiltered` and uses the same visibility/filter behavior as `queryHistory` and `searchSemanticEvents`.
 - Read model internals were split under `packages/history/src/read-model/`; the public history Interface and SQLite schema privacy remain unchanged.
 
+### P4-T3 Manual Checkpoint Observation Semantics
+
+Status: complete
+
+Depends on:
+
+- P4-T1
+- P4-T2
+
+Owned files or likely files:
+
+- `packages/history/`
+- history integration tests
+- `docs/save-history-design.md`
+- `CONTEXT.md`
+- related ADRs
+
+Relevant docs and ADRs:
+
+- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-history-api.md)
+- [ADR-0010](adr/0010-first-version-cli-command-set.md)
+- [ADR-0013](adr/0013-history-module-interface-and-testing.md)
+
+Acceptance criteria:
+
+- `observeSave` supports user-requested manual checkpoints through the public history Interface.
+- Manual checkpoints bypass unchanged-save and minimum-interval skip rules.
+- Manual checkpoints still report decode failures without committing.
+- Raw Save Observation metadata records the observation trigger and optional checkpoint message.
+- Watcher observations and manual checkpoints acquire the same Save History Repository write lock before mutating Git artifacts.
+
+Verification:
+
+- `pnpm --filter @silksong-git/history test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
+
+Notes:
+
+- Added `trigger: "watcher" | "manualCheckpoint"` and optional `message` to Raw Save Observation metadata.
+- Added a repository-local `.silksong-git/write.lock` for history write serialization.
+- Manual checkpoint CLI parsing remains part of P5 history CLI implementation.
+
 ## P5 CLI
 
 ### P5-T1 Implement Save CLI Commands
@@ -600,7 +643,8 @@ Acceptance criteria:
 
 - First-version object-grouped command set matches `docs/save-history-design.md`.
 - Commands call `packages/history` rather than Git or SQLite directly.
-- `history list`, `history diff`, and `history search` default to readable text and support stable `--json`.
+- `history list`, `history diff`, `history search`, and `history checkpoint` default to readable text and support stable `--json` where documented.
+- `history checkpoint` records a manual checkpoint through the public history Interface and maps decode failure to the documented exit behavior.
 - Repository-scoped commands follow the documented repo context resolution order.
 
 Verification:

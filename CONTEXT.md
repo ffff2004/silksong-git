@@ -45,8 +45,16 @@ A non-committed failure observed by the Local History API Process, such as a dec
 _Avoid_: Raw save observation, unrecognized schema observation
 
 **Observation Metadata**:
-The metadata committed with a Raw Save Observation, including observation time, source path, encoded and decoded hashes, decoder version, app version, and previous observation commit.
+The metadata committed with a Raw Save Observation, including observation time, observation trigger, source path, encoded and decoded hashes, decoder version, app version, and previous observation commit.
 _Avoid_: Semantic event, config
+
+**Observation Trigger**:
+The cause of a Raw Save Observation, such as the watcher observing a stable save write or the user requesting a manual checkpoint.
+_Avoid_: Git commit type
+
+**Manual Checkpoint**:
+A user-requested Raw Save Observation of the current Watched Save, intended for deliberate backup points such as before a high-risk in-game action. It may bypass Capture Policy skip rules but must still decode successfully and use the repository write lock.
+_Avoid_: Restore point, save copy
 
 **Version Stamp**:
 A recorded version or hash that explains which game, distribution build, save schema, platform, decoder, mapping data, semantic core, and effective config produced a Decoded Save, Semantic Snapshot, or Semantic Event.
@@ -105,7 +113,7 @@ A CLI command that reads the Save History Repository and Semantic Read Model dir
 _Avoid_: Watcher
 
 **Command Set**:
-The first-version object-grouped CLI surface for initializing a repository, watching a save, decoding saves for debugging, producing one-off snapshots, viewing history, diffing commits, searching events, restoring saves, rebuilding the Semantic Read Model, and opening the local Web UI client.
+The first-version object-grouped CLI surface for initializing a repository, watching a save, decoding saves for debugging, producing one-off snapshots, viewing history, diffing commits, searching events, creating manual checkpoints, restoring saves, rebuilding the Semantic Read Model, and opening the local Web UI client.
 _Avoid_: Internal module interface
 
 **Static Web Mode**:

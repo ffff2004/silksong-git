@@ -50,8 +50,12 @@ export interface InitSaveHistoryResult {
 export interface ObserveSaveInput {
   readonly repoPath: string;
   readonly observedAt?: Date;
+  readonly trigger?: ObservationTrigger;
+  readonly message?: string;
   readonly force?: boolean;
 }
+
+export type ObservationTrigger = "watcher" | "manualCheckpoint";
 
 export type ObserveSaveResult =
   | {
@@ -165,6 +169,8 @@ export interface HistoryCommit {
 export interface RawSaveObservation {
   readonly commit: HistoryCommit;
   readonly observedAt: string;
+  readonly trigger: ObservationTrigger;
+  readonly message?: string;
   readonly sourcePath: string;
   readonly encodedSha256: string;
   readonly previousCommit?: string;

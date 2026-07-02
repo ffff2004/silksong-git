@@ -75,6 +75,7 @@ interface ObservedFixtureSequence extends HistoryRepoFixture {
 async function createHistoryRepo(
   t: TestContext,
   initialSavePath = minimalEncodedSavePath,
+  config?: ProjectConfigOverrides,
 ): Promise<HistoryRepoFixture> {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
@@ -84,6 +85,7 @@ async function createHistoryRepo(
   await initSaveHistory({
     repoPath,
     watchedSavePath,
+    config,
   });
 
   return {
@@ -189,6 +191,7 @@ test("observeSave commits a recognized Raw Save Observation", async (t) => {
 
   assert.equal(result.status, "committed");
   assert.equal(result.observation.observedAt, observedAt.toISOString());
+  assert.equal(result.observation.trigger, "watcher");
   assert.equal(result.observation.sourcePath, minimalEncodedSavePath);
   assert.match(result.observation.encodedSha256, /^[0-9a-f]{64}$/v);
   assert.match(result.observation.decodedSha256, /^[0-9a-f]{64}$/v);
@@ -273,6 +276,120 @@ test("observeSave skips an unchanged Encoded Save", async (t) => {
     secondResult.encodedSha256,
     firstResult.observation.encodedSha256,
   );
+});
+
+test("manual checkpoint commits an unchanged Encoded Save", async (t) => {
+  const { repoPath } = await createHistoryRepo(t);
+
+  const firstResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  const checkpointResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+    trigger: "manualCheckpoint",
+    message: "before risky operation",
+  });
+
+  assert.equal(firstResult.status, "committed");
+  assert.equal(checkpointResult.status, "committed");
+  assert.equal(checkpointResult.observation.trigger, "manualCheckpoint");
+  assert.equal(checkpointResult.observation.message, "before risky operation");
+  assert.equal(
+    checkpointResult.observation.previousCommit,
+    firstResult.observation.commit.ref,
+  );
+  assert.equal(
+    checkpointResult.observation.encodedSha256,
+    firstResult.observation.encodedSha256,
+  );
+  assert.notEqual(
+    checkpointResult.observation.commit.ref,
+    firstResult.observation.commit.ref,
+  );
+});
+
+test("manual checkpoint bypasses the minimum commit interval", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: {
+      minCommitIntervalMs: 60 * 60 * 1000,
+    },
+  });
+
+  const firstResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const skippedResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+  const checkpointResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:02:00.000Z"),
+    trigger: "manualCheckpoint",
+  });
+
+  assert.equal(firstResult.status, "committed");
+  assert.equal(skippedResult.status, "skipped");
+  assert.equal(skippedResult.reason, "minimumCommitInterval");
+  assert.equal(checkpointResult.status, "committed");
+  assert.equal(checkpointResult.observation.trigger, "manualCheckpoint");
+  assert.notEqual(
+    checkpointResult.observation.encodedSha256,
+    firstResult.observation.encodedSha256,
+  );
+});
+
+test("manual checkpoint reports decode failures without committing", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const invalidSavePath = path.join(tempDirectory, "invalid-save.dat");
+
+  await writeFile(invalidSavePath, new Uint8Array([1, 2, 3, 4]));
+  await initSaveHistory({
+    repoPath,
+    watchedSavePath: invalidSavePath,
+  });
+
+  const result = await observeSave({
+    repoPath,
+    trigger: "manualCheckpoint",
+  });
+
+  assert.equal(result.status, "watcherError");
+  assert.equal(result.error.reason, "decodeFailure");
+  await assert.rejects(
+    async () => await stat(path.join(repoPath, "observation.json")),
+  );
+});
+
+test("history write lock serializes concurrent observations", async (t) => {
+  const { repoPath } = await createHistoryRepo(t);
+
+  const results = await Promise.all([
+    observeSave({
+      repoPath,
+      observedAt: new Date("2026-06-30T12:00:00.000Z"),
+    }),
+    observeSave({
+      repoPath,
+      observedAt: new Date("2026-06-30T12:01:00.000Z"),
+    }),
+  ]);
+
+  const committed = results.filter((result) => result.status === "committed");
+  const skipped = results.filter((result) => result.status === "skipped");
+
+  assert.equal(committed.length, 1);
+  assert.equal(skipped.length, 1);
+  const [skippedResult] = skipped;
+
+  assert.ok(skippedResult !== undefined);
+  assert.equal(skippedResult.status, "skipped");
+  assert.equal(skippedResult.reason, "unchanged");
 });
 
 test("observeSave reports decode failures as Watcher Errors without committing", async (t) => {

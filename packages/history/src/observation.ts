@@ -1,7 +1,9 @@
-import type { RawSaveObservation } from "./types.ts";
+import type { ObservationTrigger, RawSaveObservation } from "./types.ts";
 
 export interface ObservationMetadata {
   readonly observedAt: string;
+  readonly trigger: ObservationTrigger;
+  readonly message?: string;
   readonly sourcePath: string;
   readonly encodedSha256: string;
   readonly previousCommit?: string;

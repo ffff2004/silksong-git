@@ -33,6 +33,7 @@ import type {
   SearchSemanticEventsInput,
   SearchSemanticEventsResult,
 } from "./types.ts";
+import { withHistoryWriteLock } from "./write-lock.ts";
 
 export type {
   DiffCommitsInput,
@@ -42,6 +43,7 @@ export type {
   HistoryResult,
   InitSaveHistoryInput,
   InitSaveHistoryResult,
+  ObservationTrigger,
   ObserveSaveInput,
   ObserveSaveResult,
   ProjectConfig,
@@ -68,7 +70,10 @@ export async function initSaveHistory(
   await runGit(input.repoPath, ["init"]);
 
   await mkdir(layout.silksongGitDirectory, { recursive: true });
-  await writeFile(layout.gitignorePath, ".silksong-git/read-model.sqlite\n");
+  await writeFile(
+    layout.gitignorePath,
+    ".silksong-git/read-model.sqlite\n.silksong-git/write.lock\n",
+  );
   await writeFile(
     layout.configPath,
     `${JSON.stringify(createProjectConfig(input), undefined, 2)}\n`,
@@ -83,50 +88,69 @@ export async function initSaveHistory(
 export async function observeSave(
   input: ObserveSaveInput,
 ): Promise<ObserveSaveResult> {
-  const config = await readProjectConfig(input.repoPath);
-  const observedAt = input.observedAt ?? new Date();
-  const encodedBytes = await readFile(config.watchedSavePath);
-  const encodedSha256 = sha256Hex(encodedBytes);
-  const lastObservation = await readLastObservation(input.repoPath);
+  return await withHistoryWriteLock(input.repoPath, async () => {
+    const config = await readProjectConfig(input.repoPath);
+    const trigger = input.trigger ?? "watcher";
+    const forceObservation =
+      input.force === true || trigger === "manualCheckpoint";
+    const observedAt = input.observedAt ?? new Date();
+    const encodedBytes = await readFile(config.watchedSavePath);
+    const encodedSha256 = sha256Hex(encodedBytes);
+    const lastObservation = await readLastObservation(input.repoPath);
 
-  if (
-    input.force !== true
-    && lastObservation?.encodedSha256 === encodedSha256
-  ) {
-    return {
-      status: "skipped",
-      reason: "unchanged",
+    if (!forceObservation && lastObservation?.encodedSha256 === encodedSha256) {
+      return {
+        status: "skipped",
+        reason: "unchanged",
+        encodedSha256,
+      };
+    }
+
+    if (
+      !forceObservation
+      && isInsideMinimumCommitInterval(
+        lastObservation?.observedAt,
+        observedAt,
+        config.capturePolicy.minCommitIntervalMs,
+      )
+    ) {
+      return {
+        status: "skipped",
+        reason: "minimumCommitInterval",
+        encodedSha256,
+      };
+    }
+
+    const decoded = decodeObservation(encodedBytes);
+
+    if (decoded.status === "watcherError") {
+      return decoded;
+    }
+
+    const previousCommit = await readCurrentHead(input.repoPath);
+    const observationMetadata: ObservationMetadata = {
+      observedAt: observedAt.toISOString(),
+      trigger,
+      message: input.message,
+      sourcePath: config.watchedSavePath,
       encodedSha256,
+      previousCommit,
+      decodedSha256: decoded.decodedSha256,
+      decoderVersion: decoded.decoderVersion,
+      schema: decoded.schema,
     };
-  }
 
-  const decoded = decodeObservation(encodedBytes);
-
-  if (decoded.status === "watcherError") {
-    return decoded;
-  }
-
-  const previousCommit = await readCurrentHead(input.repoPath);
-  const observationMetadata: ObservationMetadata = {
-    observedAt: observedAt.toISOString(),
-    sourcePath: config.watchedSavePath,
-    encodedSha256,
-    previousCommit,
-    decodedSha256: decoded.decodedSha256,
-    decoderVersion: decoded.decoderVersion,
-    schema: decoded.schema,
-  };
-
-  return {
-    status: "committed",
-    observation: await commitRawSaveObservation({
-      repoPath: input.repoPath,
-      encodedBytes,
-      decodedJson: decoded.decodedJson,
-      metadata: observationMetadata,
-    }),
-    semanticUpdate: decoded.semanticUpdate,
-  };
+    return {
+      status: "committed",
+      observation: await commitRawSaveObservation({
+        repoPath: input.repoPath,
+        encodedBytes,
+        decodedJson: decoded.decodedJson,
+        metadata: observationMetadata,
+      }),
+      semanticUpdate: decoded.semanticUpdate,
+    };
+  });
 }
 
 export async function restoreEncodedSave(
@@ -156,7 +180,10 @@ export async function restoreEncodedSave(
 export async function rebuildSemanticReadModel(
   input: RebuildSemanticReadModelInput,
 ): Promise<RebuildSemanticReadModelResult> {
-  return await rebuildReadModel(input.repoPath);
+  return await withHistoryWriteLock(
+    input.repoPath,
+    async () => await rebuildReadModel(input.repoPath),
+  );
 }
 
 export async function queryHistory(
@@ -201,5 +228,19 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
     error instanceof Error
     && "code" in error
     && (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
+function isInsideMinimumCommitInterval(
+  lastObservedAt: string | undefined,
+  observedAt: Date,
+  minCommitIntervalMs: number,
+): boolean {
+  if (lastObservedAt === undefined || minCommitIntervalMs <= 0) {
+    return false;
+  }
+
+  return (
+    observedAt.getTime() - Date.parse(lastObservedAt) < minCommitIntervalMs
   );
 }
