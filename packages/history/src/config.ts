@@ -31,6 +31,10 @@ export function createProjectConfig(
   };
 }
 
+export function serializeProjectConfig(config: ProjectConfig): string {
+  return `${JSON.stringify(config, undefined, 2)}\n`;
+}
+
 export async function readProjectConfig(
   repoPath: string,
 ): Promise<ProjectConfig> {

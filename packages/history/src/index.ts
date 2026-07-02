@@ -1,5 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { createProjectConfig, readProjectConfig } from "./config.ts";
+import {
+  createProjectConfig,
+  readProjectConfig,
+  serializeProjectConfig,
+} from "./config.ts";
 import {
   readCurrentHead,
   readGitBlob,
@@ -7,7 +11,11 @@ import {
   runGit,
 } from "./git-store.ts";
 import { sha256Hex } from "./hash.ts";
-import { encodedSaveArtifactPath, getRepositoryLayout } from "./layout.ts";
+import {
+  defaultGitignoreContent,
+  encodedSaveArtifactPath,
+  getRepositoryLayout,
+} from "./layout.ts";
 import { decodeObservation } from "./observation-decoder.ts";
 import type { ObservationMetadata } from "./observation.ts";
 import { commitRawSaveObservation } from "./raw-observation-store.ts";
@@ -70,13 +78,10 @@ export async function initSaveHistory(
   await runGit(input.repoPath, ["init"]);
 
   await mkdir(layout.silksongGitDirectory, { recursive: true });
-  await writeFile(
-    layout.gitignorePath,
-    ".silksong-git/read-model.sqlite\n.silksong-git/write.lock\n",
-  );
+  await writeFile(layout.gitignorePath, defaultGitignoreContent);
   await writeFile(
     layout.configPath,
-    `${JSON.stringify(createProjectConfig(input), undefined, 2)}\n`,
+    serializeProjectConfig(createProjectConfig(input)),
   );
 
   return {
