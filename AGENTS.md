@@ -6,14 +6,13 @@ This file is the working entry point for AI agents and maintainers. `README.md` 
 
 Use these documents as the working entry points:
 
-| Document                                            | Purpose                                                        | Update When                                                                                                 |
-| --------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `docs/save-history-design.md`                       | Implementation map for the planned save-history fork.          | Architecture or implementation guidance changes.                                                            |
-| `docs/implementation-plan.md`                       | Task backlog, phase order, dependencies, and progress tracker. | Task status, dependencies, acceptance criteria, or verification results change.                             |
-| `CONTEXT.md`                                        | Domain vocabulary. Use these terms consistently.               | A domain term is settled or renamed.                                                                        |
-| `docs/adr/`                                         | Accepted decisions and rationale.                              | A hard-to-reverse design decision is accepted.                                                              |
-| `docs/current-design-reference/save-to-semantic.md` | Current save decoding and semantic mapping reference.          | Current mapping behavior is clarified or corrected; not for future architecture changes.                    |
-| `docs/current-design-reference/overview.md`         | Current Web app overview and preserved static behavior.        | Current Web UI behavior or package location is clarified or corrected; not for future architecture changes. |
+| Document                                    | Purpose                                                        | Update When                                                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `docs/save-history-design.md`               | Implementation map for the planned save-history fork.          | Architecture or implementation guidance changes.                                                            |
+| `docs/implementation-plan.md`               | Task backlog, phase order, dependencies, and progress tracker. | Task status, dependencies, acceptance criteria, or verification results change.                             |
+| `CONTEXT.md`                                | Domain vocabulary. Use these terms consistently.               | A domain term is settled or renamed.                                                                        |
+| `docs/adr/`                                 | Accepted decisions and rationale.                              | A hard-to-reverse design decision is accepted.                                                              |
+| `docs/current-design-reference/overview.md` | Current Web app overview and preserved static behavior.        | Current Web UI behavior or package location is clarified or corrected; not for future architecture changes. |
 
 Before architecture, refactor, CLI, history, or semantic-mapping work, read `docs/save-history-design.md`, `CONTEXT.md`, and the relevant ADRs. Read current-design references when extracting or preserving current behavior.
 
@@ -90,7 +89,7 @@ Choose the right place for explanation:
 
 - Use the commit body to explain why this commit makes this change now.
 - Use an ADR for long-lived design decisions, trade-offs, rejected alternatives, or constraints future work must preserve.
-- Use a code comment only for local, non-obvious implementation constraints near the code.
+- Use a code comment for local, non-obvious implementation constraints near the code.
 
 When both an ADR and a commit body are needed, the ADR records the durable decision and the commit body explains how this commit applies it.
 
@@ -107,6 +106,6 @@ pnpm lint
 
 If code or tests changed, run `pnpm test` after `pnpm format` and `pnpm lint`.
 
-If `pnpm format` modified files, read it before editing again.
+If `pnpm format` modified files, re-read them before editing again.
 
 If validation fails because of unrelated local files or pre-existing issues, report the exact failing paths and checks.
