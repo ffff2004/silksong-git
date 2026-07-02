@@ -112,10 +112,6 @@ _Avoid_: Web UI server, frontend server, CLI command
 A CLI command that reads the Save History Repository and Semantic Read Model directly without requiring the Local History API Process to be running.
 _Avoid_: Watcher
 
-**Command Set**:
-The first-version object-grouped CLI surface for initializing a repository, watching a save, decoding saves for debugging, producing one-off snapshots, viewing history, diffing commits, searching events, creating manual checkpoints, restoring saves, rebuilding the Semantic Read Model, and opening the local Web UI client.
-_Avoid_: Internal module interface
-
 **Static Web Mode**:
 The browser-only mode of the Web UI where a user uploads an Encoded Save or Decoded Save and views the current tracker state without Git, SQLite, or local filesystem access.
 _Avoid_: Local history mode
