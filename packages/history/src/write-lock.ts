@@ -5,8 +5,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { SaveHistoryRepositoryBusyError } from "./errors.ts";
 import { getRepositoryLayout } from "./layout.ts";
 
-const defaultLockTimeoutMs = 5000;
-const lockRetryDelayMs = 25;
+const defaultLockTimeoutMs = 3000;
+const lockRetryDelayMs = 100;
 
 export async function withHistoryWriteLock<T>(
   repoPath: string,
