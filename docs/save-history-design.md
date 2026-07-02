@@ -673,7 +673,7 @@ silksong-git ui open [--repo <history-repo>]
 
 The first version requires explicit group/action commands. Do not add implicit default actions before the first CLI is implemented and exercised. Restore must remain explicit.
 
-The groups are user-facing operation objects, not internal packages. Avoid CLI groups such as `core`, `read-model`, or `process` even when those names match implementation Modules.
+The groups are user-facing operation objects, not internal packages.
 
 Default command output is human-readable text. `--json` provides stable machine-readable output for scripts and tests.
 
@@ -820,7 +820,7 @@ The Web UI's mode is determined by endpoint availability and compatibility, not 
 First-version views:
 
 ```txt
-Current Save
+(Current Save ...)
   existing tracker/progress/raw/map functionality
 
 History
@@ -844,47 +844,6 @@ Static Web Mode exposes only Current Save behavior. Local History Web Mode expos
 ## TDD Strategy
 
 Use vertical slices, not horizontal batches. One behavior test should go red, then implementation should make it green, then move to the next behavior.
-
-Implementation should start in `packages/core`:
-
-```txt
-core tracer:
-  decoded save fixture + mapping fixture
-  -> createSemanticSnapshot()
-  -> SemanticSnapshot contains a scene-scoped collected item
-```
-
-Then proceed:
-
-```txt
-core diff:
-  two Semantic Snapshots
-  -> diffSemanticSnapshots()
-  -> item-level Semantic Event
-
-history raw observation:
-  initSaveHistory()
-  observeSave()
-  restoreEncodedSave()
-  -> restored bytes equal original save bytes
-
-history semantic index:
-  two raw observation commits
-  rebuildSemanticReadModel()
-  diffCommits()/searchSemanticEvents()
-  -> event maps to expected commit
-
-CLI snapshot:
-  save decode --save fixture
-  -> Decoded Save JSON
-
-  save snapshot --save fixture --json
-  -> SemanticSnapshot JSON
-
-Web current save:
-  existing upload flow calls packages/core
-  -> same tracker state as before
-```
 
 Tests should verify behavior through public Interfaces:
 
