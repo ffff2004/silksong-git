@@ -134,7 +134,7 @@ file changed
   -> update Semantic Read Model when semantic mapping is possible
 ```
 
-A manual checkpoint uses the same decode, classify, commit, and read-model update behavior, but is triggered by the user instead of the file watcher. It does not wait for watcher debounce and may bypass Capture Policy skip rules.
+A manual checkpoint uses the same decode, classify, commit, and read-model update behavior, but is triggered by the user instead of the file watcher. It does not wait for watcher debounce and bypasses the minimum commit interval. Committing unchanged bytes still requires explicit user intent.
 
 Decode failure is a Watcher Error and must not be committed. It usually means a half-written file, corrupted input, wrong path, or non-save file.
 
@@ -159,7 +159,7 @@ First-version settings:
 
 If multiple stable save changes occur inside `minCommitIntervalMs`, only the latest Raw Save Observation is committed. This is an explicit fidelity trade-off: the user gets fewer commits but loses intermediate raw states.
 
-Manual checkpoints bypass Capture Policy skip rules such as unchanged-save and minimum-interval suppression. They still must decode successfully, use the same schema handling, and acquire the same repository write lock as watcher observations.
+Manual checkpoints always bypass minimum-interval suppression. They do not commit unchanged Encoded Save bytes unless the user explicitly allows unchanged checkpoints. They still must decode successfully, use the same schema handling, and acquire the same repository write lock as watcher observations.
 
 Display filters must not decide whether Git commits happen.
 
@@ -657,7 +657,7 @@ First-version commands:
 | `save`    | `decode`     | Encoded Save              | Decode one save to raw Decoded Save JSON for debugging.                   |
 | `save`    | `snapshot`   | Encoded Save              | Decode and map one save without writing Git history.                      |
 | `watch`   | `start`      | Local History API Process | Start watching the Watched Save and updating history.                     |
-| `history` | `list`       | Semantic Events           | Show Semantic Event history and optionally raw observations.              |
+| `history` | `list`       | Semantic Events           | Show Semantic Event history.                                              |
 | `history` | `diff`       | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                           |
 | `history` | `search`     | Semantic Events           | Find events and corresponding commits.                                    |
 | `history` | `checkpoint` | Raw Save Observation      | Commit the current Watched Save as a manual checkpoint.                   |
@@ -668,19 +668,19 @@ First-version commands:
 First-version command forms:
 
 ```txt
-silksong-git repo init --save <save.dat> --repo <history-repo>
+silksong-git repo init --save <save.dat> --repo <history-repo> [--json]
 
 silksong-git save decode <save.dat> [--out <decoded-save.json>] [--compact] [--schema-check]
 silksong-git save snapshot <save.dat> --json
 
 silksong-git watch start [--repo <history-repo>]
 
-silksong-git history list [--repo <history-repo>]
-silksong-git history diff <from> <to> [--repo <history-repo>]
-silksong-git history search [--repo <history-repo>] --event <text>
-silksong-git history checkpoint [--repo <history-repo>] [--message <text>]
+silksong-git history list [--repo <history-repo>] [--limit <n>] [--cursor <cursor>] [--include-filtered] [--json]
+silksong-git history diff <from> <to> [--repo <history-repo>] [--include-filtered] [--json]
+silksong-git history search [--repo <history-repo>] [--event <text>] [--item-id <id>] [--label <text>] [--type <type>] [--status-to <status>] [--direction <direction>] [--include-filtered] [--json]
+silksong-git history checkpoint [--repo <history-repo>] [--message <text>] [--allow-unchanged] [--json]
 silksong-git history restore <commit> --to <path> [--repo <history-repo>]
-silksong-git history rebuild [--repo <history-repo>]
+silksong-git history rebuild [--repo <history-repo>] [--json]
 
 silksong-git ui open [--repo <history-repo>]
 ```
@@ -689,7 +689,7 @@ The first version requires explicit group/action commands. Do not add implicit d
 
 The groups are user-facing operation objects, not internal packages.
 
-Default command output is human-readable text. `--json` provides stable machine-readable output for scripts and tests.
+Default command output is human-readable text. `--json` provides stable machine-readable output for scripts and tests. JSON output should directly emit the relevant public Interface result unless a command explicitly documents a different shape. Human-readable output is not a stable byte-for-byte contract.
 
 `save decode` is the exception: it always emits Decoded Save JSON because it is a debugging command for inspecting raw decoded shape. It outputs `decodeEncodedSave(bytes).decodedSave`, not the full `DecodedEncodedSave` wrapper. It uses the public `packages/core` `decodeEncodedSave` Interface directly and does not call `parseDecodedSave` unless `--schema-check` is requested. The raw Decoded Save shape is not a stable semantic Interface.
 
@@ -709,16 +709,102 @@ Default command output is human-readable text. `--json` provides stable machine-
   also call parseDecodedSave and report whether the decoded shape is recognized
 ```
 
-`search` should support structured query flags such as:
+`repo init` supports:
 
 ```txt
---item-id
---label
---type
---status-to
+--save <save.dat>
+  required Watched Save path; must exist, be readable, and be a file; stored in Project Config as an absolute path
+
+--repo <history-repo>
+  required target Save History Repository path; resolved to an absolute path
+
+--json
+  print InitSaveHistoryResult JSON; text output should include a brief next-step hint
 ```
 
-`--event` free-text search is a convenience for interactive use, not the stable programmatic Interface.
+`repo init` may create a missing target directory or initialize an existing empty target directory. A directory is empty only when it has no entries. Existing initialized repositories and non-empty uninitialized directories fail by default; the first version does not provide a force flag. `repo init` does not decode the Watched Save and does not commit an initial observation.
+
+`history list` supports:
+
+```txt
+--limit <n>
+  optional page size; must be an integer from 1 to 1000
+
+--cursor <cursor>
+  optional opaque cursor returned by an earlier list result
+
+--include-filtered
+  include Semantic Events hidden by Display Semantic Event Filters
+
+--json
+  print HistoryResult JSON
+```
+
+The first version does not expose raw-observation listing through the CLI. Raw observations remain available behind the `packages/history` Interface for future workflows.
+
+`history diff` supports:
+
+```txt
+<from> <to>
+  required commit refs to compare
+
+--include-filtered
+  include Semantic Events hidden by Display Semantic Event Filters
+
+--json
+  print DiffCommitsResult JSON
+```
+
+`history search` supports:
+
+```txt
+--event <text>
+  free-text convenience search; maps to the history text query
+
+--item-id <id>
+
+--label <text>
+
+--type <type>
+
+--status-to <status>
+  accepted | done | missing | unknown
+
+--direction <direction>
+  neutral | progression | regression
+
+--include-filtered
+  include Semantic Events hidden by Display Semantic Event Filters
+
+--json
+  print SearchSemanticEventsResult JSON
+```
+
+At least one query flag is required for `history search`. `--event` free-text search is a convenience for interactive use, not the stable programmatic Interface.
+
+`history checkpoint` supports:
+
+```txt
+--message <text>
+  optional checkpoint message stored in Observation Metadata; Git commit message text may include it but is not a stable Interface
+
+--allow-unchanged
+  commit a manual checkpoint even when the current Encoded Save bytes match the previous observation
+
+--json
+  print ObserveSaveResult JSON
+```
+
+Manual checkpoints bypass minimum commit interval suppression. They do not bypass decode failure, unrecognized schema handling, repository locking, or unchanged-save suppression unless `--allow-unchanged` is present.
+
+`history rebuild` supports:
+
+```txt
+--json
+  print RebuildSemanticReadModelResult JSON
+```
+
+Rebuild is allowed when there are no observation commits; it should create an empty Semantic Read Model and return zero counts.
 
 ## Repo Context Resolution
 
@@ -732,6 +818,8 @@ error: repository path required
 
 `repo init` always requires `--repo` because the target Save History Repository may not exist yet.
 
+When `--repo` is provided, it always wins over cwd discovery. Cwd discovery walks upward from the current working directory and selects the nearest parent containing `.silksong-git/config.json`; it must not treat an unrelated Git repository as a Save History Repository. Invalid explicit repository paths fail instead of being auto-initialized.
+
 ## CLI Safety Classes
 
 Commands should make side effects visible in their names, arguments, and confirmation behavior:
@@ -741,7 +829,7 @@ Commands should make side effects visible in their names, arguments, and confirm
 | Read-only              | `save decode`, `save snapshot`, `history list`, `history diff`, `history search` | No writes to Git, SQLite, or user save files.                                                                                                    |
 | Debug file write       | `save decode --out <decoded-save.json>`                                          | Writes only the explicit Decoded Save output path.                                                                                               |
 | Repository creation    | `repo init`                                                                      | Requires explicit `--save` and `--repo`.                                                                                                         |
-| Raw observation write  | `history checkpoint`                                                             | Writes Git raw-observation artifacts and may update SQLite; bypasses Capture Policy skip rules but not decode failure or repository locking.     |
+| Raw observation write  | `history checkpoint`                                                             | Writes Git raw-observation artifacts and may update SQLite; bypasses minimum-interval suppression but not decode failure or repository locking.  |
 | Read-model mutation    | `history rebuild`                                                                | May rewrite the SQLite Semantic Read Model; does not rewrite Git history.                                                                        |
 | Process start          | `watch start`, `ui open`                                                         | `watch start` may start the Local History API Process; `ui open` may open or serve the frontend client without becoming a second history writer. |
 | Filesystem write       | `history restore <commit> --to <path>`                                           | Requires an explicit Restore Target.                                                                                                             |
@@ -791,6 +879,20 @@ unknown schema:
 
 History-oriented commands should report rebuild-required or stale-read-model cases clearly instead of silently returning incomplete results.
 
+`repo init` behavior:
+
+```txt
+success:
+  exit 0
+  create the Save History Repository and Project Config
+  text output may suggest running history checkpoint next
+  --json prints InitSaveHistoryResult
+
+invalid save path, non-empty target directory, already initialized target, or initialization failure:
+  exit 1
+  stderr explains the configuration error
+```
+
 `history checkpoint` behavior:
 
 ```txt
@@ -798,11 +900,98 @@ success:
   exit 0
   commit the current Watched Save as a Raw Save Observation
   mark observation.json with trigger: "manualCheckpoint"
+  unrecognized schema observations still count as successful commits
+
+unchanged save without --allow-unchanged:
+  exit 0
+  no Raw Save Observation is committed
+  text output suggests --allow-unchanged
+  --json prints ObserveSaveResult with status: "skipped" and reason: "unchanged"
 
 decode failure:
   exit 2
   stderr: cannot decode save
   no Raw Save Observation is committed
+
+repository busy:
+  exit 4
+  stderr: history repository is busy
+```
+
+`history list` behavior:
+
+```txt
+success:
+  exit 0
+  print Semantic Event history or HistoryResult JSON
+
+no semantic events:
+  exit 0
+  text output: no semantic events found
+  --json prints HistoryResult with events: []
+
+read model unavailable:
+  exit 5
+  stderr suggests running history rebuild
+```
+
+`history search` behavior:
+
+```txt
+success:
+  exit 0
+  print matching Semantic Events or SearchSemanticEventsResult JSON
+
+no query flags:
+  exit 1
+  stderr says history search requires at least one query flag
+
+invalid --status-to or --direction value:
+  exit 1
+  stderr explains the invalid value
+
+no matching semantic events:
+  exit 0
+  text output: no matching semantic events found
+  --json prints SearchSemanticEventsResult with events: []
+
+read model unavailable:
+  exit 5
+  stderr suggests running history rebuild
+```
+
+`history diff` behavior:
+
+```txt
+success:
+  exit 0
+  print semantic changes or DiffCommitsResult JSON
+
+no semantic changes:
+  exit 0
+  text output: no semantic changes found
+  --json prints DiffCommitsResult with events: []
+
+invalid commit ref:
+  exit 1
+  stderr explains the invalid commit ref
+
+semantic snapshot unavailable for one or both commits:
+  exit 3
+  stderr explains that semantic snapshot data is unavailable
+
+read model unavailable:
+  exit 5
+  stderr suggests running history rebuild
+```
+
+`history rebuild` behavior:
+
+```txt
+success:
+  exit 0
+  rebuild the SQLite Semantic Read Model from Git raw observation commits
+  print a text summary or RebuildSemanticReadModelResult JSON
 
 repository busy:
   exit 4

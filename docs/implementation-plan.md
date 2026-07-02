@@ -6,8 +6,8 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 ## Current Status
 
-- Current phase: P6 Web Integration
-- Next task: P5-T2 Implement History CLI Commands
+- Current phase: P5 CLI
+- Next task: P5-T2 Implement Repo And History CLI Workflow
 - Last updated: 2026-07-02
 
 ## Phase Overview
@@ -629,7 +629,7 @@ Notes:
 - `save snapshot` requires `--json`, outputs the `SemanticSnapshot` object directly, maps decode failures to exit 2, and maps unrecognized schema to exit 3 with a `save decode` suggestion.
 - Added end-to-end CLI tests that execute the CLI entry point through `tsx`.
 
-### P5-T2 Implement History CLI Commands
+### P5-T2 Implement Repo And History CLI Workflow
 
 Status: pending
 
@@ -649,17 +649,139 @@ Relevant docs and ADRs:
 
 Acceptance criteria:
 
-- First-version object-grouped command set matches `docs/save-history-design.md`.
-- Commands call `packages/history` rather than Git or SQLite directly.
-- `history list`, `history diff`, `history search`, and `history checkpoint` default to readable text and support stable `--json` where documented.
-- `history checkpoint` records a manual checkpoint through the public history Interface and maps decode failure to the documented exit behavior.
-- Repository-scoped commands follow the documented repo context resolution order.
+- The P5-T2 repo and history command behavior matches `docs/save-history-design.md`; that document remains the only source for concrete command grammar and flags.
+- Repo initialization and history workflow commands call `packages/history` rather than Git or SQLite directly.
+- The implemented workflow lets a user create a Save History Repository, record a manual checkpoint, inspect/query/diff history, and rebuild the Semantic Read Model through CLI output.
+- Repo/history commands default to readable text and support stable `--json` where documented.
+- Manual checkpoint records through the public history Interface, bypasses minimum-interval suppression as documented, handles unchanged saves through the documented explicit option, and maps decode failure and busy-repository cases to the documented exit behavior.
+- Repository-scoped commands share one repo context resolver and follow the documented resolution order.
+- CLI source is split so command registration, save commands, repo/history commands, repo context resolution, output formatting, and exit-code constants stay locally understandable.
+- Repo context resolution has focused tests, and command behavior is covered by end-to-end CLI process tests.
+
+TDD Vertical Slices:
+
+- [ ] History manual checkpoint skips unchanged Encoded Save bytes by default
+  - Public call: `observeSave` through `packages/history`.
+  - Assert: a second manual checkpoint of unchanged bytes returns a skipped unchanged result and creates no new Raw Save Observation.
+  - Other information: this updates the history Module behavior before CLI code depends on it.
+- [ ] History manual checkpoint can explicitly allow unchanged Encoded Save bytes
+  - Public call: `observeSave` through `packages/history`.
+  - Assert: an explicit allow-unchanged manual checkpoint commits unchanged bytes while manual checkpoints still bypass minimum-interval suppression.
+  - Other information: avoid exposing low-level Capture Policy bypass switches to CLI callers.
+- [ ] CLI can initialize a Save History Repository
+  - Public call: CLI process.
+  - Assert: repo initialization succeeds, writes Project Config, emits stable JSON when requested, and stores absolute Watched Save and repository paths.
+  - Other information: `repo init` does not decode the save and does not create an initial observation.
+- [ ] CLI refuses unsafe or invalid repository initialization
+  - Public call: CLI process.
+  - Assert: invalid Watched Save paths and non-empty target directories fail with usage/configuration behavior.
+  - Other information: cover representative safety failures instead of every filesystem error.
+- [ ] CLI resolves repository context consistently
+  - Public call: repo context resolver Module and at least one repository-scoped CLI command.
+  - Assert: explicit repo path wins, cwd discovery walks upward to the nearest Save History Repository, and missing context fails as documented.
+  - Other information: keep this as a small shared CLI Module with focused tests.
+- [ ] CLI records a manual checkpoint
+  - Public call: CLI process.
+  - Assert: checkpoint command records a Raw Save Observation through `packages/history`, outputs stable JSON when requested, and records trigger/message metadata.
+  - Other information: this is the first end-to-end repo/history workflow slice after repo init.
+- [ ] CLI handles unchanged manual checkpoint behavior
+  - Public call: CLI process.
+  - Assert: unchanged checkpoint defaults to a skipped result with a text hint, and the documented explicit option records the checkpoint.
+  - Other information: JSON output remains the public history result body without extra CLI hints.
+- [ ] CLI maps checkpoint failures
+  - Public call: CLI process.
+  - Assert: decode failure maps to the documented exit behavior; repository-busy behavior is covered if the setup remains practical.
+  - Other information: do not commit a Raw Save Observation on decode failure.
+- [ ] CLI rebuilds the Semantic Read Model
+  - Public call: CLI process.
+  - Assert: rebuilding an empty repository succeeds with zero counts, and rebuilding after observations reports the public rebuild result.
+  - Other information: rebuild may mutate SQLite but must not rewrite Git history.
+- [ ] CLI lists Semantic Event history
+  - Public call: CLI process.
+  - Assert: list returns the public history result in JSON mode, readable empty output when there are no events, and documented pagination validation.
+  - Other information: raw-observation listing is intentionally not exposed in P5-T2.
+- [ ] CLI searches Semantic Event history
+  - Public call: CLI process.
+  - Assert: at least one query flag is required, structured query flags work, free-text event search works as a convenience, and invalid enum values fail as usage errors.
+  - Other information: structured fields remain the stable search Interface.
+- [ ] CLI diffs two history commits
+  - Public call: CLI process.
+  - Assert: diff returns the public diff result in JSON mode, no-change diffs are successful empty results, missing snapshots map to semantic-unavailable behavior, and invalid refs are usage errors.
+  - Other information: include-filtered and read-model-unavailable behavior can be covered on the smallest command surface that proves the shared mapping.
 
 Verification:
 
 - `pnpm format`: pending
 - `pnpm lint`: pending
 - CLI test command: pending
+
+### P5-T3 Implement History Restore CLI Command
+
+Status: pending
+
+Depends on:
+
+- P5-T2
+
+Owned files or likely files:
+
+- `apps/cli/`
+- CLI tests
+
+Relevant docs and ADRs:
+
+- `docs/save-history-design.md`
+- [ADR-0007](adr/0007-restore-requires-explicit-target-or-in-place-confirmation.md)
+- [ADR-0010](adr/0010-first-version-cli-command-set.md)
+- [ADR-0013](adr/0013-history-module-interface-and-testing.md)
+
+Acceptance criteria:
+
+- Restore command behavior matches `docs/save-history-design.md`; that document remains the source for concrete command grammar and flags.
+- Restore calls `packages/history` rather than Git or filesystem history internals directly.
+- Restore requires explicit restore intent and preserves the documented overwrite safety behavior.
+- Restore errors are mapped to documented CLI exit behavior and messages.
+- Command behavior is covered by end-to-end CLI process tests.
+
+Verification:
+
+- `pnpm format`: pending
+- `pnpm lint`: pending
+- CLI test command: pending
+
+### P5-T4 Implement Watch CLI Command
+
+Status: pending
+
+Depends on:
+
+- P5-T2
+
+Owned files or likely files:
+
+- `apps/cli/`
+- `packages/history/`
+- CLI and history process tests as needed
+
+Relevant docs and ADRs:
+
+- `docs/save-history-design.md`
+- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-history-api.md)
+- [ADR-0010](adr/0010-first-version-cli-command-set.md)
+- [ADR-0013](adr/0013-history-module-interface-and-testing.md)
+
+Acceptance criteria:
+
+- Watch command behavior matches `docs/save-history-design.md`; that document remains the source for concrete command grammar and flags.
+- The command starts the Local History API Process through `packages/history`.
+- Watcher lifecycle, repository locking, status output, and shutdown behavior are documented and tested at the appropriate Interface.
+- The process remains the single owner of watching, history writes, read-model updates, and local history endpoints.
+
+Verification:
+
+- `pnpm format`: pending
+- `pnpm lint`: pending
+- Relevant test command: pending
 
 ## P6 Web Integration
 
@@ -741,3 +863,38 @@ Verification:
 - `pnpm lint`: pending
 - Web test/build command: pending
 - local Web UI smoke test: pending
+
+### P6-T3 Add UI Open CLI Workflow
+
+Status: pending
+
+Depends on:
+
+- P6-T2
+
+Owned files or likely files:
+
+- `apps/cli/`
+- `apps/web/`
+- local Web UI connection helpers
+- CLI tests or smoke checks
+
+Relevant docs and ADRs:
+
+- `docs/save-history-design.md`
+- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-history-api.md)
+- [ADR-0009](adr/0009-one-web-ui-with-static-and-local-history-modes.md)
+- [ADR-0010](adr/0010-first-version-cli-command-set.md)
+
+Acceptance criteria:
+
+- UI open behavior matches `docs/save-history-design.md`; that document remains the source for concrete command grammar and flags.
+- The command opens or serves the Web UI client without becoming a second history writer.
+- Local endpoint discovery or connection behavior is explicit and compatible with Local History Web Mode.
+- The command does not make Web code call Git, SQLite, watcher, or history internals directly.
+
+Verification:
+
+- `pnpm format`: pending
+- `pnpm lint`: pending
+- Relevant test or smoke command: pending
