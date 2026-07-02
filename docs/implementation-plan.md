@@ -662,11 +662,11 @@ TDD Vertical Slices:
 
 Phase A: History Interface Semantics
 
-- [ ] History manual checkpoint skips unchanged Encoded Save bytes by default
+- [x] History manual checkpoint skips unchanged Encoded Save bytes by default
   - Public call: `observeSave` through `packages/history`.
   - Assert: a second manual checkpoint of unchanged bytes returns a skipped unchanged result and creates no new Raw Save Observation.
   - Other information: this updates the history Module behavior before CLI code depends on it.
-- [ ] History manual checkpoint can explicitly allow unchanged Encoded Save bytes
+- [x] History manual checkpoint can explicitly allow unchanged Encoded Save bytes
   - Public call: `observeSave` through `packages/history`.
   - Assert: an explicit allow-unchanged manual checkpoint commits unchanged bytes while manual checkpoints still bypass minimum-interval suppression.
   - Other information: avoid exposing low-level Capture Policy bypass switches to CLI callers.

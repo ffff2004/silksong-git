@@ -278,7 +278,7 @@ test("observeSave skips an unchanged Encoded Save", async (t) => {
   );
 });
 
-test("manual checkpoint commits an unchanged Encoded Save", async (t) => {
+test("manual checkpoint skips an unchanged Encoded Save by default", async (t) => {
   const { repoPath } = await createHistoryRepo(t);
 
   const firstResult = await observeSave({
@@ -290,6 +290,30 @@ test("manual checkpoint commits an unchanged Encoded Save", async (t) => {
     observedAt: new Date("2026-06-30T12:01:00.000Z"),
     trigger: "manualCheckpoint",
     message: "before risky operation",
+  });
+
+  assert.equal(firstResult.status, "committed");
+  assert.equal(checkpointResult.status, "skipped");
+  assert.equal(checkpointResult.reason, "unchanged");
+  assert.equal(
+    checkpointResult.encodedSha256,
+    firstResult.observation.encodedSha256,
+  );
+});
+
+test("manual checkpoint can explicitly allow unchanged Encoded Save bytes", async (t) => {
+  const { repoPath } = await createHistoryRepo(t);
+
+  const firstResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  const checkpointResult = await observeSave({
+    repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+    trigger: "manualCheckpoint",
+    message: "before risky operation",
+    allowUnchanged: true,
   });
 
   assert.equal(firstResult.status, "committed");

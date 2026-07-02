@@ -96,14 +96,18 @@ export async function observeSave(
   return await withHistoryWriteLock(input.repoPath, async () => {
     const config = await readProjectConfig(input.repoPath);
     const trigger = input.trigger ?? "watcher";
-    const forceObservation =
-      input.force === true || trigger === "manualCheckpoint";
+    const isManualCheckpoint = trigger === "manualCheckpoint";
+    const shouldCommitUnchanged =
+      isManualCheckpoint && input.allowUnchanged === true;
     const observedAt = input.observedAt ?? new Date();
     const encodedBytes = await readFile(config.watchedSavePath);
     const encodedSha256 = sha256Hex(encodedBytes);
     const lastObservation = await readLastObservation(input.repoPath);
 
-    if (!forceObservation && lastObservation?.encodedSha256 === encodedSha256) {
+    if (
+      !shouldCommitUnchanged
+      && lastObservation?.encodedSha256 === encodedSha256
+    ) {
       return {
         status: "skipped",
         reason: "unchanged",
@@ -112,7 +116,7 @@ export async function observeSave(
     }
 
     if (
-      !forceObservation
+      !isManualCheckpoint
       && isInsideMinimumCommitInterval(
         lastObservation?.observedAt,
         observedAt,

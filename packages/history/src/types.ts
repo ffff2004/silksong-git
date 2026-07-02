@@ -52,7 +52,7 @@ export interface ObserveSaveInput {
   readonly observedAt?: Date;
   readonly trigger?: ObservationTrigger;
   readonly message?: string;
-  readonly force?: boolean;
+  readonly allowUnchanged?: boolean;
 }
 
 export type ObservationTrigger = "watcher" | "manualCheckpoint";
