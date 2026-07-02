@@ -1006,9 +1006,21 @@ success:
   write the commit's Encoded Save to the explicit Restore Target
   print a text summary
 
-missing --to:
+missing restore target mode:
   exit 1
-  stderr explains that --to is required
+  stderr explains that exactly one of --to or --in-place is required
+
+--to and --in-place both present:
+  exit 1
+  stderr explains that exactly one of --to or --in-place is required
+
+--in-place without --confirm-in-place:
+  exit 1
+  stderr explains that in-place restore requires --confirm-in-place
+
+--confirm-in-place without --in-place:
+  exit 1
+  stderr explains that --confirm-in-place requires --in-place
 
 invalid commit ref:
   exit 1
@@ -1031,14 +1043,31 @@ silksong-git history restore <commit> --to <path> [--repo <history-repo>]
 Overwriting the Watched Save requires explicit in-place restore:
 
 ```txt
-silksong-git history restore <commit> --in-place [--repo <history-repo>]
+silksong-git history restore <commit> --in-place --confirm-in-place [--repo <history-repo>]
 ```
 
 In-place restore must:
 
 - Read the Watched Save path from Project Config.
-- Require explicit user intent.
-- Create a backup before writing.
+- Require `--in-place` and `--confirm-in-place`.
+- Be mutually exclusive with `--to`.
+- Create a backup before overwriting an existing Watched Save.
+- Allow restore without a backup when the Watched Save does not exist.
+- Keep restore itself from creating a Raw Save Observation; a running watcher or later manual checkpoint records the resulting file state through the normal observation flow.
+- Hold the Save History Repository write lock for the full restore flow.
+- Read back the written file and verify its hash before reporting success.
+
+Configured backup directories must be absolute paths. If `restore.backupDirectory` is not configured, backups are written beside the Watched Save. If a backup directory exists but is not a directory, cannot be created, or is relative, in-place restore fails before writing the Watched Save.
+
+Backup files contain the original Watched Save bytes exactly as they existed before restore. They are not decoded or validated. Backup names use:
+
+```txt
+<original-basename>.before-restore.<timestamp>.dat
+```
+
+If that file already exists, append `.1` through `.9` before `.dat` and fail without overwriting the Watched Save if all candidates already exist.
+
+If backup succeeds but writing or verification fails, the backup is preserved and the error should expose the backup path. Restore does not attempt automatic rollback.
 
 The local Web UI should default to export/download behavior, not silent in-place overwrite.
 

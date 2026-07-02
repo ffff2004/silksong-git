@@ -1,4 +1,8 @@
 export { InvalidCommitRefError } from "./errors/invalid-commit-ref-error.ts";
+export { InvalidRestoreBackupDirectoryError } from "./errors/invalid-restore-backup-directory-error.ts";
 export { ReadModelUnavailableError } from "./errors/read-model-unavailable-error.ts";
+export { RestoreBackupFailedError } from "./errors/restore-backup-failed-error.ts";
 export { RestoreTargetExistsError } from "./errors/restore-target-exists-error.ts";
+export { RestoreWriteFailedError } from "./errors/restore-write-failed-error.ts";
+export { RestoreWriteVerificationError } from "./errors/restore-write-verification-error.ts";
 export { SaveHistoryRepositoryBusyError } from "./errors/save-history-repository-busy-error.ts";

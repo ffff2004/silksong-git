@@ -201,6 +201,7 @@ export type RestoreTarget =
 export interface RestoreEncodedSaveInput {
   readonly repoPath: string;
   readonly commitRef: string;
+  readonly now?: Date;
   readonly target: RestoreTarget;
 }
 

@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import {
   copyFile,
+  mkdir,
   mkdtemp,
   readFile,
   rm,
@@ -15,6 +16,7 @@ import test from "node:test";
 import {
   diffCommits,
   initSaveHistory,
+  InvalidRestoreBackupDirectoryError,
   observeSave,
   queryHistory,
   rebuildSemanticReadModel,
@@ -519,6 +521,164 @@ test("restoreEncodedSave refuses to overwrite an existing target implicitly", as
     RestoreTargetExistsError,
   );
   assert.deepEqual(await readFile(restorePath), Buffer.from(existingBytes));
+});
+
+test("restoreEncodedSave creates a backup before in-place restore", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath);
+  const firstObservation = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  assert.equal(firstObservation.status, "committed");
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const beforeRestoreBytes = await readFile(repo.watchedSavePath);
+  const restoreResult = await restoreEncodedSave({
+    repoPath: repo.repoPath,
+    commitRef: firstObservation.observation.commit.ref,
+    now: new Date("2026-07-02T14:30:12.000Z"),
+    target: {
+      kind: "inPlace",
+      confirmation: "restore-watched-save",
+    },
+  });
+
+  const expectedBackupPath = path.join(
+    repo.tempDirectory,
+    "watched-save.dat.before-restore.20260702T143012Z.dat",
+  );
+
+  assert.equal(restoreResult.targetPath, repo.watchedSavePath);
+  assert.equal(restoreResult.backupPath, expectedBackupPath);
+  assert.deepEqual(await readFile(expectedBackupPath), beforeRestoreBytes);
+  assert.deepEqual(
+    await readFile(repo.watchedSavePath),
+    await readFile(minimalEncodedSavePath),
+  );
+});
+
+test("restoreEncodedSave restores in-place without backup when the watched save is missing", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath);
+  const observation = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  assert.equal(observation.status, "committed");
+
+  await rm(repo.watchedSavePath);
+  const restoreResult = await restoreEncodedSave({
+    repoPath: repo.repoPath,
+    commitRef: observation.observation.commit.ref,
+    target: {
+      kind: "inPlace",
+      confirmation: "restore-watched-save",
+    },
+  });
+
+  assert.equal(restoreResult.targetPath, repo.watchedSavePath);
+  assert.equal(restoreResult.backupPath, undefined);
+  assert.deepEqual(
+    await readFile(repo.watchedSavePath),
+    await readFile(minimalEncodedSavePath),
+  );
+});
+
+test("restoreEncodedSave rejects relative in-place backup directories", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    restore: {
+      backupDirectory: "relative-backups",
+    },
+  });
+  const observation = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  const beforeRestoreBytes = await readFile(repo.watchedSavePath);
+
+  assert.equal(observation.status, "committed");
+
+  await assert.rejects(
+    async () =>
+      await restoreEncodedSave({
+        repoPath: repo.repoPath,
+        commitRef: observation.observation.commit.ref,
+        target: {
+          kind: "inPlace",
+          confirmation: "restore-watched-save",
+        },
+      }),
+    InvalidRestoreBackupDirectoryError,
+  );
+  assert.deepEqual(await readFile(repo.watchedSavePath), beforeRestoreBytes);
+});
+
+test("restoreEncodedSave retries colliding in-place backup names", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath);
+  const observation = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  const collidingBackupPath = path.join(
+    repo.tempDirectory,
+    "watched-save.dat.before-restore.20260702T143012Z.dat",
+  );
+
+  assert.equal(observation.status, "committed");
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  await writeFile(collidingBackupPath, "existing backup");
+  const restoreResult = await restoreEncodedSave({
+    repoPath: repo.repoPath,
+    commitRef: observation.observation.commit.ref,
+    now: new Date("2026-07-02T14:30:12.000Z"),
+    target: {
+      kind: "inPlace",
+      confirmation: "restore-watched-save",
+    },
+  });
+
+  assert.equal(
+    restoreResult.backupPath,
+    path.join(
+      repo.tempDirectory,
+      "watched-save.dat.before-restore.20260702T143012Z.1.dat",
+    ),
+  );
+  assert.equal(await readFile(collidingBackupPath, "utf8"), "existing backup");
+});
+
+test("restoreEncodedSave uses absolute target backup directories before in-place restore", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath);
+  const backupDirectory = path.join(repo.tempDirectory, "backups");
+  const observation = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  assert.equal(observation.status, "committed");
+
+  await mkdir(backupDirectory);
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const restoreResult = await restoreEncodedSave({
+    repoPath: repo.repoPath,
+    commitRef: observation.observation.commit.ref,
+    now: new Date("2026-07-02T14:30:12.000Z"),
+    target: {
+      kind: "inPlace",
+      confirmation: "restore-watched-save",
+      backupDirectory,
+    },
+  });
+
+  assert.equal(
+    restoreResult.backupPath,
+    path.join(
+      backupDirectory,
+      "watched-save.dat.before-restore.20260702T143012Z.dat",
+    ),
+  );
 });
 
 test("rebuildSemanticReadModel rebuilds recognized Semantic Events for queryHistory", async (t) => {

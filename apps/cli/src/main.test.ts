@@ -110,6 +110,17 @@ function parseStdoutJson(result: CliResult): unknown {
   return JSON.parse(result.stdout) as unknown;
 }
 
+function parseRestoreOutputLine(output: string, key: string): string {
+  const prefix = `${key}: `;
+  const line = output
+    .split("\n")
+    .find((candidate) => candidate.startsWith(prefix));
+
+  assert.ok(line !== undefined);
+
+  return line.slice(prefix.length);
+}
+
 async function readJsonFile(filePath: string): Promise<unknown> {
   return JSON.parse(await readFile(filePath, "utf8")) as unknown;
 }
@@ -653,6 +664,111 @@ test("history restore maps invalid commit refs to usage errors", async (t) => {
   assert.equal(result.exitCode, 1);
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /invalid commit ref/v);
+});
+
+test("history restore writes in-place after confirmation and creates a backup", async (t) => {
+  const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
+  const checkpointResult = await runCli([
+    "history",
+    "checkpoint",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+  const checkpoint = parseStdoutJson(checkpointResult) as {
+    readonly observation?: { readonly commit?: { readonly ref?: unknown } };
+  };
+  const beforeRestoreBytes = await readFile(maskShard2CollectedEncodedSavePath);
+
+  await writeFile(watchedSavePath, beforeRestoreBytes);
+  const result = await runCli([
+    "history",
+    "restore",
+    String(checkpoint.observation?.commit?.ref),
+    "--in-place",
+    "--confirm-in-place",
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /restore complete/v);
+  assert.match(result.stdout, /backup: .*before-restore\..*\.dat/v);
+  assert.deepEqual(
+    await readFile(watchedSavePath),
+    await readFile(minimalEncodedSavePath),
+  );
+
+  const backupPath = parseRestoreOutputLine(result.stdout, "backup");
+
+  assert.notEqual(backupPath, "none");
+  assert.deepEqual(await readFile(backupPath), beforeRestoreBytes);
+});
+
+test("history restore refuses in-place restore without confirmation", async (t) => {
+  const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
+  const checkpointResult = await runCli([
+    "history",
+    "checkpoint",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+  const checkpoint = parseStdoutJson(checkpointResult) as {
+    readonly observation?: { readonly commit?: { readonly ref?: unknown } };
+  };
+  const beforeRestoreBytes = await readFile(maskShard2CollectedEncodedSavePath);
+
+  await writeFile(watchedSavePath, beforeRestoreBytes);
+  const result = await runCli([
+    "history",
+    "restore",
+    String(checkpoint.observation?.commit?.ref),
+    "--in-place",
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /requires --confirm-in-place/v);
+  assert.deepEqual(await readFile(watchedSavePath), beforeRestoreBytes);
+});
+
+test("history restore requires exactly one target mode", async (t) => {
+  const { tempDirectory, repoPath } = await createCliHistoryRepo(t);
+  const result = await runCli([
+    "history",
+    "restore",
+    "HEAD",
+    "--to",
+    path.join(tempDirectory, "restored-save.dat"),
+    "--in-place",
+    "--confirm-in-place",
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /exactly one of --to or --in-place/v);
+});
+
+test("history restore rejects confirmation without in-place mode", async (t) => {
+  const { repoPath } = await createCliHistoryRepo(t);
+  const result = await runCli([
+    "history",
+    "restore",
+    "HEAD",
+    "--confirm-in-place",
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /--confirm-in-place requires --in-place/v);
 });
 
 test("save decode prints pretty Decoded Save JSON for an Encoded Save", async () => {

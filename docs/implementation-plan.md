@@ -7,7 +7,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P5 CLI
-- Next task: P5-T4 Implement In-Place History Restore
+- Next task: P5-T5 Implement Watch CLI Command
 - Last updated: 2026-07-02
 
 ## Phase Overview
@@ -782,7 +782,7 @@ Notes:
 
 ### P5-T4 Implement In-Place History Restore
 
-Status: pending
+Status: complete
 
 Depends on:
 
@@ -804,18 +804,33 @@ Relevant docs and ADRs:
 Acceptance criteria:
 
 - In-place restore is exposed as an explicit high-risk mode, for example `history restore <commit> --in-place --confirm-in-place [--repo <history-repo>]`.
+- `--to` and `--in-place` are mutually exclusive restore target modes.
 - The restore target is the `watchedSavePath` from Project Config, not an arbitrary CLI path.
 - Missing confirmation fails as a usage error without writing the watched save.
-- A backup of the existing watched save is created before overwriting it.
+- `restore.backupDirectory`, when configured, must be an absolute path.
+- A backup of the existing watched save is created before overwriting it, using `<original-basename>.before-restore.<timestamp>.dat` with bounded collision retries.
+- Missing watched save is restored without a backup.
+- Restore writes no Raw Save Observation by itself.
 - In-place restore uses the `packages/history` public Interface and the same repository write lock as watcher observations and manual checkpoints.
+- Restore reads back the watched save and verifies the written hash before reporting success.
 - Restore errors are mapped to documented CLI exit behavior and messages.
 - Behavior is covered through public history Interface tests and end-to-end CLI process tests.
 
 Verification:
 
-- `pnpm format`: pending
-- `pnpm lint`: pending
-- Relevant test command: pending
+- `pnpm --filter @silksong-git/history test`: passed
+- `pnpm --filter @silksong-git/cli test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- `pnpm test`: passed
+
+Notes:
+
+- Added `history restore <commit> --in-place --confirm-in-place` through the history public Interface.
+- In-place restore reads `watchedSavePath` from Project Config, creates bounded-collision backups for existing watched saves, allows restore when the watched save is missing, and verifies the written hash before reporting success.
+- `restore.backupDirectory` must be absolute when configured.
+- Restore itself does not create a Raw Save Observation; watcher/manual checkpoint workflows can record the resulting file state separately.
+- Added public restore domain errors for invalid backup directories, backup failure, write failure, and write verification failure.
 
 ### P5-T5 Implement Watch CLI Command
 

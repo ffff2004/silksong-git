@@ -2,12 +2,16 @@ import type { SearchSemanticEventsInput } from "@silksong-git/history";
 import {
   diffCommits,
   InvalidCommitRefError,
+  InvalidRestoreBackupDirectoryError,
   observeSave,
   queryHistory,
   ReadModelUnavailableError,
   rebuildSemanticReadModel,
+  RestoreBackupFailedError,
   restoreEncodedSave,
   RestoreTargetExistsError,
+  RestoreWriteFailedError,
+  RestoreWriteVerificationError,
   SaveHistoryRepositoryBusyError,
   searchSemanticEvents,
 } from "@silksong-git/history";
@@ -35,7 +39,9 @@ interface RebuildCommandOptions {
 
 interface RestoreCommandOptions {
   readonly repo?: string;
-  readonly to: string;
+  readonly to?: string;
+  readonly inPlace?: boolean;
+  readonly confirmInPlace?: boolean;
 }
 
 interface ListCommandOptions {
@@ -119,7 +125,9 @@ export function registerHistoryCommands(program: Command): void {
   historyCommand
     .command("restore")
     .argument("<commit>")
-    .requiredOption("--to <path>")
+    .option("--to <path>")
+    .option("--in-place")
+    .option("--confirm-in-place")
     .option("--repo <history-repo>")
     .action(async (commitRef: string, options: RestoreCommandOptions) => {
       await runRestoreCommand(commitRef, options);
@@ -338,17 +346,15 @@ async function runRestoreCommandOrThrow(
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
   });
+  const target = createRestoreTarget(options);
   const result = await restoreEncodedSave({
     repoPath,
     commitRef,
-    target: {
-      kind: "path",
-      path: path.resolve(options.to),
-    },
+    target,
   });
 
   process.stdout.write(
-    `restore complete\ncommit: ${result.commit.shortRef}\ntarget: ${result.targetPath}\nsha256: ${result.writtenSha256}\n`,
+    `restore complete\ncommit: ${result.commit.shortRef}\ntarget: ${result.targetPath}\nbackup: ${result.backupPath ?? "none"}\nsha256: ${result.writtenSha256}\n`,
   );
 }
 
@@ -423,6 +429,51 @@ function createSearchQuery(
   return query;
 }
 
+function createRestoreTarget(
+  options: RestoreCommandOptions,
+): Parameters<typeof restoreEncodedSave>[0]["target"] {
+  if (options.confirmInPlace === true && options.inPlace !== true) {
+    throw new HistoryCommandUsageError(
+      "error: --confirm-in-place requires --in-place",
+    );
+  }
+
+  const hasPathTarget = options.to !== undefined;
+  const hasInPlaceTarget = options.inPlace === true;
+
+  if (hasPathTarget === hasInPlaceTarget) {
+    throw new HistoryCommandUsageError(
+      "error: restore target must be exactly one of --to or --in-place",
+    );
+  }
+
+  if (hasInPlaceTarget) {
+    if (options.confirmInPlace !== true) {
+      throw new HistoryCommandUsageError(
+        "error: in-place restore requires --confirm-in-place\nnext: rerun with --in-place --confirm-in-place to overwrite the watched save after creating a backup",
+      );
+    }
+
+    return {
+      kind: "inPlace",
+      confirmation: "restore-watched-save",
+    };
+  }
+
+  const targetPath = options.to;
+
+  if (targetPath === undefined) {
+    throw new HistoryCommandUsageError(
+      "error: restore target must be exactly one of --to or --in-place",
+    );
+  }
+
+  return {
+    kind: "path",
+    path: path.resolve(targetPath),
+  };
+}
+
 function parseStatusTo(
   value: string,
 ): SearchSemanticEventsInput["query"]["statusTo"] {
@@ -495,6 +546,30 @@ function handleHistoryCommandError(error: unknown): boolean {
     return true;
   }
 
+  if (error instanceof InvalidRestoreBackupDirectoryError) {
+    process.stderr.write("error: invalid restore backup directory\n");
+    process.exitCode = exitCodes.usage;
+    return true;
+  }
+
+  if (error instanceof RestoreBackupFailedError) {
+    process.stderr.write("error: failed to create restore backup\n");
+    process.exitCode = exitCodes.usage;
+    return true;
+  }
+
+  if (error instanceof RestoreWriteFailedError) {
+    process.stderr.write(formatRestoreWriteFailure(error));
+    process.exitCode = exitCodes.usage;
+    return true;
+  }
+
+  if (error instanceof RestoreWriteVerificationError) {
+    process.stderr.write(formatRestoreVerificationFailure(error));
+    process.exitCode = exitCodes.usage;
+    return true;
+  }
+
   if (error instanceof SaveHistoryRepositoryBusyError) {
     process.stderr.write("error: save history repository is busy\n");
     process.exitCode = exitCodes.repositoryBusy;
@@ -502,4 +577,22 @@ function handleHistoryCommandError(error: unknown): boolean {
   }
 
   return false;
+}
+
+function formatRestoreWriteFailure(error: RestoreWriteFailedError): string {
+  return `error: failed to write restore target${formatBackupHint(error.backupPath)}`;
+}
+
+function formatRestoreVerificationFailure(
+  error: RestoreWriteVerificationError,
+): string {
+  return `error: restore write verification failed${formatBackupHint(error.backupPath)}`;
+}
+
+function formatBackupHint(backupPath: string | undefined): string {
+  if (backupPath === undefined) {
+    return "\n";
+  }
+
+  return `\nbackup: ${backupPath}\n`;
 }
