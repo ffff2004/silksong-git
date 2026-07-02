@@ -677,7 +677,7 @@ The groups are user-facing operation objects, not internal packages.
 
 Default command output is human-readable text. `--json` provides stable machine-readable output for scripts and tests.
 
-`save decode` is the exception: it always emits Decoded Save JSON because it is a debugging command for inspecting raw decoded shape. It uses the public `packages/core` `decodeEncodedSave` Interface directly and does not call `parseDecodedSave` unless `--schema-check` is requested. The raw Decoded Save shape is not a stable semantic Interface.
+`save decode` is the exception: it always emits Decoded Save JSON because it is a debugging command for inspecting raw decoded shape. It outputs `decodeEncodedSave(bytes).decodedSave`, not the full `DecodedEncodedSave` wrapper. It uses the public `packages/core` `decodeEncodedSave` Interface directly and does not call `parseDecodedSave` unless `--schema-check` is requested. The raw Decoded Save shape is not a stable semantic Interface.
 
 `save decode` supports:
 
