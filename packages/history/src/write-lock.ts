@@ -2,6 +2,7 @@ import type { FileHandle } from "node:fs/promises";
 import { open, rm } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { SaveHistoryRepositoryBusyError } from "./errors.ts";
 import { getRepositoryLayout } from "./layout.ts";
 
 const defaultLockTimeoutMs = 5000;
@@ -29,7 +30,7 @@ async function acquireLock(
     return await createLock(lockPath);
   } catch (error) {
     if (!isExistingLockError(error) || Date.now() >= deadline) {
-      throw new Error("Save History Repository is busy.", { cause: error });
+      throw new SaveHistoryRepositoryBusyError({ cause: error });
     }
 
     await sleep(lockRetryDelayMs);

@@ -32,6 +32,12 @@ interface CliResult {
   readonly stderr: string;
 }
 
+interface CliHistoryRepoFixture {
+  readonly tempDirectory: string;
+  readonly watchedSavePath: string;
+  readonly repoPath: string;
+}
+
 async function runCli(
   args: readonly string[],
   options: { readonly cwd?: string } = {},
@@ -70,6 +76,34 @@ async function createTempDirectory(t: TestContext): Promise<string> {
   });
 
   return directory;
+}
+
+async function createCliHistoryRepo(
+  t: TestContext,
+  initialSavePath = minimalEncodedSavePath,
+): Promise<CliHistoryRepoFixture> {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(initialSavePath));
+  const initResult = await runCli([
+    "repo",
+    "init",
+    "--save",
+    watchedSavePath,
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(initResult.exitCode, 0);
+  assert.equal(initResult.stderr, "");
+
+  return {
+    tempDirectory,
+    watchedSavePath,
+    repoPath,
+  };
 }
 
 function parseStdoutJson(result: CliResult): unknown {
@@ -154,12 +188,7 @@ test("repo init refuses a non-empty repository directory", async (t) => {
 });
 
 test("history checkpoint records a manual checkpoint with JSON output", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
-
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  const { repoPath } = await createCliHistoryRepo(t);
 
   const result = await runCli([
     "history",
@@ -193,12 +222,8 @@ test("history checkpoint records a manual checkpoint with JSON output", async (t
 });
 
 test("history checkpoint hints when unchanged bytes are skipped", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
+  const { repoPath } = await createCliHistoryRepo(t);
 
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
   await runCli(["history", "checkpoint", "--repo", repoPath]);
 
   const result = await runCli(["history", "checkpoint", "--repo", repoPath]);
@@ -210,12 +235,7 @@ test("history checkpoint hints when unchanged bytes are skipped", async (t) => {
 });
 
 test("history checkpoint can explicitly record unchanged bytes", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
-
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  const { repoPath } = await createCliHistoryRepo(t);
   const firstResult = await runCli([
     "history",
     "checkpoint",
@@ -283,12 +303,7 @@ test("history checkpoint maps decode failures to decode exit behavior", async (t
 });
 
 test("history rebuild succeeds for an empty repository", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
-
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  const { repoPath } = await createCliHistoryRepo(t);
 
   const result = await runCli([
     "history",
@@ -310,12 +325,8 @@ test("history rebuild succeeds for an empty repository", async (t) => {
 });
 
 test("history list prints Semantic Event history as JSON", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
+  const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
 
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
   await runCli(["history", "checkpoint", "--repo", repoPath]);
   await writeFile(
     watchedSavePath,
@@ -371,12 +382,7 @@ test("history list prints Semantic Event history as JSON", async (t) => {
 });
 
 test("history list validates pagination limit", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
-
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  const { repoPath } = await createCliHistoryRepo(t);
 
   const result = await runCli([
     "history",
@@ -393,12 +399,7 @@ test("history list validates pagination limit", async (t) => {
 });
 
 test("history list reports when the Semantic Read Model is unavailable", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
-
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  const { repoPath } = await createCliHistoryRepo(t);
 
   const result = await runCli([
     "history",
@@ -415,12 +416,8 @@ test("history list reports when the Semantic Read Model is unavailable", async (
 });
 
 test("history search supports structured fields and event text", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
+  const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
 
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
   await runCli(["history", "checkpoint", "--repo", repoPath]);
   await writeFile(
     watchedSavePath,
@@ -466,12 +463,7 @@ test("history search supports structured fields and event text", async (t) => {
 });
 
 test("history search validates query flags", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
-
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  const { repoPath } = await createCliHistoryRepo(t);
 
   const noQueryResult = await runCli(["history", "search", "--repo", repoPath]);
   const invalidEnumResult = await runCli([
@@ -495,12 +487,8 @@ test("history search validates query flags", async (t) => {
 });
 
 test("history diff prints Semantic Snapshot diff as JSON", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
+  const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
 
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
   const beforeResult = await runCli([
     "history",
     "checkpoint",
@@ -566,12 +554,7 @@ test("history diff prints Semantic Snapshot diff as JSON", async (t) => {
 });
 
 test("history diff maps invalid commit refs to usage errors", async (t) => {
-  const tempDirectory = await createTempDirectory(t);
-  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
-  const repoPath = path.join(tempDirectory, "history-repo");
-
-  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
-  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  const { repoPath } = await createCliHistoryRepo(t);
 
   const result = await runCli([
     "history",

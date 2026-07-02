@@ -43,6 +43,12 @@ import type {
 } from "./types.ts";
 import { withHistoryWriteLock } from "./write-lock.ts";
 
+export {
+  InvalidCommitRefError,
+  ReadModelUnavailableError,
+  SaveHistoryRepositoryBusyError,
+} from "./errors.ts";
+
 export type {
   DiffCommitsInput,
   DiffCommitsResult,

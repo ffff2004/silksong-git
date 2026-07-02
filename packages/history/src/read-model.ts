@@ -7,6 +7,7 @@ import {
 import { DatabaseSync } from "node:sqlite";
 
 import { readProjectConfig } from "./config.ts";
+import { ReadModelUnavailableError } from "./errors.ts";
 import {
   readGitBlob,
   readHistoryCommit,
@@ -123,6 +124,32 @@ export async function queryReadModelHistory(
   repoPath: string,
   options: QueryEventsOptions = {},
 ): Promise<HistoryResult> {
+  return await withReadModelAvailability(
+    async () => await queryAvailableReadModelHistory(repoPath, options),
+  );
+}
+
+export async function diffReadModelCommits(
+  input: DiffCommitsInput,
+): Promise<DiffCommitsResult> {
+  return await withReadModelAvailability(
+    async () => await diffAvailableReadModelCommits(input),
+  );
+}
+
+export async function searchReadModelEvents(
+  repoPath: string,
+  input: SearchSemanticEventsInput,
+): Promise<SearchSemanticEventsResult> {
+  return await withReadModelAvailability(
+    async () => await searchAvailableReadModelEvents(repoPath, input),
+  );
+}
+
+async function queryAvailableReadModelHistory(
+  repoPath: string,
+  options: QueryEventsOptions,
+): Promise<HistoryResult> {
   const config = await readProjectConfig(repoPath);
   const filters = config.displaySemanticEventFilters;
   using db = openReadModel(repoPath);
@@ -143,7 +170,7 @@ export async function queryReadModelHistory(
   };
 }
 
-export async function diffReadModelCommits(
+async function diffAvailableReadModelCommits(
   input: DiffCommitsInput,
 ): Promise<DiffCommitsResult> {
   const [config, from, to] = await Promise.all([
@@ -177,7 +204,7 @@ export async function diffReadModelCommits(
   };
 }
 
-export async function searchReadModelEvents(
+async function searchAvailableReadModelEvents(
   repoPath: string,
   input: SearchSemanticEventsInput,
 ): Promise<SearchSemanticEventsResult> {
@@ -193,6 +220,16 @@ export async function searchReadModelEvents(
       input.includeFiltered,
     ),
   };
+}
+
+async function withReadModelAvailability<T>(
+  readModelOperation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await readModelOperation();
+  } catch (error) {
+    throwReadModelUnavailableError(error);
+  }
 }
 
 async function readRawSaveObservation(
@@ -221,4 +258,16 @@ async function readGitTextBlob(
 
 function openReadModel(repoPath: string): DatabaseSync {
   return new DatabaseSync(getRepositoryLayout(repoPath).readModelPath);
+}
+
+function throwReadModelUnavailableError(error: unknown): never {
+  if (isMissingReadModelTableError(error)) {
+    throw new ReadModelUnavailableError({ cause: error });
+  }
+
+  throw error;
+}
+
+function isMissingReadModelTableError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("no such table");
 }

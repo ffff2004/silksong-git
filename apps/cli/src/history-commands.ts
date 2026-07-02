@@ -1,9 +1,12 @@
 import type { SearchSemanticEventsInput } from "@silksong-git/history";
 import {
   diffCommits,
+  InvalidCommitRefError,
   observeSave,
   queryHistory,
+  ReadModelUnavailableError,
   rebuildSemanticReadModel,
+  SaveHistoryRepositoryBusyError,
   searchSemanticEvents,
 } from "@silksong-git/history";
 import type { Command } from "commander";
@@ -417,7 +420,7 @@ function handleHistoryCommandError(error: unknown): boolean {
     return true;
   }
 
-  if (isReadModelUnavailableError(error)) {
+  if (error instanceof ReadModelUnavailableError) {
     process.stderr.write(
       "semantic read model unavailable\nnext: silksong-git history rebuild\n",
     );
@@ -425,36 +428,17 @@ function handleHistoryCommandError(error: unknown): boolean {
     return true;
   }
 
-  if (isInvalidCommitRefError(error)) {
+  if (error instanceof InvalidCommitRefError) {
     process.stderr.write("error: invalid commit ref\n");
     process.exitCode = exitCodes.usage;
     return true;
   }
 
-  if (isRepositoryBusyError(error)) {
+  if (error instanceof SaveHistoryRepositoryBusyError) {
     process.stderr.write("error: save history repository is busy\n");
     process.exitCode = exitCodes.repositoryBusy;
     return true;
   }
 
   return false;
-}
-
-function isReadModelUnavailableError(error: unknown): boolean {
-  return String(error).includes("no such table");
-}
-
-function isInvalidCommitRefError(error: unknown): boolean {
-  const message = String(error);
-
-  return (
-    message.includes("unknown revision or path not in the working tree")
-    || message.includes("bad revision")
-    || message.includes("ambiguous argument")
-    || message.includes("Needed a single revision")
-  );
-}
-
-function isRepositoryBusyError(error: unknown): boolean {
-  return String(error).includes("Save History Repository is busy.");
 }

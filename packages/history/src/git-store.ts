@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 
+import { InvalidCommitRefError } from "./errors.ts";
 import type { HistoryCommit } from "./types.ts";
 
 class GitCommandError extends Error {
@@ -93,11 +94,23 @@ export async function readHistoryCommit(
   repoPath: string,
   ref: string,
 ): Promise<HistoryCommit> {
-  const [fullRef, shortRef, committedAt] = await Promise.all([
-    runGitOutput(repoPath, ["rev-parse", ref]),
-    runGitOutput(repoPath, ["rev-parse", "--short", ref]),
-    runGitOutput(repoPath, ["show", "-s", "--format=%cI", ref]),
-  ]);
+  let fullRef: string;
+  let shortRef: string;
+  let committedAt: string;
+
+  try {
+    [fullRef, shortRef, committedAt] = await Promise.all([
+      runGitOutput(repoPath, ["rev-parse", ref]),
+      runGitOutput(repoPath, ["rev-parse", "--short", ref]),
+      runGitOutput(repoPath, ["show", "-s", "--format=%cI", ref]),
+    ]);
+  } catch (error) {
+    if (error instanceof GitCommandError && isInvalidGitRefError(error)) {
+      throw new InvalidCommitRefError(ref, { cause: error });
+    }
+
+    throw error;
+  }
 
   return {
     ref: fullRef,
@@ -111,25 +124,35 @@ export async function readGitBlob(
   commitRef: string,
   artifactPath: string,
 ): Promise<Buffer> {
-  const output = await new Promise<{ stdout: Buffer }>((resolve, reject) => {
-    execFile(
-      "git",
-      ["show", `${commitRef}:${artifactPath}`],
-      {
-        encoding: "buffer",
-        maxBuffer: 10 * 1024 * 1024,
-        cwd: repoPath,
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(toGitCommandError(error, stderr.toString()));
-          return;
-        }
+  let output: { stdout: Buffer };
 
-        resolve({ stdout });
-      },
-    );
-  });
+  try {
+    output = await new Promise<{ stdout: Buffer }>((resolve, reject) => {
+      execFile(
+        "git",
+        ["show", `${commitRef}:${artifactPath}`],
+        {
+          encoding: "buffer",
+          maxBuffer: 10 * 1024 * 1024,
+          cwd: repoPath,
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            reject(toGitCommandError(error, stderr.toString()));
+            return;
+          }
+
+          resolve({ stdout });
+        },
+      );
+    });
+  } catch (error) {
+    if (error instanceof GitCommandError && isInvalidGitRefError(error)) {
+      throw new InvalidCommitRefError(commitRef, { cause: error });
+    }
+
+    throw error;
+  }
 
   return output.stdout;
 }
@@ -152,5 +175,17 @@ function isUnbornHeadError(error: GitCommandError) {
       || error.stderr.includes(
         "unknown revision or path not in the working tree",
       ))
+  );
+}
+
+function isInvalidGitRefError(error: GitCommandError) {
+  return (
+    error.code === 128
+    && (error.stderr.includes(
+      "unknown revision or path not in the working tree",
+    )
+      || error.stderr.includes("bad revision")
+      || error.stderr.includes("ambiguous argument")
+      || error.stderr.includes("Needed a single revision"))
   );
 }
