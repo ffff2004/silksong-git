@@ -65,6 +65,14 @@ async function createTempDirectory(t: TestContext): Promise<string> {
   return directory;
 }
 
+function parseStdoutJson(result: CliResult): unknown {
+  return JSON.parse(result.stdout) as unknown;
+}
+
+async function readJsonFile(filePath: string): Promise<unknown> {
+  return JSON.parse(await readFile(filePath, "utf8")) as unknown;
+}
+
 test("save decode prints pretty Decoded Save JSON for an Encoded Save", async () => {
   const result = await runCli(["save", "decode", minimalEncodedSavePath]);
 
@@ -72,7 +80,7 @@ test("save decode prints pretty Decoded Save JSON for an Encoded Save", async ()
   assert.equal(result.stderr, "");
   assert.match(result.stdout, /\n {2}"playerData": \{/v);
   assert.equal(result.stdout.endsWith("\n"), true);
-  const decodedSave = JSON.parse(result.stdout) as {
+  const decodedSave = parseStdoutJson(result) as {
     readonly playerData?: { readonly completionPercentage?: unknown };
   };
 
@@ -91,7 +99,7 @@ test("save decode can print compact Decoded Save JSON", async () => {
   assert.equal(result.stderr, "");
   assert.equal(result.stdout.includes("\n  "), false);
   assert.equal(result.stdout.endsWith("\n"), true);
-  const decodedSave = JSON.parse(result.stdout) as {
+  const decodedSave = parseStdoutJson(result) as {
     readonly playerData?: { readonly completionPercentage?: unknown };
   };
 
@@ -115,7 +123,7 @@ test("save decode writes Decoded Save JSON to an explicit output file", async (t
   assert.equal(result.exitCode, 0);
   assert.equal(result.stdout, "");
   assert.equal(result.stderr, "");
-  const decodedSave = JSON.parse(await readFile(outputPath, "utf8")) as {
+  const decodedSave = (await readJsonFile(outputPath)) as {
     readonly playerData?: { readonly completionPercentage?: unknown };
   };
 
@@ -132,7 +140,7 @@ test("save decode reports recognized schema without changing JSON output", async
 
   assert.equal(result.exitCode, 0);
   assert.match(result.stderr, /recognized save schema/v);
-  const decodedSave = JSON.parse(result.stdout) as {
+  const decodedSave = parseStdoutJson(result) as {
     readonly playerData?: { readonly completionPercentage?: unknown };
   };
 
@@ -152,7 +160,7 @@ test("save decode reports unrecognized schema without blocking raw JSON output",
     result.stderr,
     /warning: decoded save does not match a recognized schema/v,
   );
-  const decodedSave = JSON.parse(result.stdout) as {
+  const decodedSave = parseStdoutJson(result) as {
     readonly playerData?: unknown;
   };
 
@@ -183,7 +191,7 @@ test("save snapshot prints SemanticSnapshot JSON for an Encoded Save", async () 
   assert.equal(result.exitCode, 0);
   assert.equal(result.stderr, "");
   assert.equal(result.stdout.endsWith("\n"), true);
-  const snapshot = JSON.parse(result.stdout) as {
+  const snapshot = parseStdoutJson(result) as {
     readonly items: readonly unknown[];
     readonly summary: { readonly completionPercentage?: unknown };
     readonly version: {
