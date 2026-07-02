@@ -19,6 +19,7 @@ import {
   queryHistory,
   rebuildSemanticReadModel,
   restoreEncodedSave,
+  RestoreTargetExistsError,
   searchSemanticEvents,
 } from "./index.ts";
 import type { ProjectConfigOverrides } from "./types.ts";
@@ -515,6 +516,7 @@ test("restoreEncodedSave refuses to overwrite an existing target implicitly", as
           path: restorePath,
         },
       }),
+    RestoreTargetExistsError,
   );
   assert.deepEqual(await readFile(restorePath), Buffer.from(existingBytes));
 });

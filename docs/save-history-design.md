@@ -998,6 +998,28 @@ repository busy:
   stderr: history repository is busy
 ```
 
+`history restore <commit> --to <path>` behavior:
+
+```txt
+success:
+  exit 0
+  write the commit's Encoded Save to the explicit Restore Target
+  print a text summary
+
+missing --to:
+  exit 1
+  stderr explains that --to is required
+
+invalid commit ref:
+  exit 1
+  stderr explains the invalid commit ref
+
+target path already exists:
+  exit 1
+  stderr explains that the restore target already exists
+  no file is overwritten
+```
+
 ## Restore Safety
 
 Restore defaults to an explicit Restore Target:

@@ -4,6 +4,7 @@ import {
   readProjectConfig,
   serializeProjectConfig,
 } from "./config.ts";
+import { RestoreTargetExistsError } from "./errors.ts";
 import {
   readCurrentHead,
   readGitBlob,
@@ -46,6 +47,7 @@ import { withHistoryWriteLock } from "./write-lock.ts";
 export {
   InvalidCommitRefError,
   ReadModelUnavailableError,
+  RestoreTargetExistsError,
   SaveHistoryRepositoryBusyError,
 } from "./errors.ts";
 
@@ -181,9 +183,7 @@ export async function restoreEncodedSave(
     encodedSaveArtifactPath,
   );
 
-  await writeFile(input.target.path, encodedSave, {
-    flag: input.target.overwrite === true ? "w" : "wx",
-  });
+  await writeRestoreTarget(input.target, encodedSave);
 
   return {
     commit: await readHistoryCommit(input.repoPath, input.commitRef),
@@ -243,6 +243,31 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
     error instanceof Error
     && "code" in error
     && (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
+async function writeRestoreTarget(
+  target: Extract<RestoreEncodedSaveInput["target"], { readonly kind: "path" }>,
+  encodedSave: Buffer,
+) {
+  const flag = target.overwrite === true ? "w" : "wx";
+
+  try {
+    await writeFile(target.path, encodedSave, { flag });
+  } catch (error) {
+    if (isFileExistsError(error)) {
+      throw new RestoreTargetExistsError(target.path, { cause: error });
+    }
+
+    throw error;
+  }
+}
+
+function isFileExistsError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    error instanceof Error
+    && "code" in error
+    && (error as NodeJS.ErrnoException).code === "EEXIST"
   );
 }
 

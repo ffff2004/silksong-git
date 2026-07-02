@@ -570,6 +570,91 @@ test("history diff maps invalid commit refs to usage errors", async (t) => {
   assert.match(result.stderr, /invalid commit ref/v);
 });
 
+test("history restore writes a committed Encoded Save to an explicit target", async (t) => {
+  const { tempDirectory, repoPath } = await createCliHistoryRepo(t);
+  const checkpointResult = await runCli([
+    "history",
+    "checkpoint",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+  const checkpoint = parseStdoutJson(checkpointResult) as {
+    readonly observation?: { readonly commit?: { readonly ref?: unknown } };
+  };
+  const restorePath = path.join(tempDirectory, "restored-save.dat");
+
+  const result = await runCli([
+    "history",
+    "restore",
+    String(checkpoint.observation?.commit?.ref),
+    "--to",
+    restorePath,
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /restore complete/v);
+  assert.match(result.stdout, /restored-save\.dat/v);
+  assert.deepEqual(
+    await readFile(restorePath),
+    await readFile(minimalEncodedSavePath),
+  );
+});
+
+test("history restore refuses to overwrite an existing explicit target", async (t) => {
+  const { tempDirectory, repoPath } = await createCliHistoryRepo(t);
+  const checkpointResult = await runCli([
+    "history",
+    "checkpoint",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+  const checkpoint = parseStdoutJson(checkpointResult) as {
+    readonly observation?: { readonly commit?: { readonly ref?: unknown } };
+  };
+  const restorePath = path.join(tempDirectory, "existing-save.dat");
+  const existingBytes = new Uint8Array([9, 8, 7, 6]);
+
+  await writeFile(restorePath, existingBytes);
+  const result = await runCli([
+    "history",
+    "restore",
+    String(checkpoint.observation?.commit?.ref),
+    "--to",
+    restorePath,
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /restore target already exists/v);
+  assert.deepEqual(await readFile(restorePath), Buffer.from(existingBytes));
+});
+
+test("history restore maps invalid commit refs to usage errors", async (t) => {
+  const { tempDirectory, repoPath } = await createCliHistoryRepo(t);
+  const restorePath = path.join(tempDirectory, "restored-save.dat");
+
+  const result = await runCli([
+    "history",
+    "restore",
+    "not-a-commit",
+    "--to",
+    restorePath,
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /invalid commit ref/v);
+});
+
 test("save decode prints pretty Decoded Save JSON for an Encoded Save", async () => {
   const result = await runCli(["save", "decode", minimalEncodedSavePath]);
 

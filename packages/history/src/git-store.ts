@@ -206,6 +206,7 @@ function isInvalidGitRefError(error: GitCommandError) {
     )
       || error.stderr.includes("bad revision")
       || error.stderr.includes("ambiguous argument")
+      || error.stderr.includes("invalid object name")
       || error.stderr.includes("Needed a single revision"))
   );
 }

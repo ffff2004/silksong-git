@@ -6,10 +6,13 @@ import {
   queryHistory,
   ReadModelUnavailableError,
   rebuildSemanticReadModel,
+  restoreEncodedSave,
+  RestoreTargetExistsError,
   SaveHistoryRepositoryBusyError,
   searchSemanticEvents,
 } from "@silksong-git/history";
 import type { Command } from "commander";
+import path from "node:path";
 
 import { exitCodes } from "./exit-codes.ts";
 import { formatJson } from "./output.ts";
@@ -28,6 +31,11 @@ interface CheckpointCommandOptions {
 interface RebuildCommandOptions {
   readonly repo?: string;
   readonly json?: boolean;
+}
+
+interface RestoreCommandOptions {
+  readonly repo?: string;
+  readonly to: string;
 }
 
 interface ListCommandOptions {
@@ -109,6 +117,15 @@ export function registerHistoryCommands(program: Command): void {
     });
 
   historyCommand
+    .command("restore")
+    .argument("<commit>")
+    .requiredOption("--to <path>")
+    .option("--repo <history-repo>")
+    .action(async (commitRef: string, options: RestoreCommandOptions) => {
+      await runRestoreCommand(commitRef, options);
+    });
+
+  historyCommand
     .command("rebuild")
     .option("--repo <history-repo>")
     .option("--json")
@@ -160,6 +177,21 @@ async function runDiffCommand(
 ) {
   try {
     await runDiffCommandOrThrow(fromRef, toRef, options);
+  } catch (error) {
+    if (handleHistoryCommandError(error)) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
+async function runRestoreCommand(
+  commitRef: string,
+  options: RestoreCommandOptions,
+) {
+  try {
+    await runRestoreCommandOrThrow(commitRef, options);
   } catch (error) {
     if (handleHistoryCommandError(error)) {
       return;
@@ -299,6 +331,27 @@ async function runDiffCommandOrThrow(
   );
 }
 
+async function runRestoreCommandOrThrow(
+  commitRef: string,
+  options: RestoreCommandOptions,
+) {
+  const repoPath = await resolveRepositoryContext({
+    explicitRepoPath: options.repo,
+  });
+  const result = await restoreEncodedSave({
+    repoPath,
+    commitRef,
+    target: {
+      kind: "path",
+      path: path.resolve(options.to),
+    },
+  });
+
+  process.stdout.write(
+    `restore complete\ncommit: ${result.commit.shortRef}\ntarget: ${result.targetPath}\nsha256: ${result.writtenSha256}\n`,
+  );
+}
+
 async function runRebuildCommand(options: RebuildCommandOptions) {
   try {
     await runRebuildCommandOrThrow(options);
@@ -430,6 +483,14 @@ function handleHistoryCommandError(error: unknown): boolean {
 
   if (error instanceof InvalidCommitRefError) {
     process.stderr.write("error: invalid commit ref\n");
+    process.exitCode = exitCodes.usage;
+    return true;
+  }
+
+  if (error instanceof RestoreTargetExistsError) {
+    process.stderr.write(
+      "error: restore target already exists\nnext: choose a new --to path\n",
+    );
     process.exitCode = exitCodes.usage;
     return true;
   }

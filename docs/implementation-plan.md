@@ -7,7 +7,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P5 CLI
-- Next task: P5-T3 Implement History Restore CLI Command
+- Next task: P5-T4 Implement In-Place History Restore
 - Last updated: 2026-07-02
 
 ## Phase Overview
@@ -737,7 +737,7 @@ Verification:
 
 ### P5-T3 Implement History Restore CLI Command
 
-Status: pending
+Status: complete
 
 Depends on:
 
@@ -758,18 +758,66 @@ Relevant docs and ADRs:
 Acceptance criteria:
 
 - Restore command behavior matches `docs/save-history-design.md`; that document remains the source for concrete command grammar and flags.
+- This task implements only explicit-target restore: `history restore <commit> --to <path>`.
+- Existing target paths fail without overwriting; `--overwrite` and in-place restore are intentionally out of scope for this task.
 - Restore calls `packages/history` rather than Git or filesystem history internals directly.
-- Restore requires explicit restore intent and preserves the documented overwrite safety behavior.
+- Restore requires explicit restore intent and preserves the documented no-implicit-overwrite safety behavior.
 - Restore errors are mapped to documented CLI exit behavior and messages.
 - Command behavior is covered by end-to-end CLI process tests.
 
 Verification:
 
+- `pnpm --filter @silksong-git/history test`: passed
+- `pnpm --filter @silksong-git/cli test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- `pnpm test`: passed
+
+Notes:
+
+- Added `history restore <commit> --to <path>` as an explicit-target restore command.
+- The command restores the committed `save.dat` byte-for-byte through `packages/history.restoreEncodedSave`.
+- Existing restore targets fail without overwrite and are reported through the public `RestoreTargetExistsError`.
+- In-place restore remains P5-T4.
+
+### P5-T4 Implement In-Place History Restore
+
+Status: pending
+
+Depends on:
+
+- P5-T3
+
+Owned files or likely files:
+
+- `packages/history/`
+- `apps/cli/`
+- history and CLI tests
+
+Relevant docs and ADRs:
+
+- `docs/save-history-design.md`
+- [ADR-0007](adr/0007-restore-requires-explicit-target-or-in-place-confirmation.md)
+- [ADR-0010](adr/0010-first-version-cli-command-set.md)
+- [ADR-0013](adr/0013-history-module-interface-and-testing.md)
+
+Acceptance criteria:
+
+- In-place restore is exposed as an explicit high-risk mode, for example `history restore <commit> --in-place --confirm-in-place [--repo <history-repo>]`.
+- The restore target is the `watchedSavePath` from Project Config, not an arbitrary CLI path.
+- Missing confirmation fails as a usage error without writing the watched save.
+- A backup of the existing watched save is created before overwriting it.
+- In-place restore uses the `packages/history` public Interface and the same repository write lock as watcher observations and manual checkpoints.
+- Restore errors are mapped to documented CLI exit behavior and messages.
+- Behavior is covered through public history Interface tests and end-to-end CLI process tests.
+
+Verification:
+
 - `pnpm format`: pending
 - `pnpm lint`: pending
-- CLI test command: pending
+- Relevant test command: pending
 
-### P5-T4 Implement Watch CLI Command
+### P5-T5 Implement Watch CLI Command
 
 Status: pending
 
