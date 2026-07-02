@@ -660,6 +660,8 @@ Acceptance criteria:
 
 TDD Vertical Slices:
 
+Phase A: History Interface Semantics
+
 - [ ] History manual checkpoint skips unchanged Encoded Save bytes by default
   - Public call: `observeSave` through `packages/history`.
   - Assert: a second manual checkpoint of unchanged bytes returns a skipped unchanged result and creates no new Raw Save Observation.
@@ -668,6 +670,14 @@ TDD Vertical Slices:
   - Public call: `observeSave` through `packages/history`.
   - Assert: an explicit allow-unchanged manual checkpoint commits unchanged bytes while manual checkpoints still bypass minimum-interval suppression.
   - Other information: avoid exposing low-level Capture Policy bypass switches to CLI callers.
+- Natural commit boundary: history Interface behavior is green.
+
+Phase B: CLI Structure And Repository Entry
+
+- [ ] CLI source is split while existing save commands stay green
+  - Public call: existing CLI process tests.
+  - Assert: current save command behavior is unchanged after moving command registration, save command handlers, output helpers, and exit-code constants behind smaller CLI Modules.
+  - Other information: refactor only while green; this prepares the CLI Adapter for repo/history commands without changing user behavior.
 - [ ] CLI can initialize a Save History Repository
   - Public call: CLI process.
   - Assert: repo initialization succeeds, writes Project Config, emits stable JSON when requested, and stores absolute Watched Save and repository paths.
@@ -680,6 +690,10 @@ TDD Vertical Slices:
   - Public call: repo context resolver Module and at least one repository-scoped CLI command.
   - Assert: explicit repo path wins, cwd discovery walks upward to the nearest Save History Repository, and missing context fails as documented.
   - Other information: keep this as a small shared CLI Module with focused tests.
+- Natural commit boundary: repo initialization and context resolution are green.
+
+Phase C: Manual Checkpoint CLI
+
 - [ ] CLI records a manual checkpoint
   - Public call: CLI process.
   - Assert: checkpoint command records a Raw Save Observation through `packages/history`, outputs stable JSON when requested, and records trigger/message metadata.
@@ -692,6 +706,10 @@ TDD Vertical Slices:
   - Public call: CLI process.
   - Assert: decode failure maps to the documented exit behavior; repository-busy behavior is covered if the setup remains practical.
   - Other information: do not commit a Raw Save Observation on decode failure.
+- Natural commit boundary: manual checkpoint CLI workflow is green.
+
+Phase D: Read Model And History Queries
+
 - [ ] CLI rebuilds the Semantic Read Model
   - Public call: CLI process.
   - Assert: rebuilding an empty repository succeeds with zero counts, and rebuilding after observations reports the public rebuild result.
@@ -708,6 +726,7 @@ TDD Vertical Slices:
   - Public call: CLI process.
   - Assert: diff returns the public diff result in JSON mode, no-change diffs are successful empty results, missing snapshots map to semantic-unavailable behavior, and invalid refs are usage errors.
   - Other information: include-filtered and read-model-unavailable behavior can be covered on the smallest command surface that proves the shared mapping.
+- Natural commit boundary: read-model rebuild and history query commands are green.
 
 Verification:
 
