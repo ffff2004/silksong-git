@@ -95,16 +95,25 @@ When both an ADR and a commit body are needed, the ADR records the durable decis
 
 ## Validation
 
-After changes and before commit, run formatting and linting serially, not in parallel:
+During implementation, prefer the narrowest relevant package test for fast behavioral feedback:
+
+```sh
+pnpm --filter <changed-package> test
+```
+
+Expand to dependent packages or full `pnpm test` when a change affects shared Interfaces, cross-package behavior, root tooling, fixtures, or integration paths.
+
+Before commit, run formatting, linting, and any full test command serially, not in parallel:
 
 ```sh
 pnpm format
 pnpm lint
+pnpm test
 ```
 
 `pnpm format` runs ESLint fixes and Prettier. `pnpm lint` runs TypeScript, ESLint, JSON schema validation, stylelint, knip, Prettier checks, and custom repository checks.
 
-If code or tests changed, run `pnpm test` after `pnpm format` and `pnpm lint`.
+If only docs or agent instructions changed, `pnpm test` may be skipped. If code or tests changed, run `pnpm test` after `pnpm format` and `pnpm lint`.
 
 If `pnpm format` modified files, re-read them before editing again.
 
