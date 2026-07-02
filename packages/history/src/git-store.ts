@@ -27,7 +27,7 @@ export async function runGit(
     execFile(
       "git",
       [...args],
-      { cwd, env: { ...process.env, ...env } },
+      { cwd, env: createGitEnv(env) },
       (error, _stdout, stderr) => {
         if (error) {
           reject(toGitCommandError(error, stderr));
@@ -45,14 +45,19 @@ async function runGitOutput(
   args: readonly string[],
 ): Promise<string> {
   const output = await new Promise<{ stdout: string }>((resolve, reject) => {
-    execFile("git", [...args], { cwd }, (error, stdout, stderr) => {
-      if (error) {
-        reject(toGitCommandError(error, stderr));
-        return;
-      }
+    execFile(
+      "git",
+      [...args],
+      { cwd, env: createGitEnv() },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(toGitCommandError(error, stderr));
+          return;
+        }
 
-      resolve({ stdout });
-    });
+        resolve({ stdout });
+      },
+    );
   });
 
   return output.stdout.trim();
@@ -135,6 +140,7 @@ export async function readGitBlob(
           encoding: "buffer",
           maxBuffer: 10 * 1024 * 1024,
           cwd: repoPath,
+          env: createGitEnv(),
         },
         (error, stdout, stderr) => {
           if (error) {
@@ -155,6 +161,20 @@ export async function readGitBlob(
   }
 
   return output.stdout;
+}
+
+function createGitEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  // Keep Git diagnostics in English because error classification below still matches stderr text.
+  // Prefer command shapes with stable exit-code semantics in the future, such as pre-validating
+  // refs with rev-parse --verify --quiet.
+  return {
+    ...process.env,
+    ...env,
+    LANG: "C",
+    LC_ALL: "C",
+    LC_MESSAGES: "C",
+    LANGUAGE: "C",
+  };
 }
 
 function toGitCommandError(
