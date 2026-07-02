@@ -118,6 +118,7 @@ function printFormattedFiles(filePaths: readonly string[]) {
   for (const filePath of uniqueFilePaths) {
     console.log(`- ${filePath}`);
   }
+  console.log("Re-read them before editing again");
 }
 
 function normalizeFilePath(filePath: string): string {
