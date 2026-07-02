@@ -21,6 +21,10 @@ const unrecognizedEncodedSavePath = path.join(
   fixtureDirectory,
   "unrecognized-schema-save.dat",
 );
+const maskShard2CollectedEncodedSavePath = path.join(
+  fixtureDirectory,
+  "mask-shard-2-collected-save.dat",
+);
 
 interface CliResult {
   readonly exitCode: number;
@@ -28,13 +32,16 @@ interface CliResult {
   readonly stderr: string;
 }
 
-async function runCli(args: readonly string[]): Promise<CliResult> {
+async function runCli(
+  args: readonly string[],
+  options: { readonly cwd?: string } = {},
+): Promise<CliResult> {
   return await new Promise((resolve) => {
     execFile(
       "pnpm",
       ["exec", "tsx", cliEntryPoint, ...args],
       {
-        cwd: repoRoot,
+        cwd: options.cwd ?? repoRoot,
       },
       (error: ExecFileException | null, stdout, stderr) => {
         resolve({
@@ -144,6 +151,440 @@ test("repo init refuses a non-empty repository directory", async (t) => {
   assert.equal(result.exitCode, 1);
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /repository path must be empty/v);
+});
+
+test("history checkpoint records a manual checkpoint with JSON output", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+
+  const result = await runCli([
+    "history",
+    "checkpoint",
+    "--repo",
+    repoPath,
+    "--message",
+    "before risky operation",
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  const checkpointResult = parseStdoutJson(result) as {
+    readonly status?: unknown;
+    readonly observation?: {
+      readonly trigger?: unknown;
+      readonly message?: unknown;
+      readonly commit?: { readonly ref?: unknown };
+    };
+  };
+
+  assert.equal(checkpointResult.status, "committed");
+  assert.ok(checkpointResult.observation !== undefined);
+  assert.equal(checkpointResult.observation.trigger, "manualCheckpoint");
+  assert.equal(checkpointResult.observation.message, "before risky operation");
+  assert.match(
+    String(checkpointResult.observation.commit?.ref),
+    /^[0-9a-f]{40}$/v,
+  );
+});
+
+test("history checkpoint hints when unchanged bytes are skipped", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  await runCli(["history", "checkpoint", "--repo", repoPath]);
+
+  const result = await runCli(["history", "checkpoint", "--repo", repoPath]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /unchanged/v);
+  assert.match(result.stdout, /--allow-unchanged/v);
+});
+
+test("history checkpoint can explicitly record unchanged bytes", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  const firstResult = await runCli([
+    "history",
+    "checkpoint",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+  const firstCheckpoint = parseStdoutJson(firstResult) as {
+    readonly observation?: { readonly commit?: { readonly ref?: unknown } };
+  };
+
+  const result = await runCli([
+    "history",
+    "checkpoint",
+    "--repo",
+    repoPath,
+    "--allow-unchanged",
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  const checkpointResult = parseStdoutJson(result) as {
+    readonly status?: unknown;
+    readonly observation?: {
+      readonly trigger?: unknown;
+      readonly previousCommit?: unknown;
+      readonly commit?: { readonly ref?: unknown };
+    };
+  };
+
+  assert.equal(checkpointResult.status, "committed");
+  assert.ok(checkpointResult.observation !== undefined);
+  assert.ok(firstCheckpoint.observation !== undefined);
+  assert.equal(checkpointResult.observation.trigger, "manualCheckpoint");
+  assert.equal(
+    checkpointResult.observation.previousCommit,
+    firstCheckpoint.observation.commit?.ref,
+  );
+  assert.notEqual(
+    checkpointResult.observation.commit?.ref,
+    firstCheckpoint.observation.commit?.ref,
+  );
+});
+
+test("history checkpoint maps decode failures to decode exit behavior", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const invalidSavePath = path.join(tempDirectory, "invalid-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(invalidSavePath, new Uint8Array([1, 2, 3, 4]));
+  await runCli(["repo", "init", "--save", invalidSavePath, "--repo", repoPath]);
+
+  const result = await runCli([
+    "history",
+    "checkpoint",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /cannot decode save/v);
+});
+
+test("history rebuild succeeds for an empty repository", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+
+  const result = await runCli([
+    "history",
+    "rebuild",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  assert.deepEqual(parseStdoutJson(result), {
+    observationCount: 0,
+    recognizedObservationCount: 0,
+    unrecognizedObservationCount: 0,
+    snapshotCount: 0,
+    eventCount: 0,
+  });
+});
+
+test("history list prints Semantic Event history as JSON", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  await runCli(["history", "checkpoint", "--repo", repoPath]);
+  await writeFile(
+    watchedSavePath,
+    await readFile(maskShard2CollectedEncodedSavePath),
+  );
+  await runCli(["history", "checkpoint", "--repo", repoPath]);
+  const rebuildResult = await runCli([
+    "history",
+    "rebuild",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+
+  const result = await runCli([
+    "history",
+    "list",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  assert.deepEqual(parseStdoutJson(rebuildResult), {
+    observationCount: 2,
+    recognizedObservationCount: 2,
+    unrecognizedObservationCount: 0,
+    snapshotCount: 2,
+    eventCount: 1,
+  });
+  const history = parseStdoutJson(result) as {
+    readonly events?: ReadonlyArray<{
+      readonly event?: {
+        readonly kind?: unknown;
+        readonly item?: { readonly id?: unknown };
+        readonly after?: { readonly status?: unknown };
+      };
+    }>;
+  };
+
+  assert.ok(history.events !== undefined);
+  assert.equal(history.events.length, 1);
+  const [historyEvent] = history.events;
+
+  assert.ok(historyEvent !== undefined);
+  assert.ok(historyEvent.event !== undefined);
+  assert.ok(historyEvent.event.item !== undefined);
+  assert.ok(historyEvent.event.after !== undefined);
+  assert.equal(historyEvent.event.kind, "item");
+  assert.equal(historyEvent.event.item.id, "mask-shard-2");
+  assert.equal(historyEvent.event.after.status, "done");
+});
+
+test("history list validates pagination limit", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+
+  const result = await runCli([
+    "history",
+    "list",
+    "--repo",
+    repoPath,
+    "--limit",
+    "0",
+  ]);
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /limit must be an integer from 1 to 1000/v);
+});
+
+test("history list reports when the Semantic Read Model is unavailable", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+
+  const result = await runCli([
+    "history",
+    "list",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+
+  assert.match(result.stderr, /semantic read model unavailable/v);
+  assert.match(result.stderr, /history rebuild/v);
+  assert.equal(result.exitCode, 5);
+  assert.equal(result.stdout, "");
+});
+
+test("history search supports structured fields and event text", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  await runCli(["history", "checkpoint", "--repo", repoPath]);
+  await writeFile(
+    watchedSavePath,
+    await readFile(maskShard2CollectedEncodedSavePath),
+  );
+  await runCli(["history", "checkpoint", "--repo", repoPath]);
+  await runCli(["history", "rebuild", "--repo", repoPath]);
+
+  const structuredResult = await runCli([
+    "history",
+    "search",
+    "--repo",
+    repoPath,
+    "--item-id",
+    "mask-shard-2",
+    "--status-to",
+    "done",
+    "--json",
+  ]);
+  const textResult = await runCli([
+    "history",
+    "search",
+    "--repo",
+    repoPath,
+    "--event",
+    "Mask Shard",
+    "--json",
+  ]);
+
+  assert.equal(structuredResult.exitCode, 0);
+  assert.equal(textResult.exitCode, 0);
+  assert.equal(structuredResult.stderr, "");
+  assert.equal(textResult.stderr, "");
+  const structuredSearch = parseStdoutJson(structuredResult) as {
+    readonly events?: readonly unknown[];
+  };
+  const textSearch = parseStdoutJson(textResult) as {
+    readonly events?: readonly unknown[];
+  };
+
+  assert.equal(structuredSearch.events?.length, 1);
+  assert.equal(textSearch.events?.length, 1);
+});
+
+test("history search validates query flags", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+
+  const noQueryResult = await runCli(["history", "search", "--repo", repoPath]);
+  const invalidEnumResult = await runCli([
+    "history",
+    "search",
+    "--repo",
+    repoPath,
+    "--direction",
+    "sideways",
+  ]);
+
+  assert.equal(noQueryResult.exitCode, 1);
+  assert.equal(invalidEnumResult.exitCode, 1);
+  assert.equal(noQueryResult.stdout, "");
+  assert.equal(invalidEnumResult.stdout, "");
+  assert.match(noQueryResult.stderr, /at least one query flag is required/v);
+  assert.match(
+    invalidEnumResult.stderr,
+    /direction must be one of neutral, progression, regression/v,
+  );
+});
+
+test("history diff prints Semantic Snapshot diff as JSON", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+  const beforeResult = await runCli([
+    "history",
+    "checkpoint",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+  await writeFile(
+    watchedSavePath,
+    await readFile(maskShard2CollectedEncodedSavePath),
+  );
+  const afterResult = await runCli([
+    "history",
+    "checkpoint",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+  const before = parseStdoutJson(beforeResult) as {
+    readonly observation?: { readonly commit?: { readonly ref?: unknown } };
+  };
+  const after = parseStdoutJson(afterResult) as {
+    readonly observation?: { readonly commit?: { readonly ref?: unknown } };
+  };
+
+  await runCli(["history", "rebuild", "--repo", repoPath]);
+  const result = await runCli([
+    "history",
+    "diff",
+    String(before.observation?.commit?.ref),
+    String(after.observation?.commit?.ref),
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  const diff = parseStdoutJson(result) as {
+    readonly from?: { readonly ref?: unknown };
+    readonly to?: { readonly ref?: unknown };
+    readonly events?: ReadonlyArray<{
+      readonly event?: {
+        readonly kind?: unknown;
+        readonly item?: { readonly id?: unknown };
+      };
+    }>;
+  };
+
+  assert.ok(before.observation !== undefined);
+  assert.ok(after.observation !== undefined);
+  assert.ok(diff.events !== undefined);
+  assert.equal(diff.from?.ref, before.observation.commit?.ref);
+  assert.equal(diff.to?.ref, after.observation.commit?.ref);
+  assert.equal(diff.events.length, 1);
+  const [diffEvent] = diff.events;
+
+  assert.ok(diffEvent !== undefined);
+  assert.ok(diffEvent.event !== undefined);
+  assert.ok(diffEvent.event.item !== undefined);
+  assert.equal(diffEvent.event.kind, "item");
+  assert.equal(diffEvent.event.item.id, "mask-shard-2");
+});
+
+test("history diff maps invalid commit refs to usage errors", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const repoPath = path.join(tempDirectory, "history-repo");
+
+  await writeFile(watchedSavePath, await readFile(minimalEncodedSavePath));
+  await runCli(["repo", "init", "--save", watchedSavePath, "--repo", repoPath]);
+
+  const result = await runCli([
+    "history",
+    "diff",
+    "not-a-commit",
+    "also-not-a-commit",
+    "--repo",
+    repoPath,
+  ]);
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /invalid commit ref/v);
 });
 
 test("save decode prints pretty Decoded Save JSON for an Encoded Save", async () => {

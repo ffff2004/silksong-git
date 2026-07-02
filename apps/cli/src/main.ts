@@ -4,6 +4,7 @@ import { DecodeEncodedSaveError } from "@silksong-git/core";
 import { Command } from "commander";
 
 import { exitCodes } from "./exit-codes.ts";
+import { registerHistoryCommands } from "./history-commands.ts";
 import { registerRepoCommands } from "./repo-commands.ts";
 import { registerSaveCommands } from "./save-commands.ts";
 
@@ -13,6 +14,7 @@ program.name("silksong-git");
 
 registerRepoCommands(program);
 registerSaveCommands(program);
+registerHistoryCommands(program);
 
 try {
   await program.parseAsync();

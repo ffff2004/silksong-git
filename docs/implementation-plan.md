@@ -7,7 +7,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P5 CLI
-- Next task: P5-T2 Implement Repo And History CLI Workflow
+- Next task: P5-T3 Implement History Restore CLI Command
 - Last updated: 2026-07-02
 
 ## Phase Overview
@@ -631,7 +631,7 @@ Notes:
 
 ### P5-T2 Implement Repo And History CLI Workflow
 
-Status: pending
+Status: complete
 
 Depends on:
 
@@ -694,15 +694,15 @@ Phase B: CLI Structure And Repository Entry
 
 Phase C: Manual Checkpoint CLI
 
-- [ ] CLI records a manual checkpoint
+- [x] CLI records a manual checkpoint
   - Public call: CLI process.
   - Assert: checkpoint command records a Raw Save Observation through `packages/history`, outputs stable JSON when requested, and records trigger/message metadata.
   - Other information: this is the first end-to-end repo/history workflow slice after repo init.
-- [ ] CLI handles unchanged manual checkpoint behavior
+- [x] CLI handles unchanged manual checkpoint behavior
   - Public call: CLI process.
   - Assert: unchanged checkpoint defaults to a skipped result with a text hint, and the documented explicit option records the checkpoint.
   - Other information: JSON output remains the public history result body without extra CLI hints.
-- [ ] CLI maps checkpoint failures
+- [x] CLI maps checkpoint failures
   - Public call: CLI process.
   - Assert: decode failure maps to the documented exit behavior; repository-busy behavior is covered if the setup remains practical.
   - Other information: do not commit a Raw Save Observation on decode failure.
@@ -710,19 +710,19 @@ Phase C: Manual Checkpoint CLI
 
 Phase D: Read Model And History Queries
 
-- [ ] CLI rebuilds the Semantic Read Model
+- [x] CLI rebuilds the Semantic Read Model
   - Public call: CLI process.
   - Assert: rebuilding an empty repository succeeds with zero counts, and rebuilding after observations reports the public rebuild result.
   - Other information: rebuild may mutate SQLite but must not rewrite Git history.
-- [ ] CLI lists Semantic Event history
+- [x] CLI lists Semantic Event history
   - Public call: CLI process.
   - Assert: list returns the public history result in JSON mode, readable empty output when there are no events, and documented pagination validation.
   - Other information: raw-observation listing is intentionally not exposed in P5-T2.
-- [ ] CLI searches Semantic Event history
+- [x] CLI searches Semantic Event history
   - Public call: CLI process.
   - Assert: at least one query flag is required, structured query flags work, free-text event search works as a convenience, and invalid enum values fail as usage errors.
   - Other information: structured fields remain the stable search Interface.
-- [ ] CLI diffs two history commits
+- [x] CLI diffs two history commits
   - Public call: CLI process.
   - Assert: diff returns the public diff result in JSON mode, no-change diffs are successful empty results, missing snapshots map to semantic-unavailable behavior, and invalid refs are usage errors.
   - Other information: include-filtered and read-model-unavailable behavior can be covered on the smallest command surface that proves the shared mapping.
@@ -730,9 +730,10 @@ Phase D: Read Model And History Queries
 
 Verification:
 
-- `pnpm format`: pending
-- `pnpm lint`: pending
-- CLI test command: pending
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- CLI test command: `pnpm --filter @silksong-git/cli test`: passed
+- `pnpm test`: passed
 
 ### P5-T3 Implement History Restore CLI Command
 
