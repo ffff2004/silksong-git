@@ -33,6 +33,7 @@ import type {
   WatchEventSource,
   WatchEventSourceStartInput,
   WatchEventSubscription,
+  WatchScheduler,
 } from "./types.ts";
 
 const fixtureDirectory = path.join(
@@ -175,6 +176,34 @@ class TestWatchEventSource implements WatchEventSource {
 
   async emitChange() {
     await this.onChange?.();
+  }
+}
+
+class TestWatchScheduler implements WatchScheduler {
+  readonly scheduled: Array<{
+    readonly runAt: Date;
+    readonly run: () => Promise<void>;
+    canceled: boolean;
+  }> = [];
+
+  scheduleAt(runAt: Date, task: () => void | Promise<void>) {
+    const scheduledTask = {
+      runAt,
+      canceled: false,
+      run: async () => {
+        if (!scheduledTask.canceled) {
+          await task();
+        }
+      },
+    };
+
+    this.scheduled.push(scheduledTask);
+
+    return {
+      cancel: () => {
+        scheduledTask.canceled = true;
+      },
+    };
   }
 }
 
@@ -879,6 +908,81 @@ test("Local History API Process coalesces change events while an observation is 
   assert.equal(changeObservations.length, 2);
   assert.equal(changeObservations[0]?.result.status, "committed");
   assert.equal(changeObservations[1]?.result.status, "skipped");
+  await process.stop();
+});
+
+test("Local History API Process schedules a deferred observation after a minimum-interval skip", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: {
+      minCommitIntervalMs: 60 * 1000,
+    },
+  });
+  const watchEventSource = new TestWatchEventSource();
+  const watchScheduler = new TestWatchScheduler();
+  const fileStabilityProbe = createSequencedFileStabilityProbe();
+  const events: LocalHistoryApiProcessEvent[] = [];
+  const observedTimes = [
+    new Date("2026-06-30T12:00:00.000Z"),
+    new Date("2026-06-30T12:00:10.000Z"),
+    new Date("2026-06-30T12:01:00.000Z"),
+  ];
+  const process = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    watchScheduler,
+    fileStabilityProbe,
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => observedTimes.shift() ?? new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const change = watchEventSource.emitChange();
+  await fileStabilityProbe.waitForCheckCount(1);
+  fileStabilityProbe.markStable();
+  await change;
+
+  assert.equal(watchScheduler.scheduled.length, 1);
+  const [scheduledDeferred] = watchScheduler.scheduled;
+
+  assert.ok(scheduledDeferred !== undefined);
+  assert.equal(
+    scheduledDeferred.runAt.toISOString(),
+    "2026-06-30T12:01:00.000Z",
+  );
+
+  await copyFile(
+    maskShard2CollectedRosariesEncodedSavePath,
+    repo.watchedSavePath,
+  );
+  const deferred = scheduledDeferred.run();
+
+  await fileStabilityProbe.waitForCheckCount(2);
+  fileStabilityProbe.markStable();
+  await deferred;
+
+  const deferredObservation = events.find(
+    (
+      event,
+    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
+      event.type === "observation" && event.cause === "deferred",
+  );
+
+  assert.ok(deferredObservation !== undefined);
+  assert.equal(deferredObservation.result.status, "committed");
+  assert.equal(
+    deferredObservation.result.observation.observedAt,
+    "2026-06-30T12:01:00.000Z",
+  );
+  assert.deepEqual(fileStabilityProbe.checkedPaths, [
+    repo.watchedSavePath,
+    repo.watchedSavePath,
+  ]);
   await process.stop();
 });
 

@@ -7,10 +7,13 @@ import { observeSaveUsingConfig } from "./observe-save.ts";
 import type {
   FileStabilityProbe,
   LocalHistoryApiProcess,
+  ObserveSaveResult,
+  ScheduledWatchTask,
   StartLocalHistoryApiProcessInput,
   WatchEventSource,
   WatchEventSourceStartInput,
   WatchEventSubscription,
+  WatchScheduler,
 } from "./types.ts";
 import { acquireWatchLock } from "./watch-lock.ts";
 import { withHistoryWriteLock } from "./write-lock.ts";
@@ -23,6 +26,7 @@ export async function startLocalHistoryApiProcess(
   const now = input.now?.() ?? new Date();
   const fileStabilityProbe =
     input.fileStabilityProbe ?? defaultFileStabilityProbe;
+  const watchScheduler = input.watchScheduler ?? defaultWatchScheduler;
   const watchLock = await acquireWatchLock({
     repoPath: input.repoPath,
     watchedSavePath: config.watchedSavePath,
@@ -31,6 +35,7 @@ export async function startLocalHistoryApiProcess(
   const watchEventSource = input.watchEventSource ?? nodeWatchEventSource;
   let subscription: WatchEventSubscription | undefined;
   let changeLoop: Promise<void> | undefined;
+  let deferredObservationTask: ScheduledWatchTask | undefined;
   const changeState = {
     dirty: false,
   };
@@ -56,6 +61,8 @@ export async function startLocalHistoryApiProcess(
 
     await observeAndEmit("startup", now);
   } catch (error) {
+    deferredObservationTask?.cancel();
+
     if (subscription !== undefined) {
       await subscription.stop();
     }
@@ -76,6 +83,8 @@ export async function startLocalHistoryApiProcess(
         type: "stopping",
         repoPath: input.repoPath,
       });
+      deferredObservationTask?.cancel();
+      deferredObservationTask = undefined;
       await subscription.stop();
       await watchLock.release();
       stopped = true;
@@ -89,7 +98,7 @@ export async function startLocalHistoryApiProcess(
   async function observeAndEmit(
     cause: "startup" | "change" | "deferred",
     observedAt: Date,
-  ) {
+  ): Promise<ObserveSaveResult> {
     const result = await withHistoryWriteLock(
       input.repoPath,
       async () =>
@@ -107,6 +116,32 @@ export async function startLocalHistoryApiProcess(
       cause,
       result,
     });
+
+    scheduleDeferredObservation(result);
+
+    return result;
+  }
+
+  function scheduleDeferredObservation(result: ObserveSaveResult) {
+    if (
+      result.status !== "skipped"
+      || result.reason !== "minimumCommitInterval"
+      || deferredObservationTask !== undefined
+      || stopped
+    ) {
+      return;
+    }
+
+    deferredObservationTask = watchScheduler.scheduleAt(
+      new Date(result.nextAllowedAt),
+      async () => {
+        deferredObservationTask = undefined;
+
+        if (!stopped) {
+          await observeStableFile("deferred");
+        }
+      },
+    );
   }
 
   async function handleChangeEvent() {
@@ -126,7 +161,7 @@ export async function startLocalHistoryApiProcess(
 
   async function runChangeLoop() {
     changeState.dirty = false;
-    await observeStableChange();
+    await observeStableFile("change");
 
     if (isChangeDirty()) {
       await runChangeLoop();
@@ -137,14 +172,14 @@ export async function startLocalHistoryApiProcess(
     return changeState.dirty;
   }
 
-  async function observeStableChange() {
+  async function observeStableFile(cause: "change" | "deferred") {
     try {
       await fileStabilityProbe.waitForStableFile(config.watchedSavePath);
     } catch (error) {
       emit({
         type: "observation",
         repoPath: input.repoPath,
-        cause: "change",
+        cause,
         result: {
           status: "watcherError",
           error: {
@@ -156,7 +191,7 @@ export async function startLocalHistoryApiProcess(
       return;
     }
 
-    await observeAndEmit("change", input.now?.() ?? new Date());
+    await observeAndEmit(cause, input.now?.() ?? new Date());
   }
 }
 
@@ -187,6 +222,25 @@ function handleWatchChange(input: WatchEventSourceStartInput) {
 async function runWatchChange(input: WatchEventSourceStartInput) {
   await input.onChange();
 }
+
+const defaultWatchScheduler: WatchScheduler = {
+  scheduleAt(runAt: Date, task: () => void | Promise<void>) {
+    const delayMs = Math.max(0, runAt.getTime() - Date.now());
+    const timeout = setTimeout(() => {
+      const taskResult = task();
+
+      if (taskResult instanceof Promise) {
+        taskResult.catch(() => undefined);
+      }
+    }, delayMs);
+
+    return {
+      cancel() {
+        clearTimeout(timeout);
+      },
+    };
+  },
+};
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

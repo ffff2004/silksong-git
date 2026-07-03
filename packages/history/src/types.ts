@@ -164,6 +164,7 @@ export interface SearchSemanticEventsResult {
 export interface StartLocalHistoryApiProcessInput {
   readonly repoPath: string;
   readonly watchEventSource?: WatchEventSource;
+  readonly watchScheduler?: WatchScheduler;
   readonly fileStabilityProbe?: FileStabilityProbe;
   readonly onEvent?: (event: LocalHistoryApiProcessEvent) => void;
   readonly now?: () => Date;
@@ -210,6 +211,17 @@ export interface WatchEventSourceStartInput {
 
 export interface WatchEventSubscription {
   stop: () => void | Promise<void>;
+}
+
+export interface WatchScheduler {
+  scheduleAt: (
+    runAt: Date,
+    task: () => void | Promise<void>,
+  ) => ScheduledWatchTask;
+}
+
+export interface ScheduledWatchTask {
+  cancel: () => void;
 }
 
 export interface FileStabilityProbe {

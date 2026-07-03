@@ -66,6 +66,7 @@ export type {
   RestoreEncodedSaveInput,
   RestoreEncodedSaveResult,
   RestoreTarget,
+  ScheduledWatchTask,
   SearchSemanticEventsInput,
   SearchSemanticEventsResult,
   SemanticUpdateResult,
@@ -74,6 +75,7 @@ export type {
   WatchEventSource,
   WatchEventSourceStartInput,
   WatchEventSubscription,
+  WatchScheduler,
 } from "./types.ts";
 
 export async function initSaveHistory(

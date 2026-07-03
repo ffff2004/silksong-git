@@ -909,7 +909,7 @@ TDD Vertical Slices:
   - Public call: `startLocalHistoryApiProcess`.
   - Assert: event bursts and events arriving during a running observation are coalesced into observation passes over the latest stable Watched Save rather than concurrent observations.
   - Other information: verify through resulting history/events, not private queue length.
-- [ ] Watcher schedules deferred minimum-interval observations
+- [x] Watcher schedules deferred minimum-interval observations
   - Public call: `startLocalHistoryApiProcess`.
   - Assert: a `minimumCommitInterval` skip schedules one deferred observation at `nextAllowedAt`; the deferred observation skips debounce, still probes stability, and reads the current Watched Save.
   - Other information: if the file returns to the last committed bytes, the deferred observation is skipped as unchanged.
@@ -943,6 +943,11 @@ Latest slice verification:
 - Watcher waits for file stability: `pnpm --filter @silksong-git/history test`: passed
 - Stability timeout is nonfatal: `pnpm --filter @silksong-git/history test`: passed
 - Watcher coalesces events with single-flight dirty-bit behavior: `pnpm --filter @silksong-git/history test`: passed
+- Watcher schedules deferred minimum-interval observations:
+  - RED: `pnpm --filter @silksong-git/history test`: failed as expected before implementation; new test observed no deferred schedule.
+  - `pnpm --filter @silksong-git/history format`: passed
+  - `pnpm --filter @silksong-git/history lint`: passed
+  - `pnpm --filter @silksong-git/history test`: passed
 
 Verification:
 
