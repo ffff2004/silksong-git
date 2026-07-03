@@ -877,7 +877,7 @@ TDD Vertical Slices:
   - Public call: `observeSave`.
   - Assert: watcher-triggered observation inside `minCommitIntervalMs` returns `skipped` with reason `minimumCommitInterval`, `encodedSha256`, and `nextAllowedAt`.
   - Other information: `minimumCommitIntervalMs <= 0` disables the skip path; manual checkpoint remains outside minimum-interval suppression.
-- [ ] Refactor observation internals to support a Project Config snapshot
+- [x] Refactor observation internals to support a Project Config snapshot
   - Public call: existing `observeSave` tests and CLI checkpoint tests.
   - Assert: existing public behavior remains green with no new behavior test for the internal helper.
   - Other information: this is a GREEN-state preparatory refactor. Public `observeSave` still reads current Project Config and acquires `write.lock`; the watcher runtime will later call an internal observation helper with the startup config snapshot while holding `write.lock`.
@@ -933,6 +933,9 @@ TDD Vertical Slices:
 Latest slice verification:
 
 - `observeSave` minimum-interval skip returns `nextAllowedAt`: `pnpm --filter @silksong-git/history test`: passed
+- Refactor observation internals to support a Project Config snapshot:
+  - `pnpm --filter @silksong-git/history test`: passed
+  - `pnpm --filter @silksong-git/cli test`: passed
 
 Verification:
 
