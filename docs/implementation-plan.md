@@ -252,12 +252,6 @@ TDD Vertical Slices:
 - [x] Special scene numeric branch supports Shell Fossil Mimic-style entries.
 - [x] Built-in mapping data smoke coverage verifies `getBuiltinMappingData`.
 
-Latest slice verification:
-
-- Built-in mapping data smoke coverage: `pnpm --filter @silksong-git/core test`: passed
-- `pnpm format`: passed
-- `pnpm lint`: passed
-
 Review follow-ups:
 
 - `decodeEncodedSave` returns `DecodedEncodedSave`, including `version.decoderVersion`, so P4 history code can write decoder provenance into Raw Save Observation metadata.
@@ -670,7 +664,6 @@ Phase A: History Interface Semantics
   - Public call: `observeSave` through `packages/history`.
   - Assert: an explicit allow-unchanged manual checkpoint commits unchanged bytes while manual checkpoints still bypass minimum-interval suppression.
   - Other information: avoid exposing low-level Capture Policy bypass switches to CLI callers.
-- Natural commit boundary: history Interface behavior is green.
 
 Phase B: CLI Structure And Repository Entry
 
@@ -690,7 +683,6 @@ Phase B: CLI Structure And Repository Entry
   - Public call: repo context resolver Module and at least one repository-scoped CLI command.
   - Assert: explicit repo path wins, cwd discovery walks upward to the nearest Save History Repository, and missing context fails as documented.
   - Other information: keep this as a small shared CLI Module with focused tests.
-- Natural commit boundary: repo initialization and context resolution are green.
 
 Phase C: Manual Checkpoint CLI
 
@@ -706,7 +698,6 @@ Phase C: Manual Checkpoint CLI
   - Public call: CLI process.
   - Assert: decode failure maps to the documented exit behavior; repository-busy behavior is covered if the setup remains practical.
   - Other information: do not commit a Raw Save Observation on decode failure.
-- Natural commit boundary: manual checkpoint CLI workflow is green.
 
 Phase D: Read Model And History Queries
 
@@ -726,7 +717,6 @@ Phase D: Read Model And History Queries
   - Public call: CLI process.
   - Assert: diff returns the public diff result in JSON mode, no-change diffs are successful empty results, missing snapshots map to semantic-unavailable behavior, and invalid refs are usage errors.
   - Other information: include-filtered and read-model-unavailable behavior can be covered on the smallest command surface that proves the shared mapping.
-- Natural commit boundary: read-model rebuild and history query commands are green.
 
 Verification:
 
@@ -934,44 +924,6 @@ TDD Vertical Slices:
   - Assert: default watcher runtime logs go to stderr, stdout is not polluted with human-readable status, and `--http` or `--port` fail clearly without starting the watcher.
   - Other information: P5-T7 implements the actual HTTP Adapter behavior.
 
-Latest slice verification:
-
-- `observeSave` minimum-interval skip returns `nextAllowedAt`: `pnpm --filter @silksong-git/history test`: passed
-- Refactor observation internals to support a Project Config snapshot:
-  - `pnpm --filter @silksong-git/history test`: passed
-  - `pnpm --filter @silksong-git/cli test`: passed
-- Watch process startup tracer bullet: `pnpm --filter @silksong-git/history test`: passed
-- Watch process stops gracefully: `pnpm --filter @silksong-git/history test`: passed
-- Watch process is a per-repository singleton: `pnpm --filter @silksong-git/history test`: passed
-- Watcher observes real file-change events: `pnpm --filter @silksong-git/history test`: passed
-- Watcher waits for file stability: `pnpm --filter @silksong-git/history test`: passed
-- Stability timeout is nonfatal: `pnpm --filter @silksong-git/history test`: passed
-- Watcher coalesces events with single-flight dirty-bit behavior: `pnpm --filter @silksong-git/history test`: passed
-- Watcher schedules deferred minimum-interval observations:
-  - RED: `pnpm --filter @silksong-git/history test`: failed as expected before implementation; new test observed no deferred schedule.
-  - `pnpm --filter @silksong-git/history format`: passed
-  - `pnpm --filter @silksong-git/history lint`: passed
-  - `pnpm --filter @silksong-git/history test`: passed
-- Watcher handles save Watcher Errors without stopping:
-  - RED: `pnpm --filter @silksong-git/history test`: failed as expected before implementation; save read failure rejected the change handler.
-  - `pnpm --filter @silksong-git/history format`: passed
-  - `pnpm --filter @silksong-git/history lint`: passed
-  - `pnpm --filter @silksong-git/history test`: passed
-- Watch backend failure is fatal:
-  - RED: `pnpm --filter @silksong-git/history test`: failed as expected before implementation; backend runtime failure emitted no fatal event.
-  - `pnpm --filter @silksong-git/history format`: passed
-  - `pnpm --filter @silksong-git/history lint`: passed
-  - `pnpm --filter @silksong-git/history test`: passed
-- CLI starts watch with JSONL output:
-  - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before implementation; watch JSONL startup event never arrived.
-  - `pnpm --filter @silksong-git/cli format`: passed
-  - `pnpm --filter @silksong-git/cli lint`: passed
-  - `pnpm --filter @silksong-git/cli test`: passed
-- CLI output stream failure stops the watcher and exits as failure:
-  - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before implementation; the CLI emitted an unhandled `EPIPE` stack instead of a controlled watch output failure.
-  - `pnpm --filter @silksong-git/cli format`: passed
-  - `pnpm --filter @silksong-git/cli lint`: passed
-  - `pnpm --filter @silksong-git/cli test`: passed
 - CLI default logs and reserved HTTP flags behave correctly:
   - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before implementation; `--http` reported Commander unknown option instead of reserved HTTP Adapter usage.
   - `pnpm --filter @silksong-git/cli format`: passed
