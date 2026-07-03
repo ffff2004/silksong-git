@@ -4,10 +4,10 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "dev": "vite dev",
     "format": "tsx ../../scripts/format.ts apps/web",
     "lint": "tsx ../../scripts/lint.ts apps/web",
-    "preview": "vite preview",
-    "start": "vite dev"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@monaco-editor/loader": "1.7.0",

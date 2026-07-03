@@ -4,5 +4,9 @@
 
   "extends": "../../tsconfig.node.base.json",
 
-  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    "rootDir": ".",
+  },
+
+  "include": ["src/**/*.ts", "tsup.config.ts"],
 }

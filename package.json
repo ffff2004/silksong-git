@@ -16,12 +16,18 @@
     "packages/*"
   ],
   "scripts": {
+    "build": "pnpm build-cli && pnpm build-web",
+    "build-cli": "pnpm --filter @silksong-git/cli build",
     "build-web": "pnpm --filter @silksong-git/web build",
+    "dev-cli": "pnpm --filter @silksong-git/cli dev",
+    "dev-web": "pnpm --filter @silksong-git/web dev",
     "format": "tsx ./scripts/format.ts",
     "lint": "tsx ./scripts/lint.ts",
+    "pack-cli": "pnpm --filter @silksong-git/cli pack",
+    "preview-cli": "pnpm --filter @silksong-git/cli preview",
     "preview-web": "pnpm --filter @silksong-git/web preview",
-    "start-web": "pnpm --filter @silksong-git/web start",
-    "test": "pnpm --recursive --if-present run test"
+    "test": "pnpm --recursive --if-present run test",
+    "verify-cli-pack": "pnpm --filter @silksong-git/cli verify-pack"
   },
   "devDependencies": {
     "@eslint/json": "2.0.0",

@@ -53,6 +53,19 @@ export default defineConfig(
     },
   },
   {
+    files: ["apps/cli/src/**/*.ts", "apps/cli/tsup.config.ts"],
+    rules: {
+      // The installable CLI bundles workspace packages into dist/main.js, so these imports are
+      // build-time inputs rather than package runtime dependencies.
+      "import-x/no-extraneous-dependencies": [
+        "error",
+        {
+          devDependencies: ["apps/cli/src/**/*.ts", "apps/cli/tsup.config.ts"],
+        },
+      ],
+    },
+  },
+  {
     files: ["**/*.ts"],
     rules: {
       // Sequential async work is common for filesystem polling and ordered IO.

@@ -4,7 +4,8 @@ import {
   getBuiltinMappingData,
   parseDecodedSave,
 } from "@silksong-git/core";
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
+import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
 import { readProjectConfig } from "./config.ts";
 import { ReadModelUnavailableError } from "./errors.ts";
@@ -51,6 +52,11 @@ import type {
   SearchSemanticEventsInput,
   SearchSemanticEventsResult,
 } from "./types.ts";
+
+const requireNodeModule = createRequire(import.meta.url);
+const { DatabaseSync } = requireNodeModule("node:sqlite") as {
+  readonly DatabaseSync: new (filename: string) => DatabaseSyncType;
+};
 
 interface GitObservationRecord {
   readonly commitRef: string;
@@ -307,7 +313,7 @@ async function readGitTextBlob(
   return blob.toString("utf8");
 }
 
-function openReadModel(repoPath: string): DatabaseSync {
+function openReadModel(repoPath: string): DatabaseSyncType {
   return new DatabaseSync(getRepositoryLayout(repoPath).readModelPath);
 }
 
@@ -329,7 +335,7 @@ function isReadModelCurrent(
 }
 
 function hasCurrentReadModelMetadata(
-  db: DatabaseSync,
+  db: DatabaseSyncType,
   expectedSourceHeadRef: string,
 ): boolean {
   return (
@@ -339,7 +345,7 @@ function hasCurrentReadModelMetadata(
 }
 
 function appendObservationInTransaction(
-  db: DatabaseSync,
+  db: DatabaseSyncType,
   input: {
     readonly observation: RawSaveObservation;
     readonly decodedSave: unknown;

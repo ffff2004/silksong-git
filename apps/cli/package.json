@@ -1,15 +1,31 @@
 {
   "name": "@silksong-git/cli",
-  "private": true,
+  "version": "0.0.0",
   "type": "module",
+  "bin": {
+    "silksong-git": "./dist/main.js",
+    "ssgit": "./dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsup",
+    "postbuild": "chmod +x dist/main.js",
+    "dev": "tsx src/main.ts",
     "format": "tsx ../../scripts/format.ts apps/cli",
     "lint": "tsx ../../scripts/lint.ts apps/cli",
-    "test": "tsx --test --test-reporter=dot src/**/*.test.ts"
+    "prepack": "pnpm run build",
+    "preview": "./dist/main.js",
+    "test": "tsx --test --test-reporter=dot src/**/*.test.ts",
+    "verify-pack": "tmpdir=\"$(mktemp -d)\" && trap 'rm -rf \"$tmpdir\"' EXIT && mkdir -p \"$tmpdir/pack\" \"$tmpdir/install\" && pnpm pack --pack-destination \"$tmpdir/pack\" && pnpm --dir \"$tmpdir/install\" add \"$tmpdir\"/pack/*.tgz && \"$tmpdir/install/node_modules/.bin/silksong-git\" --help && \"$tmpdir/install/node_modules/.bin/ssgit\" --help"
   },
   "dependencies": {
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
     "@silksong-git/core": "workspace:*",
     "@silksong-git/history": "workspace:*",
-    "commander": "^14.0.3"
+    "tsup": "^8.5.1"
   }
 }
