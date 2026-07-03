@@ -133,17 +133,26 @@ async function main() {
   const formatTargets = targets.length > 0 ? targets : ["."];
   const candidateFilePaths = await getGitCandidateFilePaths();
   const beforeHashes = await snapshotFileHashes(candidateFilePaths);
+  let formatError: Error | undefined;
 
-  await runCommand("eslint", ["--fix", ...formatTargets]);
-  await runCommand("prettier", [
-    "--write",
-    ...formatTargets,
-    "--log-level",
-    "warn",
-  ]);
+  try {
+    await runCommand("eslint", ["--fix", ...formatTargets]);
+    await runCommand("prettier", [
+      "--write",
+      ...formatTargets,
+      "--log-level",
+      "warn",
+    ]);
+  } catch (error) {
+    formatError = error instanceof Error ? error : new Error(String(error));
+  }
 
   const afterHashes = await snapshotFileHashes(candidateFilePaths);
   printFormattedFiles(getChangedFilePaths(beforeHashes, afterHashes));
+
+  if (formatError !== undefined) {
+    throw formatError;
+  }
 }
 
 try {
