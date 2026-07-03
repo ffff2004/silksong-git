@@ -36,7 +36,24 @@ export async function startLocalHistoryApiProcess(
     subscription = await watchEventSource.start({
       watchedSavePath: config.watchedSavePath,
       onChange: async () => {
-        await fileStabilityProbe.waitForStableFile(config.watchedSavePath);
+        try {
+          await fileStabilityProbe.waitForStableFile(config.watchedSavePath);
+        } catch (error) {
+          emit({
+            type: "observation",
+            repoPath: input.repoPath,
+            cause: "change",
+            result: {
+              status: "watcherError",
+              error: {
+                message: getErrorMessage(error),
+                reason: "stabilityTimeout",
+              },
+            },
+          });
+          return;
+        }
+
         await observeAndEmit("change", input.now?.() ?? new Date());
       },
       onError: () => {
@@ -136,6 +153,10 @@ function handleWatchChange(input: WatchEventSourceStartInput) {
 
 async function runWatchChange(input: WatchEventSourceStartInput) {
   await input.onChange();
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 const defaultFileStabilityProbe: FileStabilityProbe = {

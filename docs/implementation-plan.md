@@ -901,7 +901,7 @@ TDD Vertical Slices:
   - Public call: `startLocalHistoryApiProcess` with injected clock/timers.
   - Assert: changing `size` or `mtimeMs` delays observation until the Watched Save is stable across probes.
   - Other information: avoid real sleeps.
-- [ ] Stability timeout is nonfatal
+- [x] Stability timeout is nonfatal
   - Public call: `startLocalHistoryApiProcess`.
   - Assert: an unstable or unstat-able Watched Save emits a Watcher Error and the process continues to accept later valid file changes.
   - Other information: extend `WatcherError.reason` with `stabilityTimeout`; ordinary save read/decode/stability problems are not process-fatal.
@@ -941,6 +941,7 @@ Latest slice verification:
 - Watch process is a per-repository singleton: `pnpm --filter @silksong-git/history test`: passed
 - Watcher observes real file-change events: `pnpm --filter @silksong-git/history test`: passed
 - Watcher waits for file stability: `pnpm --filter @silksong-git/history test`: passed
+- Stability timeout is nonfatal: `pnpm --filter @silksong-git/history test`: passed
 
 Verification:
 

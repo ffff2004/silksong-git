@@ -199,6 +199,23 @@ function createTestFileStabilityProbe(): TestFileStabilityProbe {
   };
 }
 
+function createFailOnceFileStabilityProbe(): FileStabilityProbe {
+  let shouldFail = true;
+
+  return {
+    waitForStableFile: async () => {
+      await Promise.resolve();
+
+      if (!shouldFail) {
+        return;
+      }
+
+      shouldFail = false;
+      throw new Error("Watched Save did not become stable.");
+    },
+  };
+}
+
 test("initSaveHistory creates a Save History Repository project config", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
@@ -562,6 +579,7 @@ test("startLocalHistoryApiProcess emits started and performs a startup observati
     observationEvent.result.observation.observedAt,
     "2026-06-30T12:00:00.000Z",
   );
+  await process.stop();
 });
 
 test("Local History API Process stops the watch subscription gracefully", async (t) => {
@@ -679,6 +697,7 @@ test("Local History API Process observes file-change events", async (t) => {
     changeObservation.result.observation.encodedSha256,
     startupObservation.result.observation.encodedSha256,
   );
+  await process.stop();
 });
 
 test("Local History API Process waits for file stability before observing changes", async (t) => {
@@ -725,6 +744,57 @@ test("Local History API Process waits for file stability before observing change
 
   assert.ok(changeObservation !== undefined);
   assert.equal(changeObservation.result.status, "committed");
+  await process.stop();
+});
+
+test("Local History API Process reports stability timeout as a nonfatal Watcher Error", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watchEventSource = new TestWatchEventSource();
+  const events: LocalHistoryApiProcessEvent[] = [];
+  const process = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    fileStabilityProbe: createFailOnceFileStabilityProbe(),
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  await assert.doesNotReject(async () => {
+    await watchEventSource.emitChange();
+  });
+
+  const failedObservation = events.find(
+    (
+      event,
+    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
+      event.type === "observation" && event.cause === "change",
+  );
+
+  assert.ok(failedObservation !== undefined);
+  assert.equal(failedObservation.result.status, "watcherError");
+  assert.equal(failedObservation.result.error.reason, "stabilityTimeout");
+
+  await watchEventSource.emitChange();
+  const committedChange = events
+    .filter(
+      (
+        event,
+      ): event is Extract<
+        LocalHistoryApiProcessEvent,
+        { type: "observation" }
+      > => event.type === "observation" && event.cause === "change",
+    )
+    .find((event) => event.result.status === "committed");
+
+  assert.ok(committedChange !== undefined);
+  await process.stop();
 });
 
 test("observeSave reports decode failures as Watcher Errors without committing", async (t) => {

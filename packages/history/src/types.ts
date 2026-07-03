@@ -218,7 +218,7 @@ export interface FileStabilityProbe {
 
 export interface WatcherError {
   readonly message: string;
-  readonly reason: "decodeFailure" | "readFailure";
+  readonly reason: "decodeFailure" | "readFailure" | "stabilityTimeout";
 }
 
 export interface HistoryCommit {
