@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import type { ExecFileException } from "node:child_process";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,6 +9,7 @@ import test from "node:test";
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const cliEntryPoint = path.join(repoRoot, "apps/cli/src/main.ts");
+const tsxEntryPoint = path.join(repoRoot, "node_modules/tsx/dist/cli.mjs");
 const fixtureDirectory = path.join(
   repoRoot,
   "packages/core/src/decode/fixtures",
@@ -38,6 +39,16 @@ interface CliHistoryRepoFixture {
   readonly repoPath: string;
 }
 
+interface SpawnedCli {
+  readonly stderr: string;
+  kill: (signal: NodeJS.Signals) => void;
+  readStdoutLine: () => Promise<string>;
+  waitForExit: () => Promise<{
+    readonly code?: number;
+    readonly signal?: NodeJS.Signals;
+  }>;
+}
+
 async function runCli(
   args: readonly string[],
   options: { readonly cwd?: string } = {},
@@ -58,6 +69,101 @@ async function runCli(
       },
     );
   });
+}
+
+function spawnCli(args: readonly string[]): SpawnedCli {
+  const child = spawn(
+    process.execPath,
+    [tsxEntryPoint, cliEntryPoint, ...args],
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+      cwd: repoRoot,
+    },
+  );
+  const stdoutLines: string[] = [];
+  const stdoutLineWaiters: Array<(line: string) => void> = [];
+  const exit = Promise.withResolvers<{
+    readonly code?: number;
+    readonly signal?: NodeJS.Signals;
+  }>();
+  let stdoutBuffer = "";
+  let stderr = "";
+
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    stdoutBuffer += chunk;
+    drainStdoutLines();
+  });
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  child.on("exit", (code, signal) => {
+    exit.resolve({
+      code: code ?? undefined,
+      signal: signal ?? undefined,
+    });
+  });
+  child.on("error", exit.reject);
+
+  return {
+    get stderr() {
+      return stderr;
+    },
+    kill(signal: NodeJS.Signals) {
+      child.kill(signal);
+    },
+    async readStdoutLine() {
+      const line = stdoutLines.shift();
+
+      if (line !== undefined) {
+        return line;
+      }
+
+      const waiter = Promise.withResolvers<string>();
+
+      stdoutLineWaiters.push(waiter.resolve);
+
+      return await waiter.promise;
+    },
+    waitForExit: async () => await exit.promise,
+  };
+
+  function drainStdoutLines() {
+    let newlineIndex = stdoutBuffer.indexOf("\n");
+
+    while (newlineIndex >= 0) {
+      const line = stdoutBuffer.slice(0, newlineIndex);
+      const waiter = stdoutLineWaiters.shift();
+
+      stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
+
+      if (waiter === undefined) {
+        stdoutLines.push(line);
+      } else {
+        waiter(line);
+      }
+
+      newlineIndex = stdoutBuffer.indexOf("\n");
+    }
+  }
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  description: string,
+): Promise<T> {
+  const timeoutResult = Promise.withResolvers<never>();
+  const timeout = setTimeout(() => {
+    timeoutResult.reject(new Error(description));
+  }, timeoutMs);
+
+  try {
+    return await Promise.race([promise, timeoutResult.promise]);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function getExitCode(error: ExecFileException | null): number {
@@ -196,6 +302,67 @@ test("repo init refuses a non-empty repository directory", async (t) => {
   assert.equal(result.exitCode, 1);
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /repository path must be empty/v);
+});
+
+test("watch start --jsonl emits JSON Lines and exits cleanly on SIGTERM", async (t) => {
+  const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
+  const cli = spawnCli(["watch", "start", "--repo", repoPath, "--jsonl"]);
+
+  t.after(() => {
+    cli.kill("SIGTERM");
+  });
+
+  const started = JSON.parse(
+    await withTimeout(
+      cli.readStdoutLine(),
+      5000,
+      "timed out waiting for started JSONL event",
+    ),
+  ) as {
+    readonly type?: unknown;
+    readonly repoPath?: unknown;
+    readonly watchedSavePath?: unknown;
+    readonly capturePolicy?: unknown;
+  };
+  const observation = JSON.parse(
+    await withTimeout(
+      cli.readStdoutLine(),
+      5000,
+      "timed out waiting for observation JSONL event",
+    ),
+  ) as {
+    readonly type?: unknown;
+    readonly repoPath?: unknown;
+    readonly cause?: unknown;
+    readonly status?: unknown;
+    readonly result?: unknown;
+  };
+
+  assert.deepEqual(started, {
+    type: "started",
+    repoPath,
+    watchedSavePath,
+    capturePolicy: {
+      debounceWriteMs: 500,
+      minCommitIntervalMs: 0,
+    },
+  });
+  assert.equal(observation.type, "observation");
+  assert.equal(observation.repoPath, repoPath);
+  assert.equal(observation.cause, "startup");
+  assert.equal(observation.status, "committed");
+  assert.equal("result" in observation, false);
+
+  cli.kill("SIGTERM");
+  const exit = await withTimeout(
+    cli.waitForExit(),
+    5000,
+    "timed out waiting for watch command to exit after SIGTERM",
+  );
+
+  assert.equal(exit.code, 0);
+  assert.equal(exit.signal, undefined);
+  assert.equal(cli.stderr, "");
 });
 
 test("history checkpoint records a manual checkpoint with JSON output", async (t) => {

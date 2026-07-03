@@ -921,7 +921,7 @@ TDD Vertical Slices:
   - Public call: `startLocalHistoryApiProcess` with a failing watch backend.
   - Assert: backend startup/runtime failure emits a fatal process error, stops gracefully, and releases `watch.lock`.
   - Other information: do not model backend failure as a `WatcherError`.
-- [ ] CLI starts watch with JSONL output
+- [x] CLI starts watch with JSONL output
   - Public call: CLI process `watch start --repo <history-repo> --jsonl`.
   - Assert: stdout emits compact stable JSON Lines status summaries for started and observation events; graceful signal stop exits successfully.
   - Other information: CLI JSONL should not expose the full `ObserveSaveResult` shape.
@@ -958,6 +958,11 @@ Latest slice verification:
   - `pnpm --filter @silksong-git/history format`: passed
   - `pnpm --filter @silksong-git/history lint`: passed
   - `pnpm --filter @silksong-git/history test`: passed
+- CLI starts watch with JSONL output:
+  - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before implementation; watch JSONL startup event never arrived.
+  - `pnpm --filter @silksong-git/cli format`: passed
+  - `pnpm --filter @silksong-git/cli lint`: passed
+  - `pnpm --filter @silksong-git/cli test`: passed
 
 Verification:
 
