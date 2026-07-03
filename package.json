@@ -16,11 +16,11 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "pnpm --filter @silksong-git/web build",
+    "build-web": "pnpm --filter @silksong-git/web build",
     "format": "tsx ./scripts/format.ts",
     "lint": "tsx ./scripts/lint.ts",
-    "preview": "pnpm --filter @silksong-git/web preview",
-    "start": "pnpm --filter @silksong-git/web start",
+    "preview-web": "pnpm --filter @silksong-git/web preview",
+    "start-web": "pnpm --filter @silksong-git/web start",
     "test": "pnpm --recursive --if-present run test"
   },
   "devDependencies": {
