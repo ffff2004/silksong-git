@@ -534,6 +534,27 @@ test("startLocalHistoryApiProcess emits started and performs a startup observati
   );
 });
 
+test("Local History API Process stops the watch subscription gracefully", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watchEventSource = new TestWatchEventSource();
+  const events: LocalHistoryApiProcessEvent[] = [];
+
+  const process = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  await process.stop();
+
+  assert.equal(watchEventSource.stopCount, 1);
+  assert.equal(events.at(-2)?.type, "stopping");
+  assert.equal(events.at(-1)?.type, "stopped");
+});
+
 test("observeSave reports decode failures as Watcher Errors without committing", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");

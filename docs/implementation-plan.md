@@ -885,7 +885,7 @@ TDD Vertical Slices:
   - Public call: `startLocalHistoryApiProcess`.
   - Assert: the process emits `started` with repo path, Watched Save path, and Capture Policy snapshot, then performs a startup observation through the watcher path.
   - Other information: attach the watch backend before requesting the synthetic startup dirty event; startup skips debounce but still waits for stability.
-- [ ] Watch process stops gracefully
+- [x] Watch process stops gracefully
   - Public call: `startLocalHistoryApiProcess`, then `LocalHistoryApiProcess.stop()`.
   - Assert: the process emits stopping/stopped events, cancels pending non-started work, allows a running observation to finish, and releases `watch.lock`.
   - Other information: do not implement hard cancellation of Git or SQLite mutation work.
@@ -937,6 +937,7 @@ Latest slice verification:
   - `pnpm --filter @silksong-git/history test`: passed
   - `pnpm --filter @silksong-git/cli test`: passed
 - Watch process startup tracer bullet: `pnpm --filter @silksong-git/history test`: passed
+- Watch process stops gracefully: `pnpm --filter @silksong-git/history test`: passed
 
 Verification:
 

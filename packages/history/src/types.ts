@@ -185,6 +185,14 @@ export type LocalHistoryApiProcessEvent =
       readonly repoPath: string;
       readonly cause: "startup" | "change" | "deferred";
       readonly result: ObserveSaveResult;
+    }
+  | {
+      readonly type: "stopping";
+      readonly repoPath: string;
+    }
+  | {
+      readonly type: "stopped";
+      readonly repoPath: string;
     };
 
 export interface WatchEventSource {

@@ -53,10 +53,25 @@ export async function startLocalHistoryApiProcess(
     result: startupResult,
   });
 
+  let stopped = false;
+
   return {
     repoPath: input.repoPath,
     async stop() {
+      if (stopped) {
+        return;
+      }
+
+      emit({
+        type: "stopping",
+        repoPath: input.repoPath,
+      });
       await subscription.stop();
+      stopped = true;
+      emit({
+        type: "stopped",
+        repoPath: input.repoPath,
+      });
     },
   };
 }
