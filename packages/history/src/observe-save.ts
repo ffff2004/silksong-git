@@ -25,7 +25,13 @@ export async function observeSaveUsingConfig(
   const shouldCommitUnchanged =
     isManualCheckpoint && input.allowUnchanged === true;
   const observedAt = input.observedAt ?? new Date();
-  const encodedBytes = await readFile(config.watchedSavePath);
+  const readResult = await readWatchedSave(config.watchedSavePath);
+
+  if (readResult.status === "watcherError") {
+    return readResult;
+  }
+
+  const { encodedBytes } = readResult;
   const encodedSha256 = sha256Hex(encodedBytes);
   const lastObservation = await readLastObservation(input.repoPath);
 
@@ -90,6 +96,32 @@ export async function observeSaveUsingConfig(
   };
 }
 
+type ReadWatchedSaveResult =
+  | Extract<ObserveSaveResult, { readonly status: "watcherError" }>
+  | {
+      readonly status: "ok";
+      readonly encodedBytes: Uint8Array;
+    };
+
+async function readWatchedSave(
+  filePath: string,
+): Promise<ReadWatchedSaveResult> {
+  try {
+    return {
+      status: "ok",
+      encodedBytes: await readFile(filePath),
+    };
+  } catch (error) {
+    return {
+      status: "watcherError",
+      error: {
+        message: getErrorMessage(error),
+        reason: "readFailure",
+      },
+    };
+  }
+}
+
 async function readLastObservation(
   repoPath: string,
 ): Promise<ObservationMetadata | undefined> {
@@ -115,6 +147,10 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
     && "code" in error
     && (error as NodeJS.ErrnoException).code === "ENOENT"
   );
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function isInsideMinimumCommitInterval(

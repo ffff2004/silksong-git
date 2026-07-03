@@ -913,7 +913,7 @@ TDD Vertical Slices:
   - Public call: `startLocalHistoryApiProcess`.
   - Assert: a `minimumCommitInterval` skip schedules one deferred observation at `nextAllowedAt`; the deferred observation skips debounce, still probes stability, and reads the current Watched Save.
   - Other information: if the file returns to the last committed bytes, the deferred observation is skipped as unchanged.
-- [ ] Watcher handles save Watcher Errors without stopping
+- [x] Watcher handles save Watcher Errors without stopping
   - Public call: `startLocalHistoryApiProcess`.
   - Assert: startup or runtime decode/read failure emits a Watcher Error and a later valid save change can still be committed.
   - Other information: process-level failures such as backend failure remain separate fatal errors.
@@ -945,6 +945,11 @@ Latest slice verification:
 - Watcher coalesces events with single-flight dirty-bit behavior: `pnpm --filter @silksong-git/history test`: passed
 - Watcher schedules deferred minimum-interval observations:
   - RED: `pnpm --filter @silksong-git/history test`: failed as expected before implementation; new test observed no deferred schedule.
+  - `pnpm --filter @silksong-git/history format`: passed
+  - `pnpm --filter @silksong-git/history lint`: passed
+  - `pnpm --filter @silksong-git/history test`: passed
+- Watcher handles save Watcher Errors without stopping:
+  - RED: `pnpm --filter @silksong-git/history test`: failed as expected before implementation; save read failure rejected the change handler.
   - `pnpm --filter @silksong-git/history format`: passed
   - `pnpm --filter @silksong-git/history lint`: passed
   - `pnpm --filter @silksong-git/history test`: passed

@@ -986,6 +986,60 @@ test("Local History API Process schedules a deferred observation after a minimum
   await process.stop();
 });
 
+test("Local History API Process reports save read failures as nonfatal Watcher Errors", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watchEventSource = new TestWatchEventSource();
+  const events: LocalHistoryApiProcessEvent[] = [];
+  const process = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    fileStabilityProbe: {
+      waitForStableFile: async () => undefined,
+    },
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  await rm(repo.watchedSavePath);
+  await assert.doesNotReject(async () => {
+    await watchEventSource.emitChange();
+  });
+
+  const failedObservation = events.find(
+    (
+      event,
+    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
+      event.type === "observation"
+      && event.cause === "change"
+      && event.result.status === "watcherError",
+  );
+
+  assert.ok(failedObservation !== undefined);
+  assert.equal(failedObservation.result.status, "watcherError");
+  assert.equal(failedObservation.result.error.reason, "readFailure");
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  await watchEventSource.emitChange();
+
+  const committedChange = events.find(
+    (
+      event,
+    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
+      event.type === "observation"
+      && event.cause === "change"
+      && event.result.status === "committed",
+  );
+
+  assert.ok(committedChange !== undefined);
+  await process.stop();
+});
+
 test("observeSave reports decode failures as Watcher Errors without committing", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
