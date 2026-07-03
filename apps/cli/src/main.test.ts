@@ -40,9 +40,11 @@ interface CliHistoryRepoFixture {
 }
 
 interface SpawnedCli {
+  readonly stdout: string;
   readonly stderr: string;
   kill: (signal: NodeJS.Signals) => void;
   readStdoutLine: () => Promise<string>;
+  waitForStderrIncludes: (text: string) => Promise<void>;
   waitForExit: () => Promise<{
     readonly code?: number;
     readonly signal?: NodeJS.Signals;
@@ -82,21 +84,28 @@ function spawnCli(args: readonly string[]): SpawnedCli {
   );
   const stdoutLines: string[] = [];
   const stdoutLineWaiters: Array<(line: string) => void> = [];
+  const stderrWaiters: Array<{
+    readonly text: string;
+    readonly resolve: (value: undefined) => void;
+  }> = [];
   const exit = Promise.withResolvers<{
     readonly code?: number;
     readonly signal?: NodeJS.Signals;
   }>();
+  let stdout = "";
   let stdoutBuffer = "";
   let stderr = "";
 
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
+    stdout += chunk;
     stdoutBuffer += chunk;
     drainStdoutLines();
   });
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => {
     stderr += chunk;
+    notifyStderrWaiters();
   });
   child.on("exit", (code, signal) => {
     exit.resolve({
@@ -107,6 +116,9 @@ function spawnCli(args: readonly string[]): SpawnedCli {
   child.on("error", exit.reject);
 
   return {
+    get stdout() {
+      return stdout;
+    },
     get stderr() {
       return stderr;
     },
@@ -125,6 +137,20 @@ function spawnCli(args: readonly string[]): SpawnedCli {
       stdoutLineWaiters.push(waiter.resolve);
 
       return await waiter.promise;
+    },
+    async waitForStderrIncludes(text: string) {
+      if (stderr.includes(text)) {
+        return;
+      }
+
+      const waiter = Promise.withResolvers<undefined>();
+
+      stderrWaiters.push({
+        text,
+        resolve: waiter.resolve,
+      });
+
+      await waiter.promise;
     },
     waitForExit: async () => await exit.promise,
   };
@@ -145,6 +171,22 @@ function spawnCli(args: readonly string[]): SpawnedCli {
       }
 
       newlineIndex = stdoutBuffer.indexOf("\n");
+    }
+  }
+
+  function notifyStderrWaiters() {
+    let index = 0;
+
+    while (index < stderrWaiters.length) {
+      const waiter = stderrWaiters[index];
+
+      if (waiter === undefined || !stderr.includes(waiter.text)) {
+        index++;
+        continue;
+      }
+
+      stderrWaiters.splice(index, 1);
+      waiter.resolve(undefined);
     }
   }
 }
@@ -363,6 +405,56 @@ test("watch start --jsonl emits JSON Lines and exits cleanly on SIGTERM", async 
   assert.equal(exit.code, 0);
   assert.equal(exit.signal, undefined);
   assert.equal(cli.stderr, "");
+});
+
+test("watch start defaults to stderr logs and reserves HTTP flags", async (t) => {
+  const { repoPath } = await createCliHistoryRepo(t);
+  const cli = spawnCli(["watch", "start", "--repo", repoPath]);
+
+  t.after(() => {
+    cli.kill("SIGTERM");
+  });
+
+  await withTimeout(
+    cli.waitForStderrIncludes("watch observation startup: committed\n"),
+    5000,
+    "timed out waiting for default watch startup observation log",
+  );
+
+  assert.equal(cli.stdout, "");
+
+  cli.kill("SIGTERM");
+  const exit = await withTimeout(
+    cli.waitForExit(),
+    5000,
+    "timed out waiting for default watch command to exit after SIGTERM",
+  );
+
+  assert.equal(exit.code, 0);
+  assert.equal(exit.signal, undefined);
+
+  const httpResult = await runCli([
+    "watch",
+    "start",
+    "--repo",
+    repoPath,
+    "--http",
+  ]);
+  const portResult = await runCli([
+    "watch",
+    "start",
+    "--repo",
+    repoPath,
+    "--port",
+    "43117",
+  ]);
+
+  assert.equal(httpResult.exitCode, 1);
+  assert.equal(httpResult.stdout, "");
+  assert.match(httpResult.stderr, /HTTP Adapter is implemented by P5-T6/v);
+  assert.equal(portResult.exitCode, 1);
+  assert.equal(portResult.stdout, "");
+  assert.match(portResult.stderr, /HTTP Adapter is implemented by P5-T6/v);
 });
 
 test("history checkpoint records a manual checkpoint with JSON output", async (t) => {

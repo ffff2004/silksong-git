@@ -5,12 +5,15 @@ import type {
 import { startLocalHistoryApiProcess } from "@silksong-git/history";
 import type { Command } from "commander";
 
+import { exitCodes } from "./exit-codes.ts";
 import { formatJson } from "./output.ts";
 import { resolveRepositoryContext } from "./repo-context.ts";
 
 interface WatchStartCommandOptions {
   readonly repo?: string;
   readonly jsonl?: boolean;
+  readonly http?: boolean;
+  readonly port?: string;
 }
 
 export function registerWatchCommands(program: Command): void {
@@ -20,12 +23,18 @@ export function registerWatchCommands(program: Command): void {
     .command("start")
     .option("--repo <history-repo>")
     .option("--jsonl")
+    .option("--http")
+    .option("--port <port>")
     .action(async (options: WatchStartCommandOptions) => {
       await runWatchStartCommand(options);
     });
 }
 
 async function runWatchStartCommand(options: WatchStartCommandOptions) {
+  if (rejectReservedHttpOptions(options)) {
+    return;
+  }
+
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
   });
@@ -62,6 +71,19 @@ async function runWatchStartCommand(options: WatchStartCommandOptions) {
   await stopped.promise;
   process.off("SIGINT", stop);
   process.off("SIGTERM", stop);
+}
+
+function rejectReservedHttpOptions(options: WatchStartCommandOptions): boolean {
+  if (options.http !== true && options.port === undefined) {
+    return false;
+  }
+
+  process.stderr.write(
+    "error: HTTP Adapter is implemented by P5-T6 and is not available in this command yet\n",
+  );
+  process.exitCode = exitCodes.usage;
+
+  return true;
 }
 
 function createWatchEventRenderer(options: WatchStartCommandOptions) {

@@ -7,7 +7,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P5 CLI
-- Next task: P5-T5 Implement Watch Runtime And CLI Command
+- Next task: P5-T6 Add Optional HTTP Adapter To Watch Process
 - Last updated: 2026-07-03
 
 ## Phase Overview
@@ -834,7 +834,7 @@ Notes:
 
 ### P5-T5 Implement Watch Runtime And CLI Command
 
-Status: in progress
+Status: complete
 
 Depends on:
 
@@ -925,7 +925,7 @@ TDD Vertical Slices:
   - Public call: CLI process `watch start --repo <history-repo> --jsonl`.
   - Assert: stdout emits compact stable JSON Lines status summaries for started and observation events; graceful signal stop exits successfully.
   - Other information: CLI JSONL should not expose the full `ObserveSaveResult` shape.
-- [ ] CLI default logs and reserved HTTP flags behave correctly
+- [x] CLI default logs and reserved HTTP flags behave correctly
   - Public call: CLI process.
   - Assert: default watcher runtime logs go to stderr, stdout is not polluted with human-readable status, and `--http` or `--port` fail clearly without starting the watcher.
   - Other information: P5-T6 implements the actual HTTP Adapter behavior.
@@ -963,12 +963,17 @@ Latest slice verification:
   - `pnpm --filter @silksong-git/cli format`: passed
   - `pnpm --filter @silksong-git/cli lint`: passed
   - `pnpm --filter @silksong-git/cli test`: passed
+- CLI default logs and reserved HTTP flags behave correctly:
+  - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before implementation; `--http` reported Commander unknown option instead of reserved HTTP Adapter usage.
+  - `pnpm --filter @silksong-git/cli format`: passed
+  - `pnpm --filter @silksong-git/cli lint`: passed
+  - `pnpm --filter @silksong-git/cli test`: passed
 
 Verification:
 
-- `pnpm format`: pending
-- `pnpm lint`: pending
-- Relevant test command: pending
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- `pnpm test`: passed
 
 ### P5-T6 Add Optional HTTP Adapter To Watch Process
 
