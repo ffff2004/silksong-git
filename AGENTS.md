@@ -117,7 +117,7 @@ pnpm test
 
 Package-scoped `format` and `lint` commands are for fast feedback while developing. They do not replace the root `pnpm format` and `pnpm lint` checks before commit, because the root lint command also runs cross-repository checks.
 
-If only docs or agent instructions changed, `pnpm test` may be skipped. If code or tests changed, run `pnpm test` after `pnpm format` and `pnpm lint`.
+If only `*.md` changed, `pnpm test` may be skipped.
 
 If `pnpm format` modified files, re-read them before editing again.
 
