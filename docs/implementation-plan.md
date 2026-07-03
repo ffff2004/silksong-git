@@ -893,7 +893,7 @@ TDD Vertical Slices:
   - Public call: start two Local History API Processes for the same Save History Repository.
   - Assert: the second start fails with a process ownership error that reports watch-lock diagnostics; after the first process stops, a new process can start.
   - Other information: do not auto-remove stale `watch.lock` files.
-- [ ] Watcher observes real file-change events
+- [x] Watcher observes real file-change events
   - Public call: `startLocalHistoryApiProcess` with a test watch event source, then public history query/diff Interfaces.
   - Assert: a file-change event followed by debounce and stability records a watcher-triggered Raw Save Observation and updates the Semantic Read Model.
   - Other information: tests may inject event source, clock, and timers as system-boundary seams; do not assert private queue or timer internals.
@@ -939,6 +939,7 @@ Latest slice verification:
 - Watch process startup tracer bullet: `pnpm --filter @silksong-git/history test`: passed
 - Watch process stops gracefully: `pnpm --filter @silksong-git/history test`: passed
 - Watch process is a per-repository singleton: `pnpm --filter @silksong-git/history test`: passed
+- Watcher observes real file-change events: `pnpm --filter @silksong-git/history test`: passed
 
 Verification:
 

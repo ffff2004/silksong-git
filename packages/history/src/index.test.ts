@@ -156,17 +156,24 @@ async function observeFixtureSequence(
 }
 
 class TestWatchEventSource implements WatchEventSource {
+  private onChange?: () => void | Promise<void>;
+
   startedWith?: WatchEventSourceStartInput;
   stopCount = 0;
 
   start(input: WatchEventSourceStartInput): WatchEventSubscription {
     this.startedWith = input;
+    this.onChange = input.onChange;
 
     return {
       stop: () => {
         this.stopCount++;
       },
     };
+  }
+
+  async emitChange() {
+    await this.onChange?.();
   }
 }
 
@@ -602,6 +609,54 @@ test("Local History API Process is a singleton per Save History Repository", asy
   });
 
   await thirdProcess.stop();
+});
+
+test("Local History API Process observes file-change events", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watchEventSource = new TestWatchEventSource();
+  const events: LocalHistoryApiProcessEvent[] = [];
+  const process = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  await watchEventSource.emitChange();
+
+  const startupObservation = events.find(
+    (
+      event,
+    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
+      event.type === "observation" && event.cause === "startup",
+  );
+  const changeObservation = events.find(
+    (
+      event,
+    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
+      event.type === "observation" && event.cause === "change",
+  );
+
+  assert.ok(startupObservation !== undefined);
+  if (startupObservation.result.status !== "committed") {
+    assert.fail("startup observation should be committed");
+  }
+  assert.ok(changeObservation !== undefined);
+  if (changeObservation.result.status !== "committed") {
+    assert.fail("change observation should be committed");
+  }
+  assert.equal(changeObservation.result.observation.trigger, "watcher");
+  assert.notEqual(
+    changeObservation.result.observation.encodedSha256,
+    startupObservation.result.observation.encodedSha256,
+  );
 });
 
 test("observeSave reports decode failures as Watcher Errors without committing", async (t) => {

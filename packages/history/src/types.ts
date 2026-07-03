@@ -203,7 +203,7 @@ export interface WatchEventSource {
 
 export interface WatchEventSourceStartInput {
   readonly watchedSavePath: string;
-  readonly onChange: () => void;
+  readonly onChange: () => void | Promise<void>;
   readonly onError: (error: unknown) => void;
 }
 

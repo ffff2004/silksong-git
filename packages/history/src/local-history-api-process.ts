@@ -29,9 +29,8 @@ export async function startLocalHistoryApiProcess(
   try {
     subscription = await watchEventSource.start({
       watchedSavePath: config.watchedSavePath,
-      onChange: () => {
-        // Later P5-T5 slices route real change events through debounce, stability, and
-        // single-flight observation.
+      onChange: async () => {
+        await observeAndEmit("change", input.now?.() ?? new Date());
       },
       onError: () => {
         // Later P5-T5 slices classify backend errors as fatal process errors.
@@ -45,23 +44,7 @@ export async function startLocalHistoryApiProcess(
       capturePolicy: config.capturePolicy,
     });
 
-    const startupResult = await withHistoryWriteLock(
-      input.repoPath,
-      async () =>
-        await observeSaveUsingConfig({
-          config,
-          repoPath: input.repoPath,
-          observedAt: now,
-          trigger: "watcher",
-        }),
-    );
-
-    emit({
-      type: "observation",
-      repoPath: input.repoPath,
-      cause: "startup",
-      result: startupResult,
-    });
+    await observeAndEmit("startup", now);
   } catch (error) {
     if (subscription !== undefined) {
       await subscription.stop();
@@ -94,12 +77,35 @@ export async function startLocalHistoryApiProcess(
       });
     },
   };
+
+  async function observeAndEmit(
+    cause: "startup" | "change" | "deferred",
+    observedAt: Date,
+  ) {
+    const result = await withHistoryWriteLock(
+      input.repoPath,
+      async () =>
+        await observeSaveUsingConfig({
+          config,
+          repoPath: input.repoPath,
+          observedAt,
+          trigger: "watcher",
+        }),
+    );
+
+    emit({
+      type: "observation",
+      repoPath: input.repoPath,
+      cause,
+      result,
+    });
+  }
 }
 
 const nodeWatchEventSource: WatchEventSource = {
   start(input: WatchEventSourceStartInput): WatchEventSubscription {
     const watcher = watch(input.watchedSavePath, () => {
-      input.onChange();
+      handleWatchChange(input);
     });
 
     watcher.on("error", input.onError);
@@ -111,3 +117,16 @@ const nodeWatchEventSource: WatchEventSource = {
     };
   },
 };
+
+function handleWatchChange(input: WatchEventSourceStartInput) {
+  const change = runWatchChange(input);
+
+  // Node fs.watch callbacks must return void; route async handler failures to the watch error
+  // boundary instead of letting the Promise float.
+  // eslint-disable-next-line unicorn/prefer-await
+  change.catch(input.onError);
+}
+
+async function runWatchChange(input: WatchEventSourceStartInput) {
+  await input.onChange();
+}
