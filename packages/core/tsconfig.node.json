@@ -1,0 +1,8 @@
+// TypeScript configuration for core tests and development scripts that run in Node.js.
+{
+  "$schema": "https://raw.githubusercontent.com/complete-ts/complete/main/packages/complete-tsconfig/schemas/tsconfig-strict-schema.json",
+
+  "extends": "../../tsconfig.node.base.json",
+
+  "include": ["src/**/*.ts"],
+}

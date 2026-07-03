@@ -1,0 +1,17 @@
+// Shared TypeScript settings for code that runs in Node.js.
+{
+  "$schema": "https://raw.githubusercontent.com/complete-ts/complete/main/packages/complete-tsconfig/schemas/tsconfig-strict-schema.json",
+
+  "extends": [
+    "./tsconfig.base.json",
+
+    // https://github.com/complete-ts/complete/blob/main/packages/complete-tsconfig/tsconfig.node.json
+    "complete-tsconfig/tsconfig.node.json",
+  ],
+
+  "compilerOptions": {
+    // Override the inherited Node preset so the whole repository uses one language target.
+    "target": "ES2024",
+    "lib": ["ES2024"],
+  },
+}

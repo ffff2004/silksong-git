@@ -1,0 +1,13 @@
+// TypeScript configuration for public core code shared by browser and Node.js callers.
+{
+  "$schema": "https://raw.githubusercontent.com/complete-ts/complete/main/packages/complete-tsconfig/schemas/tsconfig-strict-schema.json",
+
+  "extends": "../../tsconfig.browser.base.json",
+
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/decode/fixtures/generate-fixtures.ts",
+    "src/decode/smoke-local-saves.ts",
+  ],
+}

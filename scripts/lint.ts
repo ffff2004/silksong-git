@@ -8,8 +8,13 @@ import { checkForIllegalCharacters } from "./lint/illegal-characters.ts";
 
 await lintCommands(import.meta.dirname, [
   // Use TypeScript to type-check the code.
-  "tsc --noEmit",
-  "tsc --noEmit --project ./scripts/tsconfig.json",
+  "tsc --project ./apps/cli/tsconfig.json",
+  "tsc --project ./apps/web/tsconfig.json",
+  "tsc --project ./apps/web/tsconfig.node.json",
+  "tsc --project ./packages/core/tsconfig.json",
+  "tsc --project ./packages/core/tsconfig.node.json",
+  "tsc --project ./packages/history/tsconfig.json",
+  "tsc --project ./scripts/tsconfig.json",
 
   // Use ESLint to lint the code.
   // - "--max-warnings 0" makes warnings fail, since we set all ESLint errors to warnings.

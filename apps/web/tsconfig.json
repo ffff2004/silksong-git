@@ -1,0 +1,8 @@
+// TypeScript configuration for code that runs in the browser.
+{
+  "$schema": "https://raw.githubusercontent.com/complete-ts/complete/main/packages/complete-tsconfig/schemas/tsconfig-strict-schema.json",
+
+  "extends": "../../tsconfig.browser.base.json",
+
+  "include": ["src/**/*.ts"],
+}

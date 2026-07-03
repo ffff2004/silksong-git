@@ -1,41 +1,15 @@
-// The configuration file for TypeScript.
+// Root TypeScript project map. Individual packages own their runtime environment settings.
 {
   "$schema": "https://raw.githubusercontent.com/complete-ts/complete/main/packages/complete-tsconfig/schemas/tsconfig-strict-schema.json",
 
-  "extends": [
-    // https://github.com/complete-ts/complete/blob/main/packages/complete-tsconfig/tsconfig.base.json
-    "complete-tsconfig/tsconfig.base.json",
-
-    // https://github.com/complete-ts/complete/blob/main/packages/complete-tsconfig/tsconfig.browser.json
-    "complete-tsconfig/tsconfig.browser.json",
-  ],
-
-  "compilerOptions": {
-    // Vite handles the JavaScript --> TypeScript transformation. This file is just concerned with
-    // type-checking.
-    "noEmit": true,
-
-    // Vite can handle ".ts" extensions in import statements.
-    "allowImportingTsExtensions": true,
-
-    // Needed so that we can import JSON files.
-    "module": "esnext",
-    "moduleResolution": "bundler",
-
-    // This repository type-checks source files outside a conventional "src" directory.
-    "rootDir": ".",
-
-    // Needed to support modern APIs used by project scripts and browser code.
-    "target": "ES2024",
-    "lib": ["DOM", "ES2024"],
-  },
-
-  "include": [
-    "apps/cli/src/**/*.ts",
-    "apps/web/*.ts",
-    "apps/web/src/**/*.ts",
-    "packages/core/src/**/*.ts",
-    "packages/history/src/**/*.ts",
-    "scripts/**/*.ts",
+  "files": [],
+  "references": [
+    { "path": "./apps/cli/tsconfig.json" },
+    { "path": "./apps/web/tsconfig.json" },
+    { "path": "./apps/web/tsconfig.node.json" },
+    { "path": "./packages/core/tsconfig.json" },
+    { "path": "./packages/core/tsconfig.node.json" },
+    { "path": "./packages/history/tsconfig.json" },
+    { "path": "./scripts/tsconfig.json" },
   ],
 }
