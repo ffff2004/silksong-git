@@ -834,7 +834,7 @@ Notes:
 
 ### P5-T5 Implement Watch Runtime And CLI Command
 
-Status: pending
+Status: in progress
 
 Depends on:
 
@@ -873,7 +873,7 @@ Acceptance criteria:
 
 TDD Vertical Slices:
 
-- [ ] `observeSave` minimum-interval skip returns `nextAllowedAt`
+- [x] `observeSave` minimum-interval skip returns `nextAllowedAt`
   - Public call: `observeSave`.
   - Assert: watcher-triggered observation inside `minCommitIntervalMs` returns `skipped` with reason `minimumCommitInterval`, `encodedSha256`, and `nextAllowedAt`.
   - Other information: `minimumCommitIntervalMs <= 0` disables the skip path; manual checkpoint remains outside minimum-interval suppression.
@@ -929,6 +929,10 @@ TDD Vertical Slices:
   - Public call: CLI process.
   - Assert: default watcher runtime logs go to stderr, stdout is not polluted with human-readable status, and `--http` or `--port` fail clearly without starting the watcher.
   - Other information: P5-T6 implements the actual HTTP Adapter behavior.
+
+Latest slice verification:
+
+- `observeSave` minimum-interval skip returns `nextAllowedAt`: `pnpm --filter @silksong-git/history test`: passed
 
 Verification:
 

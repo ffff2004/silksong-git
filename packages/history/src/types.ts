@@ -65,8 +65,14 @@ export type ObserveSaveResult =
     }
   | {
       readonly status: "skipped";
-      readonly reason: "unchanged" | "minimumCommitInterval";
+      readonly reason: "unchanged";
       readonly encodedSha256: string;
+    }
+  | {
+      readonly status: "skipped";
+      readonly reason: "minimumCommitInterval";
+      readonly encodedSha256: string;
+      readonly nextAllowedAt: string;
     }
   | {
       readonly status: "watcherError";

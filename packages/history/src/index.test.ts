@@ -370,6 +370,50 @@ test("manual checkpoint bypasses the minimum commit interval", async (t) => {
   );
 });
 
+test("observeSave reports the next allowed observation time for minimum interval skips", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: {
+      minCommitIntervalMs: 60 * 1000,
+    },
+  });
+
+  const firstResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const skippedResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:10.000Z"),
+  });
+
+  assert.equal(firstResult.status, "committed");
+  assert.equal(skippedResult.status, "skipped");
+  assert.equal(skippedResult.reason, "minimumCommitInterval");
+  assert.equal(skippedResult.nextAllowedAt, "2026-06-30T12:01:00.000Z");
+});
+
+test("minimum commit interval can be disabled", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: {
+      minCommitIntervalMs: 0,
+    },
+  });
+
+  const firstResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const secondResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:10.000Z"),
+  });
+
+  assert.equal(firstResult.status, "committed");
+  assert.equal(secondResult.status, "committed");
+});
+
 test("manual checkpoint reports decode failures without committing", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");

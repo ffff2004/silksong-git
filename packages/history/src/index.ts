@@ -128,6 +128,10 @@ export async function observeSave(
         status: "skipped",
         reason: "minimumCommitInterval",
         encodedSha256,
+        nextAllowedAt: getNextAllowedObservationAt(
+          lastObservation?.observedAt,
+          config.capturePolicy.minCommitIntervalMs,
+        ),
       };
     }
 
@@ -229,4 +233,19 @@ function isInsideMinimumCommitInterval(
   return (
     observedAt.getTime() - Date.parse(lastObservedAt) < minCommitIntervalMs
   );
+}
+
+function getNextAllowedObservationAt(
+  lastObservedAt: string | undefined,
+  minCommitIntervalMs: number,
+): string {
+  if (lastObservedAt === undefined) {
+    throw new Error("missing last observation for minimum interval skip");
+  }
+
+  const nextAllowedAt = new Date(
+    Date.parse(lastObservedAt) + minCommitIntervalMs,
+  );
+
+  return nextAllowedAt.toISOString();
 }
