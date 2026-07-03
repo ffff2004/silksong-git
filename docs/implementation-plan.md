@@ -7,8 +7,8 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P5 CLI
-- Next task: P5-T5 Implement Watch CLI Command
-- Last updated: 2026-07-02
+- Next task: P5-T5 Implement Watch Runtime And CLI Command
+- Last updated: 2026-07-03
 
 ## Phase Overview
 
@@ -832,7 +832,7 @@ Notes:
 - Restore itself does not create a Raw Save Observation; watcher/manual checkpoint workflows can record the resulting file state separately.
 - Added public restore domain errors for invalid backup directories, backup failure, write failure, and write verification failure.
 
-### P5-T5 Implement Watch CLI Command
+### P5-T5 Implement Watch Runtime And CLI Command
 
 Status: pending
 
@@ -856,9 +856,47 @@ Relevant docs and ADRs:
 Acceptance criteria:
 
 - Watch command behavior matches `docs/save-history-design.md`; that document remains the source for concrete command grammar and flags.
-- The command starts the Local History API Process through `packages/history`.
-- Watcher lifecycle, repository locking, status output, and shutdown behavior are documented and tested at the appropriate Interface.
-- The process remains the single owner of watching, history writes, read-model updates, and local history endpoints.
+- The command starts the Local History API Process through `packages/history` without requiring the HTTP Adapter.
+- The process watches the Watched Save, applies debounce/stability handling and Capture Policy, records watcher-triggered Raw Save Observations through `observeSave`, and updates the Semantic Read Model.
+- Watcher lifecycle, repository locking, status output, Watcher Error reporting, and shutdown behavior are documented and tested at the appropriate Interface.
+- The process remains the single owner of watching, history writes, and read-model updates.
+- P5-T5 may reserve `--http` and `--port` as clear usage errors; P5-T6 implements their behavior.
+
+Verification:
+
+- `pnpm format`: pending
+- `pnpm lint`: pending
+- Relevant test command: pending
+
+### P5-T6 Add Optional HTTP Adapter To Watch Process
+
+Status: pending
+
+Depends on:
+
+- P5-T5
+
+Owned files or likely files:
+
+- `apps/cli/`
+- `packages/history/`
+- local HTTP adapter tests
+
+Relevant docs and ADRs:
+
+- `docs/save-history-design.md`
+- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-history-api.md)
+- [ADR-0010](adr/0010-first-version-cli-command-set.md)
+- [ADR-0013](adr/0013-history-module-interface-and-testing.md)
+
+Acceptance criteria:
+
+- `watch start --http` enables the local HTTP Adapter inside the same Local History API Process that owns watching, history writes, and read-model updates.
+- `watch start --port <port>` chooses the runtime port only when `--http` is enabled; the port is not written to Project Config.
+- The running process reports the concrete endpoint, including host and bound port.
+- HTTP endpoints are thin adapters over `packages/history` public Interfaces and do not directly query SQLite or run Git operations.
+- The adapter exposes the local history capabilities needed by Local History Web Mode, including watcher status, history, diff, search, checkpoint, restore/export, and compatibility/capability discovery.
+- Enabling HTTP does not create a second watcher or a second history writer.
 
 Verification:
 
@@ -916,13 +954,14 @@ Status: pending
 
 Depends on:
 
+- P5-T6
 - P4-T2
 - P6-T1
 
 Owned files or likely files:
 
 - `apps/web/`
-- local HTTP adapter
+- local HTTP client adapter
 - local endpoint connection and capability handling
 - local history UI views
 
@@ -936,7 +975,7 @@ Acceptance criteria:
 
 - Local History Web Mode is enabled when the frontend connects to a compatible local HTTP endpoint.
 - Local History Web Mode shows Current Save, History, Diff, Search, Watcher, and Restore/Export views.
-- HTTP endpoints are adapters over `packages/history`.
+- HTTP endpoints are provided by `watch start --http` and are adapters over `packages/history`.
 - Web code does not query SQLite or run Git operations directly.
 - Frontend serving stays decoupled from the Local History API Process; Vite is acceptable for implementation and debugging.
 

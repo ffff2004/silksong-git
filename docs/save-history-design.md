@@ -310,7 +310,7 @@ First-version Project Config fields:
 }
 ```
 
-`localApi.host` is persisted because it is a security-relevant binding constraint. The local API port is a runtime binding, not a Project Config field; it may be assigned dynamically or provided through a process-start override such as a CLI flag, and the running process should report the concrete endpoint it bound to.
+`localApi.host` is persisted because it is a security-relevant binding constraint. The local API port is a runtime binding, not a Project Config field; it may be assigned dynamically or provided through a process-start override such as a CLI flag, and the running process should report the concrete endpoint it bound to. The port only applies when the Local History API Process starts its optional HTTP Adapter.
 
 ## Core Module Interface
 
@@ -632,14 +632,14 @@ One Local History API Process owns:
 watching the Watched Save
 committing Raw Save Observations
 updating SQLite Semantic Read Model
-serving local HTTP endpoints
+serving local HTTP endpoints when the HTTP Adapter is enabled
 ```
 
 No second process should independently watch the same save and write Git or SQLite.
 
 All history writers must acquire one Save History Repository write lock before mutating Git artifacts or SQLite. This includes watcher observations and manual checkpoints.
 
-Local HTTP endpoints are thin Adapters over `packages/history`. They should call history functions and should not directly query SQLite or run Git operations.
+Local HTTP endpoints are thin Adapters over `packages/history`. They should call history functions and should not directly query SQLite or run Git operations. In the first version, `watch start` does not expose HTTP by default; `watch start --http` enables the HTTP Adapter inside the same Local History API Process. Enabling HTTP must not create a second history writer.
 
 The Web UI frontend is a client of these endpoints. Serving the frontend is not part of the single-writer invariant: implementation and debugging can use Vite, and a later release can add static hosting or a small frontend-serving process without changing the Local History API Process contract.
 
@@ -651,19 +651,19 @@ ADR-0010 decides that the first CLI is object-grouped and lifecycle-oriented. Th
 
 First-version commands:
 
-| Group     | Action       | User-facing object        | Responsibility                                                            |
-| --------- | ------------ | ------------------------- | ------------------------------------------------------------------------- |
-| `repo`    | `init`       | Save History Repository   | Create a single-save Save History Repository and Project Config.          |
-| `save`    | `decode`     | Encoded Save              | Decode one save to raw Decoded Save JSON for debugging.                   |
-| `save`    | `snapshot`   | Encoded Save              | Decode and map one save without writing Git history.                      |
-| `watch`   | `start`      | Local History API Process | Start watching the Watched Save and updating history.                     |
-| `history` | `list`       | Semantic Events           | Show Semantic Event history.                                              |
-| `history` | `diff`       | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                           |
-| `history` | `search`     | Semantic Events           | Find events and corresponding commits.                                    |
-| `history` | `checkpoint` | Raw Save Observation      | Commit the current Watched Save as a manual checkpoint.                   |
-| `history` | `restore`    | Encoded Save restore      | Write a commit's `save.dat` to an explicit Restore Target.                |
-| `history` | `rebuild`    | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations.         |
-| `ui`      | `open`       | Web UI client             | Open the Web UI client and connect it to a local endpoint when available. |
+| Group     | Action       | User-facing object        | Responsibility                                                                                  |
+| --------- | ------------ | ------------------------- | ----------------------------------------------------------------------------------------------- |
+| `repo`    | `init`       | Save History Repository   | Create a single-save Save History Repository and Project Config.                                |
+| `save`    | `decode`     | Encoded Save              | Decode one save to raw Decoded Save JSON for debugging.                                         |
+| `save`    | `snapshot`   | Encoded Save              | Decode and map one save without writing Git history.                                            |
+| `watch`   | `start`      | Local History API Process | Start watching the Watched Save, updating history, and optionally serving local HTTP endpoints. |
+| `history` | `list`       | Semantic Events           | Show Semantic Event history.                                                                    |
+| `history` | `diff`       | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                                                 |
+| `history` | `search`     | Semantic Events           | Find events and corresponding commits.                                                          |
+| `history` | `checkpoint` | Raw Save Observation      | Commit the current Watched Save as a manual checkpoint.                                         |
+| `history` | `restore`    | Encoded Save restore      | Write a commit's `save.dat` to an explicit Restore Target.                                      |
+| `history` | `rebuild`    | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations.                               |
+| `ui`      | `open`       | Web UI client             | Open the Web UI client and connect it to a local endpoint when available.                       |
 
 First-version command forms:
 
@@ -673,7 +673,7 @@ silksong-git repo init --save <save.dat> --repo <history-repo> [--json]
 silksong-git save decode <save.dat> [--out <decoded-save.json>] [--compact] [--schema-check]
 silksong-git save snapshot <save.dat> --json
 
-silksong-git watch start [--repo <history-repo>]
+silksong-git watch start [--repo <history-repo>] [--http] [--port <port>]
 
 silksong-git history list [--repo <history-repo>] [--limit <n>] [--cursor <cursor>] [--include-filtered] [--json]
 silksong-git history diff <from> <to> [--repo <history-repo>] [--include-filtered] [--json]
@@ -707,6 +707,21 @@ Default command output is human-readable text. `--json` provides stable machine-
 
 --schema-check
   also call parseDecodedSave and report whether the decoded shape is recognized
+```
+
+`watch start` starts the long-running Local History API Process for one Save History Repository. By default it watches the Watched Save, commits stable Raw Save Observations according to Capture Policy, updates the Semantic Read Model, reports status in terminal output, and shuts down cleanly on process termination. `--http` enables the local HTTP Adapter inside that same process so the Web UI can connect to history workflows. `--port <port>` chooses the runtime local API port when HTTP is enabled; if omitted, the process may choose an available port and must report the concrete endpoint. The HTTP host comes from Project Config `localApi.host`.
+
+`watch start` supports:
+
+```txt
+--repo <history-repo>
+  optional Save History Repository path; when omitted, repository context is resolved like other repository-scoped commands
+
+--http
+  enable the local HTTP Adapter inside this watch process
+
+--port <port>
+  optional runtime local API port; valid only when --http is used
 ```
 
 `repo init` supports:
