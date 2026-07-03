@@ -856,7 +856,7 @@ Relevant docs and ADRs:
 Acceptance criteria:
 
 - Watch command behavior matches `docs/save-history-design.md`; that document remains the source for concrete command grammar and flags.
-- The command starts the Local History API Process through `packages/history` without requiring the HTTP Adapter.
+- The command starts the Local History Watch Process through `packages/history` without requiring the HTTP Adapter.
 - The process is a singleton per Save History Repository and holds a long-lived `.silksong-git/watch.lock`; stale locks are not removed automatically, and lock conflicts report diagnostic lock details.
 - The process uses a Project Config snapshot read at startup. Runtime config changes require restarting the watcher; one-shot Offline Commands continue reading current Project Config.
 - The watcher attaches its backend before requesting a synthetic startup observation. Startup skips debounce but still uses stability probing.
@@ -865,7 +865,7 @@ Acceptance criteria:
 - `minimumCommitIntervalMs <= 0` disables interval suppression. When a watcher observation is skipped by `minimumCommitInterval`, the result includes the next allowed time, and the watcher keeps one deferred observation timer that skips debounce but still probes stability before reading the current Watched Save.
 - Watcher Error reporting distinguishes save read/decode/stability problems, which do not stop the process, from watch backend or process ownership failures, which are fatal process errors.
 - Watcher lifecycle and shutdown are graceful: pending timers can be canceled, running observations are allowed to finish, `watch.lock` is released, and stopped status is emitted.
-- `packages/history` exposes structured Local History API Process events; CLI rendering is an Adapter over those events.
+- `packages/history` exposes structured Local History Watch Process events; CLI rendering is an Adapter over those events.
 - `watch start --jsonl` emits compact stable JSON Lines status events to stdout. Default human-readable runtime logs go to stderr and are not byte-stable.
 - CLI output stream failure gracefully stops the watcher and exits as a failure.
 - The process remains the single owner of watching while allowing checkpoint, restore, and rebuild Offline Commands to serialize with watcher writes through `write.lock`.
@@ -882,43 +882,43 @@ TDD Vertical Slices:
   - Assert: existing public behavior remains green with no new behavior test for the internal helper.
   - Other information: this is a GREEN-state preparatory refactor. Public `observeSave` still reads current Project Config and acquires `write.lock`; the watcher runtime will later call an internal observation helper with the startup config snapshot while holding `write.lock`.
 - [x] Watch process startup tracer bullet
-  - Public call: `startLocalHistoryApiProcess`.
+  - Public call: `startLocalHistoryWatchProcess`.
   - Assert: the process emits `started` with repo path, Watched Save path, and Capture Policy snapshot, then performs a startup observation through the watcher path.
   - Other information: attach the watch backend before requesting the synthetic startup dirty event; startup skips debounce but still waits for stability.
 - [x] Watch process stops gracefully
-  - Public call: `startLocalHistoryApiProcess`, then `LocalHistoryApiProcess.stop()`.
+  - Public call: `startLocalHistoryWatchProcess`, then `LocalHistoryWatchProcess.stop()`.
   - Assert: the process emits stopping/stopped events, cancels pending non-started work, allows a running observation to finish, and releases `watch.lock`.
   - Other information: do not implement hard cancellation of Git or SQLite mutation work.
 - [x] Watch process is a per-repository singleton
-  - Public call: start two Local History API Processes for the same Save History Repository.
+  - Public call: start two Local History Watch Processes for the same Save History Repository.
   - Assert: the second start fails with a process ownership error that reports watch-lock diagnostics; after the first process stops, a new process can start.
   - Other information: do not auto-remove stale `watch.lock` files.
 - [x] Watcher observes real file-change events
-  - Public call: `startLocalHistoryApiProcess` with a test watch event source, then public history query/diff Interfaces.
+  - Public call: `startLocalHistoryWatchProcess` with a test watch event source, then public history query/diff Interfaces.
   - Assert: a file-change event followed by debounce and stability records a watcher-triggered Raw Save Observation and updates the Semantic Read Model.
   - Other information: tests may inject event source, clock, and timers as system-boundary seams; do not assert private queue or timer internals.
 - [x] Watcher waits for file stability
-  - Public call: `startLocalHistoryApiProcess` with injected clock/timers.
+  - Public call: `startLocalHistoryWatchProcess` with injected clock/timers.
   - Assert: changing `size` or `mtimeMs` delays observation until the Watched Save is stable across probes.
   - Other information: avoid real sleeps.
 - [x] Stability timeout is nonfatal
-  - Public call: `startLocalHistoryApiProcess`.
+  - Public call: `startLocalHistoryWatchProcess`.
   - Assert: an unstable or unstat-able Watched Save emits a Watcher Error and the process continues to accept later valid file changes.
   - Other information: extend `WatcherError.reason` with `stabilityTimeout`; ordinary save read/decode/stability problems are not process-fatal.
 - [x] Watcher coalesces events with single-flight dirty-bit behavior
-  - Public call: `startLocalHistoryApiProcess`.
+  - Public call: `startLocalHistoryWatchProcess`.
   - Assert: event bursts and events arriving during a running observation are coalesced into observation passes over the latest stable Watched Save rather than concurrent observations.
   - Other information: verify through resulting history/events, not private queue length.
 - [x] Watcher schedules deferred minimum-interval observations
-  - Public call: `startLocalHistoryApiProcess`.
+  - Public call: `startLocalHistoryWatchProcess`.
   - Assert: a `minimumCommitInterval` skip schedules one deferred observation at `nextAllowedAt`; the deferred observation skips debounce, still probes stability, and reads the current Watched Save.
   - Other information: if the file returns to the last committed bytes, the deferred observation is skipped as unchanged.
 - [x] Watcher handles save Watcher Errors without stopping
-  - Public call: `startLocalHistoryApiProcess`.
+  - Public call: `startLocalHistoryWatchProcess`.
   - Assert: startup or runtime decode/read failure emits a Watcher Error and a later valid save change can still be committed.
   - Other information: process-level failures such as backend failure remain separate fatal errors.
 - [x] Watch backend failure is fatal
-  - Public call: `startLocalHistoryApiProcess` with a failing watch backend.
+  - Public call: `startLocalHistoryWatchProcess` with a failing watch backend.
   - Assert: backend startup/runtime failure emits a fatal process error, stops gracefully, and releases `watch.lock`.
   - Other information: do not model backend failure as a `WatcherError`.
 - [x] CLI starts watch with JSONL output
@@ -1007,7 +1007,7 @@ Relevant docs and ADRs:
 
 Acceptance criteria:
 
-- `watch start --http` enables the local HTTP Adapter inside the same Local History API Process that owns watching, history writes, and read-model updates.
+- `watch start --http` enables the local HTTP Adapter inside the same Local History Watch Process that owns watching, history writes, and read-model updates.
 - `watch start --port <port>` chooses the runtime port only when `--http` is enabled; the port is not written to Project Config.
 - The running process reports the concrete endpoint, including host and bound port.
 - HTTP endpoints are thin adapters over `packages/history` public Interfaces and do not directly query SQLite or run Git operations.
@@ -1093,7 +1093,7 @@ Acceptance criteria:
 - Local History Web Mode shows Current Save, History, Diff, Search, Watcher, and Restore/Export views.
 - HTTP endpoints are provided by `watch start --http` and are adapters over `packages/history`.
 - Web code does not query SQLite or run Git operations directly.
-- Frontend serving stays decoupled from the Local History API Process; Vite is acceptable for implementation and debugging.
+- Frontend serving stays decoupled from the Local History Watch Process; Vite is acceptable for implementation and debugging.
 
 Verification:
 

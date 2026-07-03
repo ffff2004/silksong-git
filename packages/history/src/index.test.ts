@@ -17,18 +17,18 @@ import {
   diffCommits,
   initSaveHistory,
   InvalidRestoreBackupDirectoryError,
-  LocalHistoryApiProcessAlreadyRunningError,
+  LocalHistoryWatchProcessAlreadyRunningError,
   observeSave,
   queryHistory,
   rebuildSemanticReadModel,
   restoreEncodedSave,
   RestoreTargetExistsError,
   searchSemanticEvents,
-  startLocalHistoryApiProcess,
+  startLocalHistoryWatchProcess,
 } from "./index.ts";
 import type {
   FileStabilityProbe,
-  LocalHistoryApiProcessEvent,
+  LocalHistoryWatchProcessEvent,
   ProjectConfigOverrides,
   WatchEventSource,
   WatchEventSourceStartInput,
@@ -603,7 +603,7 @@ test("history write lock serializes concurrent observations", async (t) => {
   assert.equal(skippedResult.reason, "unchanged");
 });
 
-test("startLocalHistoryApiProcess emits started and performs a startup observation", async (t) => {
+test("startLocalHistoryWatchProcess emits started and performs a startup observation", async (t) => {
   const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
     capturePolicy: {
       debounceWriteMs: 250,
@@ -611,9 +611,9 @@ test("startLocalHistoryApiProcess emits started and performs a startup observati
     },
   });
   const watchEventSource = new TestWatchEventSource();
-  const events: LocalHistoryApiProcessEvent[] = [];
+  const events: LocalHistoryWatchProcessEvent[] = [];
 
-  const process = await startLocalHistoryApiProcess({
+  const process = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource,
     onEvent: (event) => {
@@ -653,12 +653,12 @@ test("startLocalHistoryApiProcess emits started and performs a startup observati
   await process.stop();
 });
 
-test("Local History API Process stops the watch subscription gracefully", async (t) => {
+test("Local History Watch Process stops the watch subscription gracefully", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
-  const events: LocalHistoryApiProcessEvent[] = [];
+  const events: LocalHistoryWatchProcessEvent[] = [];
 
-  const process = await startLocalHistoryApiProcess({
+  const process = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource,
     onEvent: (event) => {
@@ -674,11 +674,11 @@ test("Local History API Process stops the watch subscription gracefully", async 
   assert.equal(events.at(-1)?.type, "stopped");
 });
 
-test("Local History API Process is a singleton per Save History Repository", async (t) => {
+test("Local History Watch Process is a singleton per Save History Repository", async (t) => {
   const repo = await createHistoryRepo(t);
   const firstWatchEventSource = new TestWatchEventSource();
   const secondWatchEventSource = new TestWatchEventSource();
-  const firstProcess = await startLocalHistoryApiProcess({
+  const firstProcess = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource: firstWatchEventSource,
     now: () => new Date("2026-06-30T12:00:00.000Z"),
@@ -690,13 +690,13 @@ test("Local History API Process is a singleton per Save History Repository", asy
 
   await assert.rejects(
     async () =>
-      await startLocalHistoryApiProcess({
+      await startLocalHistoryWatchProcess({
         repoPath: repo.repoPath,
         watchEventSource: secondWatchEventSource,
         now: () => new Date("2026-06-30T12:01:00.000Z"),
       }),
     (error: unknown) => {
-      assert.ok(error instanceof LocalHistoryApiProcessAlreadyRunningError);
+      assert.ok(error instanceof LocalHistoryWatchProcessAlreadyRunningError);
       assert.equal(
         error.lockPath,
         path.join(repo.repoPath, ".silksong-git/watch.lock"),
@@ -713,7 +713,7 @@ test("Local History API Process is a singleton per Save History Repository", asy
 
   await firstProcess.stop();
 
-  const thirdProcess = await startLocalHistoryApiProcess({
+  const thirdProcess = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource: new TestWatchEventSource(),
     now: () => new Date("2026-06-30T12:02:00.000Z"),
@@ -722,11 +722,11 @@ test("Local History API Process is a singleton per Save History Repository", asy
   await thirdProcess.stop();
 });
 
-test("Local History API Process observes file-change events", async (t) => {
+test("Local History Watch Process observes file-change events", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
-  const events: LocalHistoryApiProcessEvent[] = [];
-  const process = await startLocalHistoryApiProcess({
+  const events: LocalHistoryWatchProcessEvent[] = [];
+  const process = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource,
     onEvent: (event) => {
@@ -745,14 +745,18 @@ test("Local History API Process observes file-change events", async (t) => {
   const startupObservation = events.find(
     (
       event,
-    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
-      event.type === "observation" && event.cause === "startup",
+    ): event is Extract<
+      LocalHistoryWatchProcessEvent,
+      { type: "observation" }
+    > => event.type === "observation" && event.cause === "startup",
   );
   const changeObservation = events.find(
     (
       event,
-    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
-      event.type === "observation" && event.cause === "change",
+    ): event is Extract<
+      LocalHistoryWatchProcessEvent,
+      { type: "observation" }
+    > => event.type === "observation" && event.cause === "change",
   );
 
   assert.ok(startupObservation !== undefined);
@@ -771,21 +775,21 @@ test("Local History API Process observes file-change events", async (t) => {
   await process.stop();
 });
 
-test("Local History API Process waits for file stability before observing changes", async (t) => {
+test("Local History Watch Process waits for file stability before observing changes", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
   const fileStabilityProbe = createSequencedFileStabilityProbe();
-  const events: LocalHistoryApiProcessEvent[] = [];
+  const events: LocalHistoryWatchProcessEvent[] = [];
   const processInput = {
     repoPath: repo.repoPath,
     watchEventSource,
     fileStabilityProbe,
-    onEvent: (event: LocalHistoryApiProcessEvent) => {
+    onEvent: (event: LocalHistoryWatchProcessEvent) => {
       events.push(event);
     },
     now: () => new Date("2026-06-30T12:00:00.000Z"),
   };
-  const process = await startLocalHistoryApiProcess(processInput);
+  const process = await startLocalHistoryWatchProcess(processInput);
 
   t.after(async () => {
     await process.stop();
@@ -809,8 +813,10 @@ test("Local History API Process waits for file stability before observing change
   const changeObservation = events.find(
     (
       event,
-    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
-      event.type === "observation" && event.cause === "change",
+    ): event is Extract<
+      LocalHistoryWatchProcessEvent,
+      { type: "observation" }
+    > => event.type === "observation" && event.cause === "change",
   );
 
   assert.ok(changeObservation !== undefined);
@@ -818,11 +824,11 @@ test("Local History API Process waits for file stability before observing change
   await process.stop();
 });
 
-test("Local History API Process reports stability timeout as a nonfatal Watcher Error", async (t) => {
+test("Local History Watch Process reports stability timeout as a nonfatal Watcher Error", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
-  const events: LocalHistoryApiProcessEvent[] = [];
-  const process = await startLocalHistoryApiProcess({
+  const events: LocalHistoryWatchProcessEvent[] = [];
+  const process = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource,
     fileStabilityProbe: createFailOnceFileStabilityProbe(),
@@ -844,8 +850,10 @@ test("Local History API Process reports stability timeout as a nonfatal Watcher 
   const failedObservation = events.find(
     (
       event,
-    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
-      event.type === "observation" && event.cause === "change",
+    ): event is Extract<
+      LocalHistoryWatchProcessEvent,
+      { type: "observation" }
+    > => event.type === "observation" && event.cause === "change",
   );
 
   assert.ok(failedObservation !== undefined);
@@ -858,7 +866,7 @@ test("Local History API Process reports stability timeout as a nonfatal Watcher 
       (
         event,
       ): event is Extract<
-        LocalHistoryApiProcessEvent,
+        LocalHistoryWatchProcessEvent,
         { type: "observation" }
       > => event.type === "observation" && event.cause === "change",
     )
@@ -868,12 +876,12 @@ test("Local History API Process reports stability timeout as a nonfatal Watcher 
   await process.stop();
 });
 
-test("Local History API Process coalesces change events while an observation is running", async (t) => {
+test("Local History Watch Process coalesces change events while an observation is running", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
   const fileStabilityProbe = createSequencedFileStabilityProbe();
-  const events: LocalHistoryApiProcessEvent[] = [];
-  const process = await startLocalHistoryApiProcess({
+  const events: LocalHistoryWatchProcessEvent[] = [];
+  const process = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource,
     fileStabilityProbe,
@@ -907,8 +915,10 @@ test("Local History API Process coalesces change events while an observation is 
   const changeObservations = events.filter(
     (
       event,
-    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
-      event.type === "observation" && event.cause === "change",
+    ): event is Extract<
+      LocalHistoryWatchProcessEvent,
+      { type: "observation" }
+    > => event.type === "observation" && event.cause === "change",
   );
 
   assert.equal(changeObservations.length, 2);
@@ -917,7 +927,7 @@ test("Local History API Process coalesces change events while an observation is 
   await process.stop();
 });
 
-test("Local History API Process schedules a deferred observation after a minimum-interval skip", async (t) => {
+test("Local History Watch Process schedules a deferred observation after a minimum-interval skip", async (t) => {
   const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
     capturePolicy: {
       minCommitIntervalMs: 60 * 1000,
@@ -926,13 +936,13 @@ test("Local History API Process schedules a deferred observation after a minimum
   const watchEventSource = new TestWatchEventSource();
   const watchScheduler = new TestWatchScheduler();
   const fileStabilityProbe = createSequencedFileStabilityProbe();
-  const events: LocalHistoryApiProcessEvent[] = [];
+  const events: LocalHistoryWatchProcessEvent[] = [];
   const observedTimes = [
     new Date("2026-06-30T12:00:00.000Z"),
     new Date("2026-06-30T12:00:10.000Z"),
     new Date("2026-06-30T12:01:00.000Z"),
   ];
-  const process = await startLocalHistoryApiProcess({
+  const process = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource,
     watchScheduler,
@@ -975,8 +985,10 @@ test("Local History API Process schedules a deferred observation after a minimum
   const deferredObservation = events.find(
     (
       event,
-    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
-      event.type === "observation" && event.cause === "deferred",
+    ): event is Extract<
+      LocalHistoryWatchProcessEvent,
+      { type: "observation" }
+    > => event.type === "observation" && event.cause === "deferred",
   );
 
   assert.ok(deferredObservation !== undefined);
@@ -992,11 +1004,11 @@ test("Local History API Process schedules a deferred observation after a minimum
   await process.stop();
 });
 
-test("Local History API Process reports save read failures as nonfatal Watcher Errors", async (t) => {
+test("Local History Watch Process reports save read failures as nonfatal Watcher Errors", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
-  const events: LocalHistoryApiProcessEvent[] = [];
-  const process = await startLocalHistoryApiProcess({
+  const events: LocalHistoryWatchProcessEvent[] = [];
+  const process = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource,
     fileStabilityProbe: {
@@ -1020,7 +1032,10 @@ test("Local History API Process reports save read failures as nonfatal Watcher E
   const failedObservation = events.find(
     (
       event,
-    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
+    ): event is Extract<
+      LocalHistoryWatchProcessEvent,
+      { type: "observation" }
+    > =>
       event.type === "observation"
       && event.cause === "change"
       && event.result.status === "watcherError",
@@ -1036,7 +1051,10 @@ test("Local History API Process reports save read failures as nonfatal Watcher E
   const committedChange = events.find(
     (
       event,
-    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
+    ): event is Extract<
+      LocalHistoryWatchProcessEvent,
+      { type: "observation" }
+    > =>
       event.type === "observation"
       && event.cause === "change"
       && event.result.status === "committed",
@@ -1046,11 +1064,11 @@ test("Local History API Process reports save read failures as nonfatal Watcher E
   await process.stop();
 });
 
-test("Local History API Process treats watch backend runtime failure as fatal", async (t) => {
+test("Local History Watch Process treats watch backend runtime failure as fatal", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
-  const events: LocalHistoryApiProcessEvent[] = [];
-  const process = await startLocalHistoryApiProcess({
+  const events: LocalHistoryWatchProcessEvent[] = [];
+  const process = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource,
     onEvent: (event) => {
@@ -1072,7 +1090,7 @@ test("Local History API Process treats watch backend runtime failure as fatal", 
   assert.equal(fatalEvent.error.message, "watch backend failed");
   assert.equal(events.at(-1)?.type, "stopped");
 
-  const nextProcess = await startLocalHistoryApiProcess({
+  const nextProcess = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource: new TestWatchEventSource(),
     now: () => new Date("2026-06-30T12:01:00.000Z"),

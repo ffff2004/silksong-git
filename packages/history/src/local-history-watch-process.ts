@@ -6,10 +6,10 @@ import { readProjectConfig } from "./config.ts";
 import { observeSaveUsingConfig } from "./observe-save.ts";
 import type {
   FileStabilityProbe,
-  LocalHistoryApiProcess,
+  LocalHistoryWatchProcess,
   ObserveSaveResult,
   ScheduledWatchTask,
-  StartLocalHistoryApiProcessInput,
+  StartLocalHistoryWatchProcessInput,
   WatchEventSource,
   WatchEventSourceStartInput,
   WatchEventSubscription,
@@ -18,9 +18,9 @@ import type {
 import { acquireWatchLock } from "./watch-lock.ts";
 import { withHistoryWriteLock } from "./write-lock.ts";
 
-export async function startLocalHistoryApiProcess(
-  input: StartLocalHistoryApiProcessInput,
-): Promise<LocalHistoryApiProcess> {
+export async function startLocalHistoryWatchProcess(
+  input: StartLocalHistoryWatchProcessInput,
+): Promise<LocalHistoryWatchProcess> {
   const config = await readProjectConfig(input.repoPath);
   const emit = input.onEvent ?? (() => undefined);
   const now = input.now?.() ?? new Date();

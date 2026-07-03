@@ -6,8 +6,8 @@ interface WatchLockInfo {
   readonly command?: unknown;
 }
 
-export class LocalHistoryApiProcessAlreadyRunningError extends Error {
-  override name = "LocalHistoryApiProcessAlreadyRunningError";
+export class LocalHistoryWatchProcessAlreadyRunningError extends Error {
+  override name = "LocalHistoryWatchProcessAlreadyRunningError";
 
   readonly lockPath: string;
   readonly lockInfo?: WatchLockInfo;
@@ -17,7 +17,7 @@ export class LocalHistoryApiProcessAlreadyRunningError extends Error {
     options?: ErrorOptions,
   ) {
     super(
-      "Local History API Process is already running for this Save History Repository.",
+      "Local History Watch Process is already running for this Save History Repository.",
       options,
     );
     this.lockPath = input.lockPath;

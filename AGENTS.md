@@ -34,7 +34,7 @@ Do not rely on chat history for project state. If progress, dependencies, or tas
 ## Architecture Guardrails
 
 - Keep the semantic core free of DOM, Git, SQLite, filesystem watching, and HTTP concerns.
-- Keep history persistence as the owner of Git, SQLite, watcher, restore, and Local History API Process behavior.
+- Keep history persistence as the owner of Git, SQLite, watcher, restore, and Local History Watch Process behavior.
 - Web frontend code must use local HTTP endpoints for local-history workflows and must not directly call Git, SQLite, filesystem watcher, or history internals.
 - Web, CLI, and HTTP adapters must call public package Interfaces rather than internal helpers, SQLite tables, or Git command details.
 - Display Semantic Event Filters affect query/display behavior only; they must not decide raw Git commits or delete events from SQLite.

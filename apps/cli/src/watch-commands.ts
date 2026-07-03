@@ -1,8 +1,8 @@
 import type {
-  LocalHistoryApiProcessEvent,
+  LocalHistoryWatchProcessEvent,
   ObserveSaveResult,
 } from "@silksong-git/history";
-import { startLocalHistoryApiProcess } from "@silksong-git/history";
+import { startLocalHistoryWatchProcess } from "@silksong-git/history";
 import type { Command } from "commander";
 
 import { exitCodes } from "./exit-codes.ts";
@@ -61,7 +61,7 @@ async function runWatchStartCommand(options: WatchStartCommandOptions) {
     stopRequest.stop();
   });
 
-  const localHistoryProcess = await startLocalHistoryApiProcess({
+  const localHistoryProcess = await startLocalHistoryWatchProcess({
     repoPath,
     onEvent: (event) => {
       if (!outputState.failed) {
@@ -124,7 +124,7 @@ function rejectReservedHttpOptions(options: WatchStartCommandOptions): boolean {
 type WatchOutputTarget = "stdout" | "stderr";
 
 interface WatchEventRenderer {
-  render: (event: LocalHistoryApiProcessEvent) => void;
+  render: (event: LocalHistoryWatchProcessEvent) => void;
   dispose: () => void;
 }
 
@@ -143,7 +143,7 @@ function createWatchEventRenderer(
   process.stderr.on("error", onStderrError);
 
   return {
-    render(event: LocalHistoryApiProcessEvent) {
+    render(event: LocalHistoryWatchProcessEvent) {
       if (options.jsonl === true) {
         writeWatchOutput(
           "stdout",
@@ -186,7 +186,7 @@ function writeStderrSafely(output: string) {
   }
 }
 
-function toJsonlWatchEvent(event: LocalHistoryApiProcessEvent): unknown {
+function toJsonlWatchEvent(event: LocalHistoryWatchProcessEvent): unknown {
   switch (event.type) {
     case "started": {
       return {
@@ -251,7 +251,7 @@ function summarizeObservationResult(result: ObserveSaveResult) {
   }
 }
 
-function toHumanWatchEvent(event: LocalHistoryApiProcessEvent): string {
+function toHumanWatchEvent(event: LocalHistoryWatchProcessEvent): string {
   switch (event.type) {
     case "started": {
       return `watch started\nrepo: ${event.repoPath}\nsave: ${event.watchedSavePath}\n`;

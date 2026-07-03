@@ -32,7 +32,7 @@ import { withHistoryWriteLock } from "./write-lock.ts";
 export {
   InvalidCommitRefError,
   InvalidRestoreBackupDirectoryError,
-  LocalHistoryApiProcessAlreadyRunningError,
+  LocalHistoryWatchProcessAlreadyRunningError,
   ReadModelUnavailableError,
   RestoreBackupFailedError,
   RestoreTargetExistsError,
@@ -41,7 +41,7 @@ export {
   SaveHistoryRepositoryBusyError,
 } from "./errors.ts";
 
-export { startLocalHistoryApiProcess } from "./local-history-api-process.ts";
+export { startLocalHistoryWatchProcess } from "./local-history-watch-process.ts";
 export { restoreEncodedSave } from "./restore.ts";
 export type {
   DiffCommitsInput,
@@ -52,9 +52,9 @@ export type {
   HistoryResult,
   InitSaveHistoryInput,
   InitSaveHistoryResult,
-  LocalHistoryApiProcess,
-  LocalHistoryApiProcessEvent,
-  LocalHistoryApiProcessFatalError,
+  LocalHistoryWatchProcess,
+  LocalHistoryWatchProcessEvent,
+  LocalHistoryWatchProcessFatalError,
   ObservationTrigger,
   ObserveSaveInput,
   ObserveSaveResult,
@@ -71,7 +71,7 @@ export type {
   SearchSemanticEventsInput,
   SearchSemanticEventsResult,
   SemanticUpdateResult,
-  StartLocalHistoryApiProcessInput,
+  StartLocalHistoryWatchProcessInput,
   WatcherError,
   WatchEventSource,
   WatchEventSourceStartInput,

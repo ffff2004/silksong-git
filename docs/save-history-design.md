@@ -59,7 +59,7 @@ packages/history
   write raw observation commits
   rebuild/query SQLite Semantic Read Model
   restore Encoded Saves
-  start Local History API Process
+  start Local History Watch Process
 
 apps/cli
   parse CLI args
@@ -319,7 +319,7 @@ First-version Project Config fields:
 }
 ```
 
-`localApi.host` is persisted because it is a security-relevant binding constraint. The local API port is a runtime binding, not a Project Config field; it may be assigned dynamically or provided through a process-start override such as a CLI flag, and the running process should report the concrete endpoint it bound to. The port only applies when the Local History API Process starts its optional HTTP Adapter.
+`localApi.host` is persisted because it is a security-relevant binding constraint. The local API port is a runtime binding, not a Project Config field; it may be assigned dynamically or provided through a process-start override such as a CLI flag, and the running process should report the concrete endpoint it bound to. The port only applies when the Local History Watch Process starts its optional HTTP Adapter.
 
 ## Core Module Interface
 
@@ -418,9 +418,9 @@ restoreEncodedSave(
   input: RestoreEncodedSaveInput,
 ): Promise<RestoreEncodedSaveResult>;
 
-startLocalHistoryApiProcess(
-  input: StartLocalHistoryApiProcessInput,
-): Promise<LocalHistoryApiProcess>;
+startLocalHistoryWatchProcess(
+  input: StartLocalHistoryWatchProcessInput,
+): Promise<LocalHistoryWatchProcess>;
 
 interface InitSaveHistoryInput {
   repoPath: string;
@@ -633,9 +633,9 @@ const snapshot = createSemanticSnapshot(parsed, mappingData, {
 
 Rebuilding the Semantic Read Model iterates Raw Save Observation commits from oldest to newest, parses each `decoded-save.json`, creates Semantic Snapshots for recognized schemas, and calls `diffSemanticSnapshots` between adjacent recognized snapshots. Display Semantic Event Filters are applied when querying, not when committing Git history and not inside `packages/core`.
 
-## Local History API Process
+## Local History Watch Process
 
-One Local History API Process owns:
+One Local History Watch Process owns:
 
 ```txt
 watching the Watched Save
@@ -652,15 +652,15 @@ All history writers must acquire one Save History Repository write lock before m
 
 `watch.lock` and `write.lock` have different responsibilities. `watch.lock` prevents a second watcher for the same repository. `write.lock` protects short Git and SQLite write transactions. Offline checkpoint, restore, and rebuild commands may run while the watcher is active, but they must acquire `write.lock` and serialize with watcher observations.
 
-`startLocalHistoryApiProcess` should read Project Config once at startup and use that config snapshot for the running watcher. Config changes require restarting the watcher to take effect. One-shot Offline Commands continue to read Project Config when they run.
+`startLocalHistoryWatchProcess` should read Project Config once at startup and use that config snapshot for the running watcher. Config changes require restarting the watcher to take effect. One-shot Offline Commands continue to read Project Config when they run.
 
-The Local History API Process produces structured process events from `packages/history`; CLI output is only an Adapter over those events. The process event stream may include the complete `ObserveSaveResult`, while CLI JSON output should use compact stable summaries. Started events should include the repository path, Watched Save path, and Capture Policy snapshot used by the process.
+The Local History Watch Process produces structured process events from `packages/history`; CLI output is only an Adapter over those events. The process event stream may include the complete `ObserveSaveResult`, while CLI JSON output should use compact stable summaries. Started events should include the repository path, Watched Save path, and Capture Policy snapshot used by the process.
 
 The process shuts down gracefully. Shutdown stops accepting new file events, cancels pending debounce/stability work when no observation has started, waits for any running observation to finish, releases `watch.lock`, and emits a stopped event. It does not hard-cancel an observation that may be mutating Git or SQLite.
 
-Local HTTP endpoints are thin Adapters over `packages/history`. They should call history functions and should not directly query SQLite or run Git operations. In the first version, `watch start` does not expose HTTP by default; `watch start --http` enables the HTTP Adapter inside the same Local History API Process. Enabling HTTP must not create a second history writer.
+Local HTTP endpoints are thin Adapters over `packages/history`. They should call history functions and should not directly query SQLite or run Git operations. In the first version, `watch start` does not expose HTTP by default; `watch start --http` enables the HTTP Adapter inside the same Local History Watch Process. Enabling HTTP must not create a second history writer.
 
-The Web UI frontend is a client of these endpoints. Serving the frontend is not part of the single-writer invariant: implementation and debugging can use Vite, and a later release can add static hosting or a small frontend-serving process without changing the Local History API Process contract.
+The Web UI frontend is a client of these endpoints. Serving the frontend is not part of the single-writer invariant: implementation and debugging can use Vite, and a later release can add static hosting or a small frontend-serving process without changing the Local History Watch Process contract.
 
 CLI history/diff/search/restore commands can also run as Offline Commands that read the Save History Repository and Semantic Read Model directly through `packages/history`.
 
@@ -670,19 +670,19 @@ ADR-0010 decides that the first CLI is object-grouped and lifecycle-oriented. Th
 
 First-version commands:
 
-| Group     | Action       | User-facing object        | Responsibility                                                                                  |
-| --------- | ------------ | ------------------------- | ----------------------------------------------------------------------------------------------- |
-| `repo`    | `init`       | Save History Repository   | Create a single-save Save History Repository and Project Config.                                |
-| `save`    | `decode`     | Encoded Save              | Decode one save to raw Decoded Save JSON for debugging.                                         |
-| `save`    | `snapshot`   | Encoded Save              | Decode and map one save without writing Git history.                                            |
-| `watch`   | `start`      | Local History API Process | Start watching the Watched Save, updating history, and optionally serving local HTTP endpoints. |
-| `history` | `list`       | Semantic Events           | Show Semantic Event history.                                                                    |
-| `history` | `diff`       | Semantic Snapshots/Events | Compare two commits through Semantic Snapshots.                                                 |
-| `history` | `search`     | Semantic Events           | Find events and corresponding commits.                                                          |
-| `history` | `checkpoint` | Raw Save Observation      | Commit the current Watched Save as a manual checkpoint.                                         |
-| `history` | `restore`    | Encoded Save restore      | Write a commit's `save.dat` to an explicit Restore Target.                                      |
-| `history` | `rebuild`    | Semantic Read Model       | Rebuild the SQLite Semantic Read Model from Git raw observations.                               |
-| `ui`      | `open`       | Web UI client             | Open the Web UI client and connect it to a local endpoint when available.                       |
+| Group     | Action       | User-facing object          | Responsibility                                                                                  |
+| --------- | ------------ | --------------------------- | ----------------------------------------------------------------------------------------------- |
+| `repo`    | `init`       | Save History Repository     | Create a single-save Save History Repository and Project Config.                                |
+| `save`    | `decode`     | Encoded Save                | Decode one save to raw Decoded Save JSON for debugging.                                         |
+| `save`    | `snapshot`   | Encoded Save                | Decode and map one save without writing Git history.                                            |
+| `watch`   | `start`      | Local History Watch Process | Start watching the Watched Save, updating history, and optionally serving local HTTP endpoints. |
+| `history` | `list`       | Semantic Events             | Show Semantic Event history.                                                                    |
+| `history` | `diff`       | Semantic Snapshots/Events   | Compare two commits through Semantic Snapshots.                                                 |
+| `history` | `search`     | Semantic Events             | Find events and corresponding commits.                                                          |
+| `history` | `checkpoint` | Raw Save Observation        | Commit the current Watched Save as a manual checkpoint.                                         |
+| `history` | `restore`    | Encoded Save restore        | Write a commit's `save.dat` to an explicit Restore Target.                                      |
+| `history` | `rebuild`    | Semantic Read Model         | Rebuild the SQLite Semantic Read Model from Git raw observations.                               |
+| `ui`      | `open`       | Web UI client               | Open the Web UI client and connect it to a local endpoint when available.                       |
 
 First-version command forms:
 
@@ -728,7 +728,7 @@ Default command output is human-readable text. `--json` provides stable machine-
   also call parseDecodedSave and report whether the decoded shape is recognized
 ```
 
-`watch start` starts the long-running Local History API Process for one Save History Repository. By default it watches the Watched Save, commits stable Raw Save Observations according to Capture Policy, updates the Semantic Read Model, reports status in terminal output, and shuts down cleanly on process termination. The default human-readable runtime log is diagnostic output and should be written to stderr; it is not a byte-stable scripting contract. `--jsonl` writes one stable machine-readable status event per line to stdout. `--http` enables the local HTTP Adapter inside that same process so the Web UI can connect to history workflows. `--port <port>` chooses the runtime local API port when HTTP is enabled; if omitted, the process may choose an available port and must report the concrete endpoint. The HTTP host comes from Project Config `localApi.host`.
+`watch start` starts the long-running Local History Watch Process for one Save History Repository. By default it watches the Watched Save, commits stable Raw Save Observations according to Capture Policy, updates the Semantic Read Model, reports status in terminal output, and shuts down cleanly on process termination. The default human-readable runtime log is diagnostic output and should be written to stderr; it is not a byte-stable scripting contract. `--jsonl` writes one stable machine-readable status event per line to stdout. `--http` enables the local HTTP Adapter inside that same process so the Web UI can connect to history workflows. `--port <port>` chooses the runtime local API port when HTTP is enabled; if omitted, the process may choose an available port and must report the concrete endpoint. The HTTP host comes from Project Config `localApi.host`.
 
 `watch start` supports:
 
@@ -863,16 +863,16 @@ When `--repo` is provided, it always wins over cwd discovery. Cwd discovery walk
 
 Commands should make side effects visible in their names, arguments, and confirmation behavior:
 
-| Safety class           | Commands                                                                         | Requirements                                                                                                                                     |
-| ---------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Read-only              | `save decode`, `save snapshot`, `history list`, `history diff`, `history search` | No writes to Git, SQLite, or user save files.                                                                                                    |
-| Debug file write       | `save decode --out <decoded-save.json>`                                          | Writes only the explicit Decoded Save output path.                                                                                               |
-| Repository creation    | `repo init`                                                                      | Requires explicit `--save` and `--repo`.                                                                                                         |
-| Raw observation write  | `history checkpoint`                                                             | Writes Git raw-observation artifacts and may update SQLite; bypasses minimum-interval suppression but not decode failure or repository locking.  |
-| Read-model mutation    | `history rebuild`                                                                | May rewrite the SQLite Semantic Read Model; does not rewrite Git history.                                                                        |
-| Process start          | `watch start`, `ui open`                                                         | `watch start` may start the Local History API Process; `ui open` may open or serve the frontend client without becoming a second history writer. |
-| Filesystem write       | `history restore <commit> --to <path>`                                           | Requires an explicit Restore Target.                                                                                                             |
-| High-risk save rewrite | `history restore <commit> --in-place`                                            | Requires explicit in-place intent and must create a backup before writing.                                                                       |
+| Safety class           | Commands                                                                         | Requirements                                                                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read-only              | `save decode`, `save snapshot`, `history list`, `history diff`, `history search` | No writes to Git, SQLite, or user save files.                                                                                                      |
+| Debug file write       | `save decode --out <decoded-save.json>`                                          | Writes only the explicit Decoded Save output path.                                                                                                 |
+| Repository creation    | `repo init`                                                                      | Requires explicit `--save` and `--repo`.                                                                                                           |
+| Raw observation write  | `history checkpoint`                                                             | Writes Git raw-observation artifacts and may update SQLite; bypasses minimum-interval suppression but not decode failure or repository locking.    |
+| Read-model mutation    | `history rebuild`                                                                | May rewrite the SQLite Semantic Read Model; does not rewrite Git history.                                                                          |
+| Process start          | `watch start`, `ui open`                                                         | `watch start` may start the Local History Watch Process; `ui open` may open or serve the frontend client without becoming a second history writer. |
+| Filesystem write       | `history restore <commit> --to <path>`                                           | Requires an explicit Restore Target.                                                                                                               |
+| High-risk save rewrite | `history restore <commit> --in-place`                                            | Requires explicit in-place intent and must create a backup before writing.                                                                         |
 
 ## CLI Error Behavior
 

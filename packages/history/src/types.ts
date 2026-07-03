@@ -161,21 +161,21 @@ export interface SearchSemanticEventsResult {
   readonly events: readonly HistoricalSemanticEvent[];
 }
 
-export interface StartLocalHistoryApiProcessInput {
+export interface StartLocalHistoryWatchProcessInput {
   readonly repoPath: string;
   readonly watchEventSource?: WatchEventSource;
   readonly watchScheduler?: WatchScheduler;
   readonly fileStabilityProbe?: FileStabilityProbe;
-  readonly onEvent?: (event: LocalHistoryApiProcessEvent) => void;
+  readonly onEvent?: (event: LocalHistoryWatchProcessEvent) => void;
   readonly now?: () => Date;
 }
 
-export interface LocalHistoryApiProcess {
+export interface LocalHistoryWatchProcess {
   readonly repoPath: string;
   stop: () => void | Promise<void>;
 }
 
-export type LocalHistoryApiProcessEvent =
+export type LocalHistoryWatchProcessEvent =
   | {
       readonly type: "started";
       readonly repoPath: string;
@@ -191,7 +191,7 @@ export type LocalHistoryApiProcessEvent =
   | {
       readonly type: "fatalError";
       readonly repoPath: string;
-      readonly error: LocalHistoryApiProcessFatalError;
+      readonly error: LocalHistoryWatchProcessFatalError;
     }
   | {
       readonly type: "stopping";
@@ -202,7 +202,7 @@ export type LocalHistoryApiProcessEvent =
       readonly repoPath: string;
     };
 
-export interface LocalHistoryApiProcessFatalError {
+export interface LocalHistoryWatchProcessFatalError {
   readonly message: string;
   readonly reason: "watchBackendFailure";
 }
