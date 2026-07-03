@@ -857,10 +857,78 @@ Acceptance criteria:
 
 - Watch command behavior matches `docs/save-history-design.md`; that document remains the source for concrete command grammar and flags.
 - The command starts the Local History API Process through `packages/history` without requiring the HTTP Adapter.
-- The process watches the Watched Save, applies debounce/stability handling and Capture Policy, records watcher-triggered Raw Save Observations through `observeSave`, and updates the Semantic Read Model.
-- Watcher lifecycle, repository locking, status output, Watcher Error reporting, and shutdown behavior are documented and tested at the appropriate Interface.
-- The process remains the single owner of watching, history writes, and read-model updates.
-- P5-T5 may reserve `--http` and `--port` as clear usage errors; P5-T6 implements their behavior.
+- The process is a singleton per Save History Repository and holds a long-lived `.silksong-git/watch.lock`; stale locks are not removed automatically, and lock conflicts report diagnostic lock details.
+- The process uses a Project Config snapshot read at startup. Runtime config changes require restarting the watcher; one-shot Offline Commands continue reading current Project Config.
+- The watcher attaches its backend before requesting a synthetic startup observation. Startup skips debounce but still uses stability probing.
+- Real file events use `capturePolicy.debounceWriteMs`, bounded size/mtime stability probing, single-flight observation, and a dirty bit to coalesce event bursts.
+- Watcher observations call the history observation path with trigger `watcher`, record Raw Save Observations through the shared observation implementation, and rely on its incremental Semantic Read Model update instead of running full rebuilds.
+- `minimumCommitIntervalMs <= 0` disables interval suppression. When a watcher observation is skipped by `minimumCommitInterval`, the result includes the next allowed time, and the watcher keeps one deferred observation timer that skips debounce but still probes stability before reading the current Watched Save.
+- Watcher Error reporting distinguishes save read/decode/stability problems, which do not stop the process, from watch backend or process ownership failures, which are fatal process errors.
+- Watcher lifecycle and shutdown are graceful: pending timers can be canceled, running observations are allowed to finish, `watch.lock` is released, and stopped status is emitted.
+- `packages/history` exposes structured Local History API Process events; CLI rendering is an Adapter over those events.
+- `watch start --jsonl` emits compact stable JSON Lines status events to stdout. Default human-readable runtime logs go to stderr and are not byte-stable.
+- CLI output stream failure gracefully stops the watcher and exits as a failure.
+- The process remains the single owner of watching while allowing checkpoint, restore, and rebuild Offline Commands to serialize with watcher writes through `write.lock`.
+- P5-T5 registers `--http` and `--port` as clear usage errors; P5-T6 implements their behavior.
+
+TDD Vertical Slices:
+
+- [ ] `observeSave` minimum-interval skip returns `nextAllowedAt`
+  - Public call: `observeSave`.
+  - Assert: watcher-triggered observation inside `minCommitIntervalMs` returns `skipped` with reason `minimumCommitInterval`, `encodedSha256`, and `nextAllowedAt`.
+  - Other information: `minimumCommitIntervalMs <= 0` disables the skip path; manual checkpoint remains outside minimum-interval suppression.
+- [ ] Refactor observation internals to support a Project Config snapshot
+  - Public call: existing `observeSave` tests and CLI checkpoint tests.
+  - Assert: existing public behavior remains green with no new behavior test for the internal helper.
+  - Other information: this is a GREEN-state preparatory refactor. Public `observeSave` still reads current Project Config and acquires `write.lock`; the watcher runtime will later call an internal observation helper with the startup config snapshot while holding `write.lock`.
+- [ ] Watch process startup tracer bullet
+  - Public call: `startLocalHistoryApiProcess`.
+  - Assert: the process emits `started` with repo path, Watched Save path, and Capture Policy snapshot, then performs a startup observation through the watcher path.
+  - Other information: attach the watch backend before requesting the synthetic startup dirty event; startup skips debounce but still waits for stability.
+- [ ] Watch process stops gracefully
+  - Public call: `startLocalHistoryApiProcess`, then `LocalHistoryApiProcess.stop()`.
+  - Assert: the process emits stopping/stopped events, cancels pending non-started work, allows a running observation to finish, and releases `watch.lock`.
+  - Other information: do not implement hard cancellation of Git or SQLite mutation work.
+- [ ] Watch process is a per-repository singleton
+  - Public call: start two Local History API Processes for the same Save History Repository.
+  - Assert: the second start fails with a process ownership error that reports watch-lock diagnostics; after the first process stops, a new process can start.
+  - Other information: do not auto-remove stale `watch.lock` files.
+- [ ] Watcher observes real file-change events
+  - Public call: `startLocalHistoryApiProcess` with a test watch event source, then public history query/diff Interfaces.
+  - Assert: a file-change event followed by debounce and stability records a watcher-triggered Raw Save Observation and updates the Semantic Read Model.
+  - Other information: tests may inject event source, clock, and timers as system-boundary seams; do not assert private queue or timer internals.
+- [ ] Watcher waits for file stability
+  - Public call: `startLocalHistoryApiProcess` with injected clock/timers.
+  - Assert: changing `size` or `mtimeMs` delays observation until the Watched Save is stable across probes.
+  - Other information: avoid real sleeps.
+- [ ] Stability timeout is nonfatal
+  - Public call: `startLocalHistoryApiProcess`.
+  - Assert: an unstable or unstat-able Watched Save emits a Watcher Error and the process continues to accept later valid file changes.
+  - Other information: extend `WatcherError.reason` with `stabilityTimeout`; ordinary save read/decode/stability problems are not process-fatal.
+- [ ] Watcher coalesces events with single-flight dirty-bit behavior
+  - Public call: `startLocalHistoryApiProcess`.
+  - Assert: event bursts and events arriving during a running observation are coalesced into observation passes over the latest stable Watched Save rather than concurrent observations.
+  - Other information: verify through resulting history/events, not private queue length.
+- [ ] Watcher schedules deferred minimum-interval observations
+  - Public call: `startLocalHistoryApiProcess`.
+  - Assert: a `minimumCommitInterval` skip schedules one deferred observation at `nextAllowedAt`; the deferred observation skips debounce, still probes stability, and reads the current Watched Save.
+  - Other information: if the file returns to the last committed bytes, the deferred observation is skipped as unchanged.
+- [ ] Watcher handles save Watcher Errors without stopping
+  - Public call: `startLocalHistoryApiProcess`.
+  - Assert: startup or runtime decode/read failure emits a Watcher Error and a later valid save change can still be committed.
+  - Other information: process-level failures such as backend failure remain separate fatal errors.
+- [ ] Watch backend failure is fatal
+  - Public call: `startLocalHistoryApiProcess` with a failing watch backend.
+  - Assert: backend startup/runtime failure emits a fatal process error, stops gracefully, and releases `watch.lock`.
+  - Other information: do not model backend failure as a `WatcherError`.
+- [ ] CLI starts watch with JSONL output
+  - Public call: CLI process `watch start --repo <history-repo> --jsonl`.
+  - Assert: stdout emits compact stable JSON Lines status summaries for started and observation events; graceful signal stop exits successfully.
+  - Other information: CLI JSONL should not expose the full `ObserveSaveResult` shape.
+- [ ] CLI default logs and reserved HTTP flags behave correctly
+  - Public call: CLI process.
+  - Assert: default watcher runtime logs go to stderr, stdout is not polluted with human-readable status, and `--http` or `--port` fail clearly without starting the watcher.
+  - Other information: P5-T6 implements the actual HTTP Adapter behavior.
 
 Verification:
 

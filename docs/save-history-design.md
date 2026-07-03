@@ -124,8 +124,9 @@ history-repo/
 The watcher should use this flow:
 
 ```txt
-file changed
-  -> wait for debounce/stability
+file changed or startup observation requested
+  -> wait for debounce when required
+  -> wait for file stability
   -> read bytes
   -> decode Encoded Save
   -> identify/parse Decoded Save
@@ -135,6 +136,12 @@ file changed
 ```
 
 A manual checkpoint uses the same decode, classify, commit, and read-model update behavior, but is triggered by the user instead of the file watcher. It does not wait for watcher debounce and bypasses the minimum commit interval. Committing unchanged bytes still requires explicit user intent.
+
+The watcher attaches its file watch backend before requesting its startup observation, then treats startup as a synthetic dirty event. Startup skips `debounceWriteMs` but still waits for file stability before calling the observation path. Real filesystem events wait for `debounceWriteMs`, then use the same stability check.
+
+File stability is based on the Watched Save being stat-able as a file with unchanged `size` and `mtimeMs` across stability probes. A short internal probe interval is sufficient for the first version; a bounded internal stability timeout prevents one unstable file from blocking the watcher forever. Stability timeout, missing file, and stat/read failures are reported as Watcher Errors and do not stop the process. Watch backend startup or runtime failure is a process-level fatal error.
+
+Filesystem events are not commit units. The watcher uses a single-flight observation loop with a dirty bit: multiple events before stability are coalesced, and events arriving while an observation is running schedule one more observation pass after the current pass finishes. Each observation pass reads the current Watched Save through the history observation path; the watcher does not cache bytes from earlier events.
 
 Decode failure is a Watcher Error and must not be committed. It usually means a half-written file, corrupted input, wrong path, or non-save file.
 
@@ -157,7 +164,9 @@ First-version settings:
 }
 ```
 
-If multiple stable save changes occur inside `minCommitIntervalMs`, only the latest Raw Save Observation is committed. This is an explicit fidelity trade-off: the user gets fewer commits but loses intermediate raw states.
+If multiple stable save changes occur inside `minCommitIntervalMs`, only the latest Raw Save Observation is committed. This is an explicit fidelity trade-off: the user gets fewer commits but loses intermediate raw states. A value less than or equal to zero disables minimum-interval suppression.
+
+When a watcher-triggered observation is skipped by the minimum commit interval, the result should include the next allowed observation time so the watcher can schedule one deferred observation. The deferred observation skips debounce because the interval has already elapsed, but it still waits for file stability and reads the current Watched Save at that time. If the file has returned to the last committed bytes, the deferred observation is skipped as unchanged. The watcher keeps at most one deferred observation timer and merges later file events into the same pending opportunity.
 
 Manual checkpoints always bypass minimum-interval suppression. They do not commit unchanged Encoded Save bytes unless the user explicitly allows unchanged checkpoints. They still must decode successfully, use the same schema handling, and acquire the same repository write lock as watcher observations.
 
@@ -635,9 +644,19 @@ updating SQLite Semantic Read Model
 serving local HTTP endpoints when the HTTP Adapter is enabled
 ```
 
-No second process should independently watch the same save and write Git or SQLite.
+`watch start` is a singleton per Save History Repository. No second process should independently watch the same repository and write Git or SQLite.
+
+The watcher owns a long-lived `.silksong-git/watch.lock` while it is running. The lock file should contain diagnostic JSON such as process id, start time, repository path, Watched Save path, and command name. A lock conflict fails startup with a clear message. The first version should not automatically remove stale watch locks, because cross-platform process identity and PID reuse make automatic cleanup risky.
 
 All history writers must acquire one Save History Repository write lock before mutating Git artifacts or SQLite. This includes watcher observations and manual checkpoints.
+
+`watch.lock` and `write.lock` have different responsibilities. `watch.lock` prevents a second watcher for the same repository. `write.lock` protects short Git and SQLite write transactions. Offline checkpoint, restore, and rebuild commands may run while the watcher is active, but they must acquire `write.lock` and serialize with watcher observations.
+
+`startLocalHistoryApiProcess` should read Project Config once at startup and use that config snapshot for the running watcher. Config changes require restarting the watcher to take effect. One-shot Offline Commands continue to read Project Config when they run.
+
+The Local History API Process produces structured process events from `packages/history`; CLI output is only an Adapter over those events. The process event stream may include the complete `ObserveSaveResult`, while CLI JSON output should use compact stable summaries. Started events should include the repository path, Watched Save path, and Capture Policy snapshot used by the process.
+
+The process shuts down gracefully. Shutdown stops accepting new file events, cancels pending debounce/stability work when no observation has started, waits for any running observation to finish, releases `watch.lock`, and emits a stopped event. It does not hard-cancel an observation that may be mutating Git or SQLite.
 
 Local HTTP endpoints are thin Adapters over `packages/history`. They should call history functions and should not directly query SQLite or run Git operations. In the first version, `watch start` does not expose HTTP by default; `watch start --http` enables the HTTP Adapter inside the same Local History API Process. Enabling HTTP must not create a second history writer.
 
@@ -673,7 +692,7 @@ silksong-git repo init --save <save.dat> --repo <history-repo> [--json]
 silksong-git save decode <save.dat> [--out <decoded-save.json>] [--compact] [--schema-check]
 silksong-git save snapshot <save.dat> --json
 
-silksong-git watch start [--repo <history-repo>] [--http] [--port <port>]
+silksong-git watch start [--repo <history-repo>] [--jsonl] [--http] [--port <port>]
 
 silksong-git history list [--repo <history-repo>] [--limit <n>] [--cursor <cursor>] [--include-filtered] [--json]
 silksong-git history diff <from> <to> [--repo <history-repo>] [--include-filtered] [--json]
@@ -709,7 +728,7 @@ Default command output is human-readable text. `--json` provides stable machine-
   also call parseDecodedSave and report whether the decoded shape is recognized
 ```
 
-`watch start` starts the long-running Local History API Process for one Save History Repository. By default it watches the Watched Save, commits stable Raw Save Observations according to Capture Policy, updates the Semantic Read Model, reports status in terminal output, and shuts down cleanly on process termination. `--http` enables the local HTTP Adapter inside that same process so the Web UI can connect to history workflows. `--port <port>` chooses the runtime local API port when HTTP is enabled; if omitted, the process may choose an available port and must report the concrete endpoint. The HTTP host comes from Project Config `localApi.host`.
+`watch start` starts the long-running Local History API Process for one Save History Repository. By default it watches the Watched Save, commits stable Raw Save Observations according to Capture Policy, updates the Semantic Read Model, reports status in terminal output, and shuts down cleanly on process termination. The default human-readable runtime log is diagnostic output and should be written to stderr; it is not a byte-stable scripting contract. `--jsonl` writes one stable machine-readable status event per line to stdout. `--http` enables the local HTTP Adapter inside that same process so the Web UI can connect to history workflows. `--port <port>` chooses the runtime local API port when HTTP is enabled; if omitted, the process may choose an available port and must report the concrete endpoint. The HTTP host comes from Project Config `localApi.host`.
 
 `watch start` supports:
 
@@ -717,12 +736,17 @@ Default command output is human-readable text. `--json` provides stable machine-
 --repo <history-repo>
   optional Save History Repository path; when omitted, repository context is resolved like other repository-scoped commands
 
+--jsonl
+  emit compact stable JSON Lines status events to stdout; default human-readable runtime logs go to stderr
+
 --http
   enable the local HTTP Adapter inside this watch process
 
 --port <port>
   optional runtime local API port; valid only when --http is used
 ```
+
+P5-T5 may register `--http` and `--port` as known flags but should fail clearly when either is used, because the HTTP Adapter is implemented by P5-T6. `--port` without HTTP is invalid. `--jsonl` belongs to P5-T5.
 
 `repo init` supports:
 
