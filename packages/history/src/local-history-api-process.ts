@@ -1,8 +1,12 @@
+import type { Stats } from "node:fs";
 import { watch } from "node:fs";
+import { stat } from "node:fs/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { readProjectConfig } from "./config.ts";
 import { observeSaveUsingConfig } from "./observe-save.ts";
 import type {
+  FileStabilityProbe,
   LocalHistoryApiProcess,
   StartLocalHistoryApiProcessInput,
   WatchEventSource,
@@ -18,6 +22,8 @@ export async function startLocalHistoryApiProcess(
   const config = await readProjectConfig(input.repoPath);
   const emit = input.onEvent ?? (() => undefined);
   const now = input.now?.() ?? new Date();
+  const fileStabilityProbe =
+    input.fileStabilityProbe ?? defaultFileStabilityProbe;
   const watchLock = await acquireWatchLock({
     repoPath: input.repoPath,
     watchedSavePath: config.watchedSavePath,
@@ -30,6 +36,7 @@ export async function startLocalHistoryApiProcess(
     subscription = await watchEventSource.start({
       watchedSavePath: config.watchedSavePath,
       onChange: async () => {
+        await fileStabilityProbe.waitForStableFile(config.watchedSavePath);
         await observeAndEmit("change", input.now?.() ?? new Date());
       },
       onError: () => {
@@ -129,4 +136,29 @@ function handleWatchChange(input: WatchEventSourceStartInput) {
 
 async function runWatchChange(input: WatchEventSourceStartInput) {
   await input.onChange();
+}
+
+const defaultFileStabilityProbe: FileStabilityProbe = {
+  async waitForStableFile(filePath: string) {
+    await waitForStableProbe(filePath, await stat(filePath), 0);
+  },
+};
+
+async function waitForStableProbe(
+  filePath: string,
+  previous: Stats,
+  attempt: number,
+) {
+  if (attempt >= 20) {
+    throw new Error("Watched Save did not become stable.");
+  }
+
+  await sleep(100);
+  const current = await stat(filePath);
+
+  if (current.size === previous.size && current.mtimeMs === previous.mtimeMs) {
+    return;
+  }
+
+  await waitForStableProbe(filePath, current, attempt + 1);
 }

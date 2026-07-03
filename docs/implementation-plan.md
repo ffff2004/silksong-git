@@ -897,7 +897,7 @@ TDD Vertical Slices:
   - Public call: `startLocalHistoryApiProcess` with a test watch event source, then public history query/diff Interfaces.
   - Assert: a file-change event followed by debounce and stability records a watcher-triggered Raw Save Observation and updates the Semantic Read Model.
   - Other information: tests may inject event source, clock, and timers as system-boundary seams; do not assert private queue or timer internals.
-- [ ] Watcher waits for file stability
+- [x] Watcher waits for file stability
   - Public call: `startLocalHistoryApiProcess` with injected clock/timers.
   - Assert: changing `size` or `mtimeMs` delays observation until the Watched Save is stable across probes.
   - Other information: avoid real sleeps.
@@ -940,6 +940,7 @@ Latest slice verification:
 - Watch process stops gracefully: `pnpm --filter @silksong-git/history test`: passed
 - Watch process is a per-repository singleton: `pnpm --filter @silksong-git/history test`: passed
 - Watcher observes real file-change events: `pnpm --filter @silksong-git/history test`: passed
+- Watcher waits for file stability: `pnpm --filter @silksong-git/history test`: passed
 
 Verification:
 

@@ -46,6 +46,7 @@ export { restoreEncodedSave } from "./restore.ts";
 export type {
   DiffCommitsInput,
   DiffCommitsResult,
+  FileStabilityProbe,
   HistoricalSemanticEvent,
   HistoryCommit,
   HistoryResult,

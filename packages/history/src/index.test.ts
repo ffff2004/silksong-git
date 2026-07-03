@@ -27,6 +27,7 @@ import {
   startLocalHistoryApiProcess,
 } from "./index.ts";
 import type {
+  FileStabilityProbe,
   LocalHistoryApiProcessEvent,
   ProjectConfigOverrides,
   WatchEventSource,
@@ -175,6 +176,27 @@ class TestWatchEventSource implements WatchEventSource {
   async emitChange() {
     await this.onChange?.();
   }
+}
+
+interface TestFileStabilityProbe extends FileStabilityProbe {
+  readonly checkedPaths: readonly string[];
+  markStable: () => void;
+}
+
+function createTestFileStabilityProbe(): TestFileStabilityProbe {
+  const checkedPaths: string[] = [];
+  const stable = Promise.withResolvers<undefined>();
+
+  return {
+    checkedPaths,
+    markStable() {
+      stable.resolve(undefined);
+    },
+    async waitForStableFile(filePath: string) {
+      checkedPaths.push(filePath);
+      await stable.promise;
+    },
+  };
 }
 
 test("initSaveHistory creates a Save History Repository project config", async (t) => {
@@ -657,6 +679,52 @@ test("Local History API Process observes file-change events", async (t) => {
     changeObservation.result.observation.encodedSha256,
     startupObservation.result.observation.encodedSha256,
   );
+});
+
+test("Local History API Process waits for file stability before observing changes", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watchEventSource = new TestWatchEventSource();
+  const fileStabilityProbe = createTestFileStabilityProbe();
+  const events: LocalHistoryApiProcessEvent[] = [];
+  const processInput = {
+    repoPath: repo.repoPath,
+    watchEventSource,
+    fileStabilityProbe,
+    onEvent: (event: LocalHistoryApiProcessEvent) => {
+      events.push(event);
+    },
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  };
+  const process = await startLocalHistoryApiProcess(processInput);
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const change = watchEventSource.emitChange();
+  await Promise.resolve();
+
+  assert.deepEqual(fileStabilityProbe.checkedPaths, [repo.watchedSavePath]);
+  assert.equal(
+    events.some(
+      (event) => event.type === "observation" && event.cause === "change",
+    ),
+    false,
+  );
+
+  fileStabilityProbe.markStable();
+  await change;
+
+  const changeObservation = events.find(
+    (
+      event,
+    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
+      event.type === "observation" && event.cause === "change",
+  );
+
+  assert.ok(changeObservation !== undefined);
+  assert.equal(changeObservation.result.status, "committed");
 });
 
 test("observeSave reports decode failures as Watcher Errors without committing", async (t) => {
