@@ -178,34 +178,11 @@ class TestWatchEventSource implements WatchEventSource {
   }
 }
 
-interface TestFileStabilityProbe extends FileStabilityProbe {
-  readonly checkedPaths: readonly string[];
-  markStable: () => void;
-}
-
-function createTestFileStabilityProbe(): TestFileStabilityProbe {
-  const checkedPaths: string[] = [];
-  const stable = Promise.withResolvers<undefined>();
-
-  return {
-    checkedPaths,
-    markStable() {
-      stable.resolve(undefined);
-    },
-    async waitForStableFile(filePath: string) {
-      checkedPaths.push(filePath);
-      await stable.promise;
-    },
-  };
-}
-
 function createFailOnceFileStabilityProbe(): FileStabilityProbe {
   let shouldFail = true;
 
   return {
     waitForStableFile: async () => {
-      await Promise.resolve();
-
       if (!shouldFail) {
         return;
       }
@@ -225,7 +202,6 @@ interface SequencedFileStabilityProbe extends FileStabilityProbe {
 function createSequencedFileStabilityProbe(): SequencedFileStabilityProbe {
   const checkedPaths: string[] = [];
   const stableResolvers: Array<(value: undefined) => void> = [];
-  let nextStableResolverIndex = 0;
   const checkWaiters: Array<{
     readonly count: number;
     readonly resolve: (value: undefined) => void;
@@ -242,13 +218,12 @@ function createSequencedFileStabilityProbe(): SequencedFileStabilityProbe {
   return {
     checkedPaths,
     markStable() {
-      const resolve = stableResolvers[nextStableResolverIndex];
+      const resolve = stableResolvers.shift();
 
       if (resolve === undefined) {
         throw new Error("no pending stability probe");
       }
 
-      nextStableResolverIndex++;
       resolve(undefined);
     },
     async waitForCheckCount(count: number) {
@@ -764,7 +739,7 @@ test("Local History API Process observes file-change events", async (t) => {
 test("Local History API Process waits for file stability before observing changes", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
-  const fileStabilityProbe = createTestFileStabilityProbe();
+  const fileStabilityProbe = createSequencedFileStabilityProbe();
   const events: LocalHistoryApiProcessEvent[] = [];
   const processInput = {
     repoPath: repo.repoPath,
@@ -783,7 +758,7 @@ test("Local History API Process waits for file stability before observing change
 
   await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
   const change = watchEventSource.emitChange();
-  await Promise.resolve();
+  await fileStabilityProbe.waitForCheckCount(1);
 
   assert.deepEqual(fileStabilityProbe.checkedPaths, [repo.watchedSavePath]);
   assert.equal(
@@ -886,7 +861,6 @@ test("Local History API Process coalesces change events while an observation is 
     repo.watchedSavePath,
   );
   const secondChange = watchEventSource.emitChange();
-  await Promise.resolve();
 
   assert.deepEqual(fileStabilityProbe.checkedPaths, [repo.watchedSavePath]);
 

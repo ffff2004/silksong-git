@@ -1,4 +1,3 @@
-import type { Stats } from "node:fs";
 import { watch } from "node:fs";
 import { stat } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -182,7 +181,6 @@ function handleWatchChange(input: WatchEventSourceStartInput) {
 
   // Node fs.watch callbacks must return void; route async handler failures to the watch error
   // boundary instead of letting the Promise float.
-  // eslint-disable-next-line unicorn/prefer-await
   change.catch(input.onError);
 }
 
@@ -196,25 +194,22 @@ function getErrorMessage(error: unknown): string {
 
 const defaultFileStabilityProbe: FileStabilityProbe = {
   async waitForStableFile(filePath: string) {
-    await waitForStableProbe(filePath, await stat(filePath), 0);
+    let previous = await stat(filePath);
+
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await sleep(100);
+      const current = await stat(filePath);
+
+      if (
+        current.size === previous.size
+        && current.mtimeMs === previous.mtimeMs
+      ) {
+        return;
+      }
+
+      previous = current;
+    }
+
+    throw new Error("Watched Save did not become stable.");
   },
 };
-
-async function waitForStableProbe(
-  filePath: string,
-  previous: Stats,
-  attempt: number,
-) {
-  if (attempt >= 20) {
-    throw new Error("Watched Save did not become stable.");
-  }
-
-  await sleep(100);
-  const current = await stat(filePath);
-
-  if (current.size === previous.size && current.mtimeMs === previous.mtimeMs) {
-    return;
-  }
-
-  await waitForStableProbe(filePath, current, attempt + 1);
-}

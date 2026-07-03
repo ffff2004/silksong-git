@@ -119,7 +119,7 @@ export async function rebuildSemanticReadModel(
 export async function queryHistory(
   input: QueryHistoryInput,
 ): Promise<HistoryResult> {
-  return await Promise.resolve(queryReadModelHistory(input.repoPath, input));
+  return await queryReadModelHistory(input.repoPath, input);
 }
 
 export async function diffCommits(
@@ -131,5 +131,5 @@ export async function diffCommits(
 export async function searchSemanticEvents(
   input: SearchSemanticEventsInput,
 ): Promise<SearchSemanticEventsResult> {
-  return await Promise.resolve(searchReadModelEvents(input.repoPath, input));
+  return await searchReadModelEvents(input.repoPath, input);
 }
