@@ -889,7 +889,7 @@ TDD Vertical Slices:
   - Public call: `startLocalHistoryApiProcess`, then `LocalHistoryApiProcess.stop()`.
   - Assert: the process emits stopping/stopped events, cancels pending non-started work, allows a running observation to finish, and releases `watch.lock`.
   - Other information: do not implement hard cancellation of Git or SQLite mutation work.
-- [ ] Watch process is a per-repository singleton
+- [x] Watch process is a per-repository singleton
   - Public call: start two Local History API Processes for the same Save History Repository.
   - Assert: the second start fails with a process ownership error that reports watch-lock diagnostics; after the first process stops, a new process can start.
   - Other information: do not auto-remove stale `watch.lock` files.
@@ -938,6 +938,7 @@ Latest slice verification:
   - `pnpm --filter @silksong-git/cli test`: passed
 - Watch process startup tracer bullet: `pnpm --filter @silksong-git/history test`: passed
 - Watch process stops gracefully: `pnpm --filter @silksong-git/history test`: passed
+- Watch process is a per-repository singleton: `pnpm --filter @silksong-git/history test`: passed
 
 Verification:
 

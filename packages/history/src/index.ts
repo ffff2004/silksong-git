@@ -32,6 +32,7 @@ import { withHistoryWriteLock } from "./write-lock.ts";
 export {
   InvalidCommitRefError,
   InvalidRestoreBackupDirectoryError,
+  LocalHistoryApiProcessAlreadyRunningError,
   ReadModelUnavailableError,
   RestoreBackupFailedError,
   RestoreTargetExistsError,

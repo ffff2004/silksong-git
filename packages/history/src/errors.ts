@@ -1,5 +1,6 @@
 export { InvalidCommitRefError } from "./errors/invalid-commit-ref-error.ts";
 export { InvalidRestoreBackupDirectoryError } from "./errors/invalid-restore-backup-directory-error.ts";
+export { LocalHistoryApiProcessAlreadyRunningError } from "./errors/local-history-api-process-already-running-error.ts";
 export { ReadModelUnavailableError } from "./errors/read-model-unavailable-error.ts";
 export { RestoreBackupFailedError } from "./errors/restore-backup-failed-error.ts";
 export { RestoreTargetExistsError } from "./errors/restore-target-exists-error.ts";

@@ -17,6 +17,7 @@ import {
   diffCommits,
   initSaveHistory,
   InvalidRestoreBackupDirectoryError,
+  LocalHistoryApiProcessAlreadyRunningError,
   observeSave,
   queryHistory,
   rebuildSemanticReadModel,
@@ -553,6 +554,54 @@ test("Local History API Process stops the watch subscription gracefully", async 
   assert.equal(watchEventSource.stopCount, 1);
   assert.equal(events.at(-2)?.type, "stopping");
   assert.equal(events.at(-1)?.type, "stopped");
+});
+
+test("Local History API Process is a singleton per Save History Repository", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const firstWatchEventSource = new TestWatchEventSource();
+  const secondWatchEventSource = new TestWatchEventSource();
+  const firstProcess = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource: firstWatchEventSource,
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  t.after(async () => {
+    await firstProcess.stop();
+  });
+
+  await assert.rejects(
+    async () =>
+      await startLocalHistoryApiProcess({
+        repoPath: repo.repoPath,
+        watchEventSource: secondWatchEventSource,
+        now: () => new Date("2026-06-30T12:01:00.000Z"),
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof LocalHistoryApiProcessAlreadyRunningError);
+      assert.equal(
+        error.lockPath,
+        path.join(repo.repoPath, ".silksong-git/watch.lock"),
+      );
+      assert.ok(error.lockInfo !== undefined);
+      assert.equal(error.lockInfo.repoPath, repo.repoPath);
+      assert.equal(error.lockInfo.watchedSavePath, repo.watchedSavePath);
+      assert.equal(error.lockInfo.startedAt, "2026-06-30T12:00:00.000Z");
+      assert.equal(secondWatchEventSource.startedWith, undefined);
+
+      return true;
+    },
+  );
+
+  await firstProcess.stop();
+
+  const thirdProcess = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource: new TestWatchEventSource(),
+    now: () => new Date("2026-06-30T12:02:00.000Z"),
+  });
+
+  await thirdProcess.stop();
 });
 
 test("observeSave reports decode failures as Watcher Errors without committing", async (t) => {

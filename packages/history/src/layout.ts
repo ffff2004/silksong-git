@@ -15,6 +15,7 @@ export const trackedRawObservationPaths = [
 const ignoredRuntimeArtifactPaths = [
   ".silksong-git/read-model.sqlite",
   ".silksong-git/write.lock",
+  ".silksong-git/watch.lock",
 ] as const;
 
 export const defaultGitignoreContent = `${ignoredRuntimeArtifactPaths.join("\n")}\n`;
@@ -24,6 +25,7 @@ interface RepositoryLayout {
   readonly configPath: string;
   readonly readModelPath: string;
   readonly writeLockPath: string;
+  readonly watchLockPath: string;
   readonly gitignorePath: string;
   readonly encodedSavePath: string;
   readonly decodedSavePath: string;
@@ -38,6 +40,7 @@ export function getRepositoryLayout(repoPath: string): RepositoryLayout {
     configPath: path.join(silksongGitDirectory, "config.json"),
     readModelPath: path.join(silksongGitDirectory, "read-model.sqlite"),
     writeLockPath: path.join(silksongGitDirectory, "write.lock"),
+    watchLockPath: path.join(silksongGitDirectory, "watch.lock"),
     gitignorePath: path.join(repoPath, ".gitignore"),
     encodedSavePath: path.join(repoPath, encodedSaveArtifactPath),
     decodedSavePath: path.join(repoPath, decodedSaveArtifactPath),
