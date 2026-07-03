@@ -2,9 +2,6 @@
   "name": "@silksong-git/cli",
   "private": true,
   "type": "module",
-  "bin": {
-    "silksong-git": "./src/main.ts"
-  },
   "scripts": {
     "format": "tsx ../../scripts/format.ts apps/cli",
     "lint": "tsx ../../scripts/lint.ts apps/cli",
