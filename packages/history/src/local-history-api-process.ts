@@ -31,30 +31,17 @@ export async function startLocalHistoryApiProcess(
   });
   const watchEventSource = input.watchEventSource ?? nodeWatchEventSource;
   let subscription: WatchEventSubscription | undefined;
+  let changeLoop: Promise<void> | undefined;
+  const changeState = {
+    dirty: false,
+  };
+  let stopped = false;
 
   try {
     subscription = await watchEventSource.start({
       watchedSavePath: config.watchedSavePath,
       onChange: async () => {
-        try {
-          await fileStabilityProbe.waitForStableFile(config.watchedSavePath);
-        } catch (error) {
-          emit({
-            type: "observation",
-            repoPath: input.repoPath,
-            cause: "change",
-            result: {
-              status: "watcherError",
-              error: {
-                message: getErrorMessage(error),
-                reason: "stabilityTimeout",
-              },
-            },
-          });
-          return;
-        }
-
-        await observeAndEmit("change", input.now?.() ?? new Date());
+        await handleChangeEvent();
       },
       onError: () => {
         // Later P5-T5 slices classify backend errors as fatal process errors.
@@ -78,8 +65,6 @@ export async function startLocalHistoryApiProcess(
 
     throw error;
   }
-
-  let stopped = false;
 
   return {
     repoPath: input.repoPath,
@@ -123,6 +108,56 @@ export async function startLocalHistoryApiProcess(
       cause,
       result,
     });
+  }
+
+  async function handleChangeEvent() {
+    if (changeLoop !== undefined) {
+      changeState.dirty = true;
+      return;
+    }
+
+    changeLoop = runChangeLoop();
+
+    try {
+      await changeLoop;
+    } finally {
+      changeLoop = undefined;
+    }
+  }
+
+  async function runChangeLoop() {
+    changeState.dirty = false;
+    await observeStableChange();
+
+    if (isChangeDirty()) {
+      await runChangeLoop();
+    }
+  }
+
+  function isChangeDirty(): boolean {
+    return changeState.dirty;
+  }
+
+  async function observeStableChange() {
+    try {
+      await fileStabilityProbe.waitForStableFile(config.watchedSavePath);
+    } catch (error) {
+      emit({
+        type: "observation",
+        repoPath: input.repoPath,
+        cause: "change",
+        result: {
+          status: "watcherError",
+          error: {
+            message: getErrorMessage(error),
+            reason: "stabilityTimeout",
+          },
+        },
+      });
+      return;
+    }
+
+    await observeAndEmit("change", input.now?.() ?? new Date());
   }
 }
 

@@ -905,7 +905,7 @@ TDD Vertical Slices:
   - Public call: `startLocalHistoryApiProcess`.
   - Assert: an unstable or unstat-able Watched Save emits a Watcher Error and the process continues to accept later valid file changes.
   - Other information: extend `WatcherError.reason` with `stabilityTimeout`; ordinary save read/decode/stability problems are not process-fatal.
-- [ ] Watcher coalesces events with single-flight dirty-bit behavior
+- [x] Watcher coalesces events with single-flight dirty-bit behavior
   - Public call: `startLocalHistoryApiProcess`.
   - Assert: event bursts and events arriving during a running observation are coalesced into observation passes over the latest stable Watched Save rather than concurrent observations.
   - Other information: verify through resulting history/events, not private queue length.
@@ -942,6 +942,7 @@ Latest slice verification:
 - Watcher observes real file-change events: `pnpm --filter @silksong-git/history test`: passed
 - Watcher waits for file stability: `pnpm --filter @silksong-git/history test`: passed
 - Stability timeout is nonfatal: `pnpm --filter @silksong-git/history test`: passed
+- Watcher coalesces events with single-flight dirty-bit behavior: `pnpm --filter @silksong-git/history test`: passed
 
 Verification:
 

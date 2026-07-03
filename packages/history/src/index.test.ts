@@ -216,6 +216,67 @@ function createFailOnceFileStabilityProbe(): FileStabilityProbe {
   };
 }
 
+interface SequencedFileStabilityProbe extends FileStabilityProbe {
+  readonly checkedPaths: readonly string[];
+  markStable: () => void;
+  waitForCheckCount: (count: number) => Promise<void>;
+}
+
+function createSequencedFileStabilityProbe(): SequencedFileStabilityProbe {
+  const checkedPaths: string[] = [];
+  const stableResolvers: Array<(value: undefined) => void> = [];
+  let nextStableResolverIndex = 0;
+  const checkWaiters: Array<{
+    readonly count: number;
+    readonly resolve: (value: undefined) => void;
+  }> = [];
+
+  function notifyCheckWaiters() {
+    for (const waiter of checkWaiters) {
+      if (checkedPaths.length >= waiter.count) {
+        waiter.resolve(undefined);
+      }
+    }
+  }
+
+  return {
+    checkedPaths,
+    markStable() {
+      const resolve = stableResolvers[nextStableResolverIndex];
+
+      if (resolve === undefined) {
+        throw new Error("no pending stability probe");
+      }
+
+      nextStableResolverIndex++;
+      resolve(undefined);
+    },
+    async waitForCheckCount(count: number) {
+      if (checkedPaths.length >= count) {
+        return;
+      }
+
+      const waiter = Promise.withResolvers<undefined>();
+
+      checkWaiters.push({
+        count,
+        resolve: waiter.resolve,
+      });
+
+      await waiter.promise;
+    },
+    async waitForStableFile(filePath: string) {
+      checkedPaths.push(filePath);
+      notifyCheckWaiters();
+      const stable = Promise.withResolvers<undefined>();
+
+      stableResolvers.push(stable.resolve);
+
+      await stable.promise;
+    },
+  };
+}
+
 test("initSaveHistory creates a Save History Repository project config", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
@@ -794,6 +855,56 @@ test("Local History API Process reports stability timeout as a nonfatal Watcher 
     .find((event) => event.result.status === "committed");
 
   assert.ok(committedChange !== undefined);
+  await process.stop();
+});
+
+test("Local History API Process coalesces change events while an observation is running", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watchEventSource = new TestWatchEventSource();
+  const fileStabilityProbe = createSequencedFileStabilityProbe();
+  const events: LocalHistoryApiProcessEvent[] = [];
+  const process = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    fileStabilityProbe,
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const firstChange = watchEventSource.emitChange();
+  await fileStabilityProbe.waitForCheckCount(1);
+
+  await copyFile(
+    maskShard2CollectedRosariesEncodedSavePath,
+    repo.watchedSavePath,
+  );
+  const secondChange = watchEventSource.emitChange();
+  await Promise.resolve();
+
+  assert.deepEqual(fileStabilityProbe.checkedPaths, [repo.watchedSavePath]);
+
+  fileStabilityProbe.markStable();
+  await fileStabilityProbe.waitForCheckCount(2);
+  fileStabilityProbe.markStable();
+  await Promise.all([firstChange, secondChange]);
+
+  const changeObservations = events.filter(
+    (
+      event,
+    ): event is Extract<LocalHistoryApiProcessEvent, { type: "observation" }> =>
+      event.type === "observation" && event.cause === "change",
+  );
+
+  assert.equal(changeObservations.length, 2);
+  assert.equal(changeObservations[0]?.result.status, "committed");
+  assert.equal(changeObservations[1]?.result.status, "skipped");
   await process.stop();
 });
 
