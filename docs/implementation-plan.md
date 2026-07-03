@@ -881,7 +881,7 @@ TDD Vertical Slices:
   - Public call: existing `observeSave` tests and CLI checkpoint tests.
   - Assert: existing public behavior remains green with no new behavior test for the internal helper.
   - Other information: this is a GREEN-state preparatory refactor. Public `observeSave` still reads current Project Config and acquires `write.lock`; the watcher runtime will later call an internal observation helper with the startup config snapshot while holding `write.lock`.
-- [ ] Watch process startup tracer bullet
+- [x] Watch process startup tracer bullet
   - Public call: `startLocalHistoryApiProcess`.
   - Assert: the process emits `started` with repo path, Watched Save path, and Capture Policy snapshot, then performs a startup observation through the watcher path.
   - Other information: attach the watch backend before requesting the synthetic startup dirty event; startup skips debounce but still waits for stability.
@@ -936,6 +936,7 @@ Latest slice verification:
 - Refactor observation internals to support a Project Config snapshot:
   - `pnpm --filter @silksong-git/history test`: passed
   - `pnpm --filter @silksong-git/cli test`: passed
+- Watch process startup tracer bullet: `pnpm --filter @silksong-git/history test`: passed
 
 Verification:
 

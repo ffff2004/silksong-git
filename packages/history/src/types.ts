@@ -161,6 +161,48 @@ export interface SearchSemanticEventsResult {
   readonly events: readonly HistoricalSemanticEvent[];
 }
 
+export interface StartLocalHistoryApiProcessInput {
+  readonly repoPath: string;
+  readonly watchEventSource?: WatchEventSource;
+  readonly onEvent?: (event: LocalHistoryApiProcessEvent) => void;
+  readonly now?: () => Date;
+}
+
+export interface LocalHistoryApiProcess {
+  readonly repoPath: string;
+  stop: () => void | Promise<void>;
+}
+
+export type LocalHistoryApiProcessEvent =
+  | {
+      readonly type: "started";
+      readonly repoPath: string;
+      readonly watchedSavePath: string;
+      readonly capturePolicy: ProjectConfig["capturePolicy"];
+    }
+  | {
+      readonly type: "observation";
+      readonly repoPath: string;
+      readonly cause: "startup" | "change" | "deferred";
+      readonly result: ObserveSaveResult;
+    };
+
+export interface WatchEventSource {
+  start: (
+    input: WatchEventSourceStartInput,
+  ) => WatchEventSubscription | Promise<WatchEventSubscription>;
+}
+
+export interface WatchEventSourceStartInput {
+  readonly watchedSavePath: string;
+  readonly onChange: () => void;
+  readonly onError: (error: unknown) => void;
+}
+
+export interface WatchEventSubscription {
+  stop: () => void | Promise<void>;
+}
+
 export interface WatcherError {
   readonly message: string;
   readonly reason: "decodeFailure" | "readFailure";

@@ -23,8 +23,15 @@ import {
   restoreEncodedSave,
   RestoreTargetExistsError,
   searchSemanticEvents,
+  startLocalHistoryApiProcess,
 } from "./index.ts";
-import type { ProjectConfigOverrides } from "./types.ts";
+import type {
+  LocalHistoryApiProcessEvent,
+  ProjectConfigOverrides,
+  WatchEventSource,
+  WatchEventSourceStartInput,
+  WatchEventSubscription,
+} from "./types.ts";
 
 const fixtureDirectory = path.join(
   import.meta.dirname,
@@ -145,6 +152,21 @@ async function observeFixtureSequence(
     ...repo,
     observations,
   };
+}
+
+class TestWatchEventSource implements WatchEventSource {
+  startedWith?: WatchEventSourceStartInput;
+  stopCount = 0;
+
+  start(input: WatchEventSourceStartInput): WatchEventSubscription {
+    this.startedWith = input;
+
+    return {
+      stop: () => {
+        this.stopCount++;
+      },
+    };
+  }
 }
 
 test("initSaveHistory creates a Save History Repository project config", async (t) => {
@@ -461,6 +483,55 @@ test("history write lock serializes concurrent observations", async (t) => {
   assert.ok(skippedResult !== undefined);
   assert.equal(skippedResult.status, "skipped");
   assert.equal(skippedResult.reason, "unchanged");
+});
+
+test("startLocalHistoryApiProcess emits started and performs a startup observation", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: {
+      debounceWriteMs: 250,
+      minCommitIntervalMs: 0,
+    },
+  });
+  const watchEventSource = new TestWatchEventSource();
+  const events: LocalHistoryApiProcessEvent[] = [];
+
+  const process = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  assert.equal(
+    watchEventSource.startedWith?.watchedSavePath,
+    repo.watchedSavePath,
+  );
+  assert.equal(events.length, 2);
+  const [startedEvent, observationEvent] = events;
+
+  assert.ok(startedEvent !== undefined);
+  assert.equal(startedEvent.type, "started");
+  assert.equal(startedEvent.repoPath, repo.repoPath);
+  assert.equal(startedEvent.watchedSavePath, repo.watchedSavePath);
+  assert.deepEqual(startedEvent.capturePolicy, {
+    debounceWriteMs: 250,
+    minCommitIntervalMs: 0,
+  });
+  assert.ok(observationEvent !== undefined);
+  assert.equal(observationEvent.type, "observation");
+  assert.equal(observationEvent.cause, "startup");
+  assert.equal(observationEvent.result.status, "committed");
+  assert.equal(observationEvent.result.observation.trigger, "watcher");
+  assert.equal(
+    observationEvent.result.observation.observedAt,
+    "2026-06-30T12:00:00.000Z",
+  );
 });
 
 test("observeSave reports decode failures as Watcher Errors without committing", async (t) => {
