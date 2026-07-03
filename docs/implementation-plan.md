@@ -917,7 +917,7 @@ TDD Vertical Slices:
   - Public call: `startLocalHistoryApiProcess`.
   - Assert: startup or runtime decode/read failure emits a Watcher Error and a later valid save change can still be committed.
   - Other information: process-level failures such as backend failure remain separate fatal errors.
-- [ ] Watch backend failure is fatal
+- [x] Watch backend failure is fatal
   - Public call: `startLocalHistoryApiProcess` with a failing watch backend.
   - Assert: backend startup/runtime failure emits a fatal process error, stops gracefully, and releases `watch.lock`.
   - Other information: do not model backend failure as a `WatcherError`.
@@ -950,6 +950,11 @@ Latest slice verification:
   - `pnpm --filter @silksong-git/history test`: passed
 - Watcher handles save Watcher Errors without stopping:
   - RED: `pnpm --filter @silksong-git/history test`: failed as expected before implementation; save read failure rejected the change handler.
+  - `pnpm --filter @silksong-git/history format`: passed
+  - `pnpm --filter @silksong-git/history lint`: passed
+  - `pnpm --filter @silksong-git/history test`: passed
+- Watch backend failure is fatal:
+  - RED: `pnpm --filter @silksong-git/history test`: failed as expected before implementation; backend runtime failure emitted no fatal event.
   - `pnpm --filter @silksong-git/history format`: passed
   - `pnpm --filter @silksong-git/history lint`: passed
   - `pnpm --filter @silksong-git/history test`: passed

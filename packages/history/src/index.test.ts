@@ -159,6 +159,7 @@ async function observeFixtureSequence(
 
 class TestWatchEventSource implements WatchEventSource {
   private onChange?: () => void | Promise<void>;
+  private onError?: (error: unknown) => void | Promise<void>;
 
   startedWith?: WatchEventSourceStartInput;
   stopCount = 0;
@@ -166,6 +167,7 @@ class TestWatchEventSource implements WatchEventSource {
   start(input: WatchEventSourceStartInput): WatchEventSubscription {
     this.startedWith = input;
     this.onChange = input.onChange;
+    this.onError = input.onError;
 
     return {
       stop: () => {
@@ -176,6 +178,10 @@ class TestWatchEventSource implements WatchEventSource {
 
   async emitChange() {
     await this.onChange?.();
+  }
+
+  async emitError(error: unknown) {
+    await this.onError?.(error);
   }
 }
 
@@ -1038,6 +1044,41 @@ test("Local History API Process reports save read failures as nonfatal Watcher E
 
   assert.ok(committedChange !== undefined);
   await process.stop();
+});
+
+test("Local History API Process treats watch backend runtime failure as fatal", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watchEventSource = new TestWatchEventSource();
+  const events: LocalHistoryApiProcessEvent[] = [];
+  const process = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  await watchEventSource.emitError(new Error("watch backend failed"));
+
+  const fatalEvent = events.find((event) => event.type === "fatalError");
+
+  assert.ok(fatalEvent !== undefined);
+  assert.equal(fatalEvent.error.reason, "watchBackendFailure");
+  assert.equal(fatalEvent.error.message, "watch backend failed");
+  assert.equal(events.at(-1)?.type, "stopped");
+
+  const nextProcess = await startLocalHistoryApiProcess({
+    repoPath: repo.repoPath,
+    watchEventSource: new TestWatchEventSource(),
+    now: () => new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  await nextProcess.stop();
 });
 
 test("observeSave reports decode failures as Watcher Errors without committing", async (t) => {

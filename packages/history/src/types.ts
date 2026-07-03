@@ -189,6 +189,11 @@ export type LocalHistoryApiProcessEvent =
       readonly result: ObserveSaveResult;
     }
   | {
+      readonly type: "fatalError";
+      readonly repoPath: string;
+      readonly error: LocalHistoryApiProcessFatalError;
+    }
+  | {
       readonly type: "stopping";
       readonly repoPath: string;
     }
@@ -196,6 +201,11 @@ export type LocalHistoryApiProcessEvent =
       readonly type: "stopped";
       readonly repoPath: string;
     };
+
+export interface LocalHistoryApiProcessFatalError {
+  readonly message: string;
+  readonly reason: "watchBackendFailure";
+}
 
 export interface WatchEventSource {
   start: (
@@ -206,7 +216,7 @@ export interface WatchEventSource {
 export interface WatchEventSourceStartInput {
   readonly watchedSavePath: string;
   readonly onChange: () => void | Promise<void>;
-  readonly onError: (error: unknown) => void;
+  readonly onError: (error: unknown) => void | Promise<void>;
 }
 
 export interface WatchEventSubscription {

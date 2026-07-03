@@ -54,6 +54,7 @@ export type {
   InitSaveHistoryResult,
   LocalHistoryApiProcess,
   LocalHistoryApiProcessEvent,
+  LocalHistoryApiProcessFatalError,
   ObservationTrigger,
   ObserveSaveInput,
   ObserveSaveResult,

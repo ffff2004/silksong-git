@@ -47,8 +47,8 @@ export async function startLocalHistoryApiProcess(
       onChange: async () => {
         await handleChangeEvent();
       },
-      onError: () => {
-        // Later P5-T5 slices classify backend errors as fatal process errors.
+      onError: async (error) => {
+        await handleFatalWatchBackendError(error);
       },
     });
 
@@ -75,25 +75,49 @@ export async function startLocalHistoryApiProcess(
   return {
     repoPath: input.repoPath,
     async stop() {
-      if (stopped) {
-        return;
-      }
-
-      emit({
-        type: "stopping",
-        repoPath: input.repoPath,
-      });
-      deferredObservationTask?.cancel();
-      deferredObservationTask = undefined;
-      await subscription.stop();
-      await watchLock.release();
-      stopped = true;
-      emit({
-        type: "stopped",
-        repoPath: input.repoPath,
-      });
+      await stopProcess();
     },
   };
+
+  async function handleFatalWatchBackendError(error: unknown) {
+    if (stopped) {
+      return;
+    }
+
+    emit({
+      type: "fatalError",
+      repoPath: input.repoPath,
+      error: {
+        message: getErrorMessage(error),
+        reason: "watchBackendFailure",
+      },
+    });
+
+    await stopProcess();
+  }
+
+  async function stopProcess() {
+    if (stopped) {
+      return;
+    }
+
+    stopped = true;
+    emit({
+      type: "stopping",
+      repoPath: input.repoPath,
+    });
+    deferredObservationTask?.cancel();
+    deferredObservationTask = undefined;
+    if (subscription !== undefined) {
+      await subscription.stop();
+    }
+
+    await watchLock.release();
+    emit({
+      type: "stopped",
+      repoPath: input.repoPath,
+    });
+  }
 
   async function observeAndEmit(
     cause: "startup" | "change" | "deferred",
@@ -201,7 +225,9 @@ const nodeWatchEventSource: WatchEventSource = {
       handleWatchChange(input);
     });
 
-    watcher.on("error", input.onError);
+    watcher.on("error", (error) => {
+      handleWatchError(input, error);
+    });
 
     return {
       stop() {
@@ -216,7 +242,17 @@ function handleWatchChange(input: WatchEventSourceStartInput) {
 
   // Node fs.watch callbacks must return void; route async handler failures to the watch error
   // boundary instead of letting the Promise float.
-  change.catch(input.onError);
+  change.catch((error: unknown) => {
+    handleWatchError(input, error);
+  });
+}
+
+function handleWatchError(input: WatchEventSourceStartInput, error: unknown) {
+  const handledError = input.onError(error);
+
+  if (handledError instanceof Promise) {
+    handledError.catch(() => undefined);
+  }
 }
 
 async function runWatchChange(input: WatchEventSourceStartInput) {
