@@ -925,6 +925,10 @@ TDD Vertical Slices:
   - Public call: CLI process `watch start --repo <history-repo> --jsonl`.
   - Assert: stdout emits compact stable JSON Lines status summaries for started and observation events; graceful signal stop exits successfully.
   - Other information: CLI JSONL should not expose the full `ObserveSaveResult` shape.
+- [x] CLI output stream failure stops the watcher and exits as failure
+  - Public call: CLI process `watch start --repo <history-repo> --jsonl`.
+  - Assert: closing the JSONL output stream before a later watcher event produces a controlled failure, exits nonzero, and releases the watch lock so a new watcher can start.
+  - Other information: treat the output stream as the system boundary; do not assert internal renderer calls.
 - [x] CLI default logs and reserved HTTP flags behave correctly
   - Public call: CLI process.
   - Assert: default watcher runtime logs go to stderr, stdout is not polluted with human-readable status, and `--http` or `--port` fail clearly without starting the watcher.
@@ -960,6 +964,11 @@ Latest slice verification:
   - `pnpm --filter @silksong-git/history test`: passed
 - CLI starts watch with JSONL output:
   - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before implementation; watch JSONL startup event never arrived.
+  - `pnpm --filter @silksong-git/cli format`: passed
+  - `pnpm --filter @silksong-git/cli lint`: passed
+  - `pnpm --filter @silksong-git/cli test`: passed
+- CLI output stream failure stops the watcher and exits as failure:
+  - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before implementation; the CLI emitted an unhandled `EPIPE` stack instead of a controlled watch output failure.
   - `pnpm --filter @silksong-git/cli format`: passed
   - `pnpm --filter @silksong-git/cli lint`: passed
   - `pnpm --filter @silksong-git/cli test`: passed

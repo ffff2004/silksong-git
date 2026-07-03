@@ -39,12 +39,34 @@ async function runWatchStartCommand(options: WatchStartCommandOptions) {
     explicitRepoPath: options.repo,
   });
   const stopped = Promise.withResolvers<undefined>();
-  const emit = createWatchEventRenderer(options);
+  const outputState = {
+    failed: false,
+  };
+  const stopRequest: { stop: () => void } = {
+    stop: () => undefined,
+  };
+  let stopStarted = false;
+  const output = createWatchEventRenderer(options, (target, error) => {
+    if (outputState.failed) {
+      return;
+    }
+
+    outputState.failed = true;
+    process.exitCode = 1;
+
+    if (target !== "stderr") {
+      writeStderrSafely(`watch output failed: ${getErrorMessage(error)}\n`);
+    }
+
+    stopRequest.stop();
+  });
 
   const localHistoryProcess = await startLocalHistoryApiProcess({
     repoPath,
     onEvent: (event) => {
-      emit(event);
+      if (!outputState.failed) {
+        output.render(event);
+      }
 
       if (event.type === "fatalError") {
         process.exitCode = 1;
@@ -54,16 +76,28 @@ async function runWatchStartCommand(options: WatchStartCommandOptions) {
     },
   });
 
-  const stop = () => {
+  stopRequest.stop = stop;
+
+  if (outputState.failed) {
+    stop();
+  }
+
+  function stop() {
     stopProcess().catch((error: unknown) => {
-      process.stderr.write(`watch stop failed: ${getErrorMessage(error)}\n`);
+      writeStderrSafely(`watch stop failed: ${getErrorMessage(error)}\n`);
       process.exitCode = 1;
       stopped.resolve(undefined);
     });
-  };
-  const stopProcess = async () => {
+  }
+
+  async function stopProcess() {
+    if (stopStarted) {
+      return;
+    }
+
+    stopStarted = true;
     await localHistoryProcess.stop();
-  };
+  }
 
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
@@ -71,6 +105,7 @@ async function runWatchStartCommand(options: WatchStartCommandOptions) {
   await stopped.promise;
   process.off("SIGINT", stop);
   process.off("SIGTERM", stop);
+  output.dispose();
 }
 
 function rejectReservedHttpOptions(options: WatchStartCommandOptions): boolean {
@@ -86,17 +121,69 @@ function rejectReservedHttpOptions(options: WatchStartCommandOptions): boolean {
   return true;
 }
 
-function createWatchEventRenderer(options: WatchStartCommandOptions) {
-  return (event: LocalHistoryApiProcessEvent) => {
-    if (options.jsonl === true) {
-      process.stdout.write(
-        formatJson(toJsonlWatchEvent(event), { compact: true }),
-      );
-      return;
-    }
+type WatchOutputTarget = "stdout" | "stderr";
 
-    process.stderr.write(toHumanWatchEvent(event));
+interface WatchEventRenderer {
+  render: (event: LocalHistoryApiProcessEvent) => void;
+  dispose: () => void;
+}
+
+function createWatchEventRenderer(
+  options: WatchStartCommandOptions,
+  onFailure: (target: WatchOutputTarget, error: unknown) => void,
+): WatchEventRenderer {
+  const onStdoutError = (error: unknown) => {
+    onFailure("stdout", error);
   };
+  const onStderrError = (error: unknown) => {
+    onFailure("stderr", error);
+  };
+
+  process.stdout.on("error", onStdoutError);
+  process.stderr.on("error", onStderrError);
+
+  return {
+    render(event: LocalHistoryApiProcessEvent) {
+      if (options.jsonl === true) {
+        writeWatchOutput(
+          "stdout",
+          formatJson(toJsonlWatchEvent(event), { compact: true }),
+          onFailure,
+        );
+        return;
+      }
+
+      writeWatchOutput("stderr", toHumanWatchEvent(event), onFailure);
+    },
+    dispose() {
+      process.stdout.off("error", onStdoutError);
+      process.stderr.off("error", onStderrError);
+    },
+  };
+}
+
+function writeWatchOutput(
+  target: WatchOutputTarget,
+  output: string,
+  onFailure: (target: WatchOutputTarget, error: unknown) => void,
+) {
+  try {
+    getOutputStream(target).write(output);
+  } catch (error) {
+    onFailure(target, error);
+  }
+}
+
+function getOutputStream(target: WatchOutputTarget) {
+  return target === "stdout" ? process.stdout : process.stderr;
+}
+
+function writeStderrSafely(output: string) {
+  try {
+    process.stderr.write(output);
+  } catch {
+    // Ignore secondary diagnostic failures while handling a primary output failure.
+  }
 }
 
 function toJsonlWatchEvent(event: LocalHistoryApiProcessEvent): unknown {

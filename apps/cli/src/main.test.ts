@@ -1,7 +1,14 @@
 import { strict as assert } from "node:assert";
 import type { ExecFileException } from "node:child_process";
 import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
@@ -43,6 +50,7 @@ interface SpawnedCli {
   readonly stdout: string;
   readonly stderr: string;
   kill: (signal: NodeJS.Signals) => void;
+  closeStdout: () => void;
   readStdoutLine: () => Promise<string>;
   waitForStderrIncludes: (text: string) => Promise<void>;
   waitForExit: () => Promise<{
@@ -124,6 +132,9 @@ function spawnCli(args: readonly string[]): SpawnedCli {
     },
     kill(signal: NodeJS.Signals) {
       child.kill(signal);
+    },
+    closeStdout() {
+      child.stdout.destroy();
     },
     async readStdoutLine() {
       const line = stdoutLines.shift();
@@ -405,6 +416,62 @@ test("watch start --jsonl emits JSON Lines and exits cleanly on SIGTERM", async 
   assert.equal(exit.code, 0);
   assert.equal(exit.signal, undefined);
   assert.equal(cli.stderr, "");
+});
+
+test("watch start stops and exits with failure when JSONL output fails", async (t) => {
+  const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
+  const cli = spawnCli(["watch", "start", "--repo", repoPath, "--jsonl"]);
+
+  t.after(() => {
+    cli.kill("SIGTERM");
+  });
+
+  await withTimeout(
+    cli.readStdoutLine(),
+    5000,
+    "timed out waiting for started JSONL event",
+  );
+  await withTimeout(
+    cli.readStdoutLine(),
+    5000,
+    "timed out waiting for startup observation JSONL event",
+  );
+
+  cli.closeStdout();
+  await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
+
+  const exit = await withTimeout(
+    cli.waitForExit(),
+    5000,
+    "timed out waiting for watch command to exit after output failure",
+  );
+
+  assert.equal(exit.code, 1);
+  assert.equal(exit.signal, undefined);
+  assert.match(cli.stderr, /watch output failed/v);
+  assert.doesNotMatch(cli.stderr, /Unhandled|ERR_STREAM|EPIPE.*stack/v);
+
+  const nextCli = spawnCli(["watch", "start", "--repo", repoPath, "--jsonl"]);
+
+  t.after(() => {
+    nextCli.kill("SIGTERM");
+  });
+
+  await withTimeout(
+    nextCli.readStdoutLine(),
+    5000,
+    "timed out waiting for second watch start after output failure",
+  );
+
+  nextCli.kill("SIGTERM");
+  const nextExit = await withTimeout(
+    nextCli.waitForExit(),
+    5000,
+    "timed out waiting for second watch command to exit after SIGTERM",
+  );
+
+  assert.equal(nextExit.code, 0);
+  assert.equal(nextExit.signal, undefined);
 });
 
 test("watch start defaults to stderr logs and reserves HTTP flags", async (t) => {
