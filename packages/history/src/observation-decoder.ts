@@ -13,6 +13,7 @@ type DecodedObservationResult =
   | {
       readonly status: "decoded";
       readonly decodedJson: string;
+      readonly decodedSave: unknown;
       readonly decodedSha256: string;
       readonly decoderVersion: string;
       readonly schema: ObservationMetadata["schema"];
@@ -49,6 +50,7 @@ export function decodeObservation(
   return {
     status: "decoded",
     decodedJson,
+    decodedSave: decoded.decodedSave,
     decodedSha256: sha256Hex(decodedJson),
     decoderVersion: decoded.version.decoderVersion,
     ...schemaAndSemanticUpdate,

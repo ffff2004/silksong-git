@@ -355,6 +355,175 @@ test("observeSave commits a recognized Raw Save Observation", async (t) => {
   );
 });
 
+test("observeSave creates a queryable Semantic Read Model for a recognized observation", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath);
+
+  const result = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  assert.equal(result.status, "committed");
+  assert.equal(result.semanticUpdate.status, "updated");
+  assert.equal(result.semanticUpdate.eventCount, 0);
+
+  const history = await queryHistory({
+    repoPath: repo.repoPath,
+    includeRawObservations: true,
+  });
+
+  assert.equal(history.events.length, 0);
+  assert.ok(history.rawObservations !== undefined);
+  assert.equal(history.rawObservations.length, 1);
+  assert.equal(
+    history.rawObservations[0]?.commit.ref,
+    result.observation.commit.ref,
+  );
+});
+
+test("observeSave incrementally records Semantic Events for recognized observations", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath);
+  const beforeResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const afterResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  assert.equal(beforeResult.status, "committed");
+  assert.equal(afterResult.status, "committed");
+  assert.equal(afterResult.semanticUpdate.status, "updated");
+  assert.equal(afterResult.semanticUpdate.eventCount, 1);
+
+  const history = await queryHistory({ repoPath: repo.repoPath });
+
+  assert.equal(history.events.length, 1);
+  const [event] = history.events;
+
+  assert.ok(event !== undefined);
+  assert.equal(event.commit.ref, afterResult.observation.commit.ref);
+  assert.equal(event.previousCommit?.ref, beforeResult.observation.commit.ref);
+  assert.equal(event.event.kind, "item");
+  assert.equal(event.event.item.id, "mask-shard-2");
+  assert.equal(event.event.after.status, "done");
+});
+
+test("observeSave incremental Semantic Read Model matches a full rebuild", async (t) => {
+  const { repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    maskShard2CollectedEncodedSavePath,
+    maskShard2CollectedRosariesEncodedSavePath,
+  ]);
+  const incrementalHistory = await queryHistory({
+    repoPath,
+    includeFiltered: true,
+    includeRawObservations: true,
+  });
+
+  await rebuildSemanticReadModel({ repoPath });
+
+  const rebuiltHistory = await queryHistory({
+    repoPath,
+    includeFiltered: true,
+    includeRawObservations: true,
+  });
+
+  assert.deepEqual(rebuiltHistory, incrementalHistory);
+});
+
+test("observeSave records Unrecognized Schema Observations without interrupting recognized diffs", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath);
+  const recognizedBefore = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  await copyFile(unrecognizedEncodedSavePath, repo.watchedSavePath);
+  const unrecognized = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const recognizedAfter = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:02:00.000Z"),
+  });
+
+  assert.equal(recognizedBefore.status, "committed");
+  assert.equal(unrecognized.status, "committed");
+  assert.equal(unrecognized.semanticUpdate.status, "notAvailable");
+  assert.equal(unrecognized.semanticUpdate.reason, "unrecognizedSchema");
+  assert.equal(recognizedAfter.status, "committed");
+  assert.equal(recognizedAfter.semanticUpdate.status, "updated");
+  assert.equal(recognizedAfter.semanticUpdate.eventCount, 1);
+
+  const history = await queryHistory({
+    repoPath: repo.repoPath,
+    includeRawObservations: true,
+  });
+
+  assert.equal(history.events.length, 1);
+  const [event] = history.events;
+
+  assert.ok(event !== undefined);
+  assert.equal(event.commit.ref, recognizedAfter.observation.commit.ref);
+  assert.ok(event.previousCommit !== undefined);
+  assert.equal(
+    event.previousCommit.ref,
+    recognizedBefore.observation.commit.ref,
+  );
+  assert.ok(history.rawObservations !== undefined);
+  assert.equal(history.rawObservations.length, 3);
+  const [, rawUnrecognizedObservation] = history.rawObservations;
+
+  assert.ok(rawUnrecognizedObservation !== undefined);
+  assert.equal(
+    rawUnrecognizedObservation.commit.ref,
+    unrecognized.observation.commit.ref,
+  );
+  assert.equal(rawUnrecognizedObservation.schema.status, "unrecognized");
+});
+
+test("observeSave rebuilds a missing Semantic Read Model before appending", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath);
+  const beforeResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  assert.equal(beforeResult.status, "committed");
+
+  await rm(path.join(repo.repoPath, ".silksong-git/read-model.sqlite"), {
+    force: true,
+  });
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const afterResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+
+  assert.equal(afterResult.status, "committed");
+  assert.equal(afterResult.semanticUpdate.status, "updated");
+  assert.equal(afterResult.semanticUpdate.eventCount, 1);
+
+  const history = await queryHistory({
+    repoPath: repo.repoPath,
+    includeRawObservations: true,
+  });
+
+  assert.equal(history.events.length, 1);
+  const [event] = history.events;
+
+  assert.ok(event !== undefined);
+  assert.equal(event.commit.ref, afterResult.observation.commit.ref);
+  assert.ok(event.previousCommit !== undefined);
+  assert.equal(event.previousCommit.ref, beforeResult.observation.commit.ref);
+  assert.ok(history.rawObservations !== undefined);
+  assert.equal(history.rawObservations.length, 2);
+});
+
 test("restoreEncodedSave writes the observed Encoded Save byte-for-byte", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");

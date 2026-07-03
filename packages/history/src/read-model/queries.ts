@@ -10,6 +10,7 @@ import type {
 import type { ReadModelCursor } from "./cursor.ts";
 import { createCursor, parseCursor } from "./cursor.ts";
 import { getEventVisibility } from "./event-visibility.ts";
+import type { RecognizedSnapshotRecord } from "./types.ts";
 
 interface EventRow {
   readonly event_id: string;
@@ -33,6 +34,9 @@ interface EventRowsPage {
 }
 
 interface SnapshotRow {
+  readonly commit_ref: string;
+  readonly observation_sequence: number;
+  readonly snapshot_id: string;
   readonly snapshot_json: string;
 }
 
@@ -184,6 +188,68 @@ export function selectRawObservations(
   return rows.map(
     (row) => JSON.parse(row.observation_json) as RawSaveObservation,
   );
+}
+
+export function selectMetadataValue(
+  db: DatabaseSync,
+  key: string,
+): string | undefined {
+  const row = db
+    .prepare(
+      `
+      select value
+      from read_model_metadata
+      where key = ?
+    `,
+    )
+    .get(key) as unknown as { readonly value: string } | undefined;
+
+  return row?.value;
+}
+
+export function selectLastObservationSequence(db: DatabaseSync): number {
+  const row = db
+    .prepare(
+      `
+      select max(sequence) as sequence
+      from observations
+      where ? = ?
+    `,
+    )
+    .get(1, 1) as unknown as { readonly sequence: number | null };
+
+  return row.sequence ?? 0;
+}
+
+export function selectLatestSnapshotRecord(
+  db: DatabaseSync,
+): RecognizedSnapshotRecord | undefined {
+  const row = db
+    .prepare(
+      `
+      select
+        snapshot_id,
+        commit_ref,
+        observation_sequence,
+        snapshot_json
+      from snapshots
+      where ? = ?
+      order by observation_sequence desc
+      limit 1
+    `,
+    )
+    .get(1, 1) as unknown as SnapshotRow | undefined;
+
+  if (row === undefined) {
+    return undefined;
+  }
+
+  return {
+    commitRef: row.commit_ref,
+    observationSequence: row.observation_sequence,
+    snapshotId: row.snapshot_id,
+    snapshot: JSON.parse(row.snapshot_json) as SemanticSnapshot,
+  };
 }
 
 export function selectSnapshot(

@@ -22,6 +22,9 @@ import {
 import type { QueryEventsOptions } from "./read-model/queries.ts";
 import {
   selectEventRows,
+  selectLastObservationSequence,
+  selectLatestSnapshotRecord,
+  selectMetadataValue,
   selectObservation,
   selectRawObservations,
   selectSearchEventRows,
@@ -32,14 +35,17 @@ import { readModelSchemaVersion, resetSchema } from "./read-model/schema.ts";
 import type { RecognizedSnapshotRecord } from "./read-model/types.ts";
 import {
   insertEvents,
+  insertEventsBetween,
   insertMetadata,
   insertObservation,
   insertSnapshot,
+  upsertMetadata,
 } from "./read-model/writes.ts";
 import type {
   DiffCommitsInput,
   DiffCommitsResult,
   HistoryResult,
+  ObserveSaveResult,
   RawSaveObservation,
   RebuildSemanticReadModelResult,
   SearchSemanticEventsInput,
@@ -118,6 +124,51 @@ export async function rebuildReadModel(
     snapshotCount: recognizedSnapshots.length,
     eventCount,
   };
+}
+
+export async function prepareReadModelForAppend(
+  repoPath: string,
+  expectedHeadRef: string | undefined,
+): Promise<void> {
+  const expectedSourceHeadRef = expectedHeadRef ?? "";
+
+  if (isReadModelCurrent(repoPath, expectedSourceHeadRef)) {
+    return;
+  }
+
+  if (expectedHeadRef === undefined) {
+    using db = openReadModel(repoPath);
+
+    resetSchema(db);
+    insertMetadata(db, "schemaVersion", readModelSchemaVersion);
+    insertMetadata(db, "sourceHeadRef", "");
+    return;
+  }
+
+  await rebuildReadModel(repoPath);
+}
+
+export function appendObservationToReadModel(input: {
+  readonly repoPath: string;
+  readonly observation: RawSaveObservation;
+  readonly decodedSave: unknown;
+}): Extract<
+  ObserveSaveResult,
+  { readonly status: "committed" }
+>["semanticUpdate"] {
+  using db = openReadModel(input.repoPath);
+
+  db.exec("begin immediate");
+  try {
+    const semanticUpdate = appendObservationInTransaction(db, input);
+
+    db.exec("commit");
+
+    return semanticUpdate;
+  } catch (error) {
+    db.exec("rollback");
+    throw error;
+  }
 }
 
 export async function queryReadModelHistory(
@@ -258,6 +309,84 @@ async function readGitTextBlob(
 
 function openReadModel(repoPath: string): DatabaseSync {
   return new DatabaseSync(getRepositoryLayout(repoPath).readModelPath);
+}
+
+function isReadModelCurrent(
+  repoPath: string,
+  expectedSourceHeadRef: string,
+): boolean {
+  try {
+    using db = openReadModel(repoPath);
+
+    return hasCurrentReadModelMetadata(db, expectedSourceHeadRef);
+  } catch (error) {
+    if (isMissingReadModelTableError(error)) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+function hasCurrentReadModelMetadata(
+  db: DatabaseSync,
+  expectedSourceHeadRef: string,
+): boolean {
+  return (
+    selectMetadataValue(db, "schemaVersion") === readModelSchemaVersion
+    && selectMetadataValue(db, "sourceHeadRef") === expectedSourceHeadRef
+  );
+}
+
+function appendObservationInTransaction(
+  db: DatabaseSync,
+  input: {
+    readonly observation: RawSaveObservation;
+    readonly decodedSave: unknown;
+  },
+): Extract<
+  ObserveSaveResult,
+  { readonly status: "committed" }
+>["semanticUpdate"] {
+  const sequence = selectLastObservationSequence(db) + 1;
+
+  insertObservation(db, sequence, input.observation);
+
+  if (input.observation.schema.status === "unrecognized") {
+    upsertMetadata(db, "sourceHeadRef", input.observation.commit.ref);
+
+    return {
+      status: "notAvailable",
+      reason: "unrecognizedSchema",
+    };
+  }
+
+  const mappingData = getBuiltinMappingData();
+  const previousSnapshot = selectLatestSnapshotRecord(db);
+  const snapshot = createSemanticSnapshot(
+    parseDecodedSave(input.decodedSave),
+    mappingData,
+  );
+  const snapshotRecord = {
+    commitRef: input.observation.commit.ref,
+    observationSequence: sequence,
+    snapshotId: `snapshot:${input.observation.commit.ref}`,
+    snapshot,
+  };
+
+  insertSnapshot(db, snapshotRecord);
+  const eventCount =
+    previousSnapshot === undefined
+      ? 0
+      : insertEventsBetween(db, previousSnapshot, snapshotRecord);
+
+  upsertMetadata(db, "sourceHeadRef", input.observation.commit.ref);
+
+  return {
+    status: "updated",
+    snapshotId: snapshotRecord.snapshotId,
+    eventCount,
+  };
 }
 
 function throwReadModelUnavailableError(error: unknown): never {

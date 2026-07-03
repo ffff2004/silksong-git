@@ -17,6 +17,20 @@ export function insertMetadata(
   );
 }
 
+export function upsertMetadata(
+  db: DatabaseSync,
+  key: string,
+  value: string,
+): void {
+  db.prepare(
+    `
+    insert into read_model_metadata (key, value)
+    values (?, ?)
+    on conflict(key) do update set value = excluded.value
+  `,
+  ).run(key, value);
+}
+
 export function insertObservation(
   db: DatabaseSync,
   sequence: number,
@@ -80,20 +94,29 @@ export function insertEvents(
       continue;
     }
 
-    const events = diffSemanticSnapshots(before.snapshot, after.snapshot);
-
-    for (const [eventIndex, event] of events.entries()) {
-      insertEvent(db, {
-        before,
-        after,
-        event,
-        eventIndex,
-      });
-      eventCount++;
-    }
+    eventCount += insertEventsBetween(db, before, after);
   }
 
   return eventCount;
+}
+
+export function insertEventsBetween(
+  db: DatabaseSync,
+  before: RecognizedSnapshotRecord,
+  after: RecognizedSnapshotRecord,
+): number {
+  const events = diffSemanticSnapshots(before.snapshot, after.snapshot);
+
+  for (const [eventIndex, event] of events.entries()) {
+    insertEvent(db, {
+      before,
+      after,
+      event,
+      eventIndex,
+    });
+  }
+
+  return events.length;
 }
 
 function insertEvent(

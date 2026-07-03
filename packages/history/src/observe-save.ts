@@ -6,10 +6,15 @@ import { getRepositoryLayout } from "./layout.ts";
 import { decodeObservation } from "./observation-decoder.ts";
 import type { ObservationMetadata } from "./observation.ts";
 import { commitRawSaveObservation } from "./raw-observation-store.ts";
+import {
+  appendObservationToReadModel,
+  prepareReadModelForAppend,
+} from "./read-model.ts";
 import type {
   ObserveSaveInput,
   ObserveSaveResult,
   ProjectConfig,
+  SemanticUpdateResult,
 } from "./types.ts";
 
 interface ObserveSaveUsingConfigInput extends ObserveSaveInput {
@@ -84,15 +89,49 @@ export async function observeSaveUsingConfig(
     schema: decoded.schema,
   };
 
+  let isReadModelReady = true;
+  try {
+    await prepareReadModelForAppend(input.repoPath, previousCommit);
+  } catch {
+    isReadModelReady = false;
+  }
+
+  const observation = await commitRawSaveObservation({
+    repoPath: input.repoPath,
+    encodedBytes,
+    decodedJson: decoded.decodedJson,
+    metadata: observationMetadata,
+  });
+
+  if (!isReadModelReady) {
+    return {
+      status: "committed",
+      observation,
+      semanticUpdate: {
+        status: "notAvailable",
+        reason: "readModelUnavailable",
+      },
+    };
+  }
+
+  let semanticUpdate: SemanticUpdateResult;
+  try {
+    semanticUpdate = appendObservationToReadModel({
+      repoPath: input.repoPath,
+      observation,
+      decodedSave: decoded.decodedSave,
+    });
+  } catch {
+    semanticUpdate = {
+      status: "notAvailable",
+      reason: "readModelUnavailable",
+    };
+  }
+
   return {
     status: "committed",
-    observation: await commitRawSaveObservation({
-      repoPath: input.repoPath,
-      encodedBytes,
-      decodedJson: decoded.decodedJson,
-      metadata: observationMetadata,
-    }),
-    semanticUpdate: decoded.semanticUpdate,
+    observation,
+    semanticUpdate,
   };
 }
 

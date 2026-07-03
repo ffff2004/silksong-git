@@ -7,7 +7,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P5 CLI
-- Next task: P5-T6 Add Optional HTTP Adapter To Watch Process
+- Next task: P5-T7 Add Optional HTTP Adapter To Watch Process
 - Last updated: 2026-07-03
 
 ## Phase Overview
@@ -869,7 +869,7 @@ Acceptance criteria:
 - `watch start --jsonl` emits compact stable JSON Lines status events to stdout. Default human-readable runtime logs go to stderr and are not byte-stable.
 - CLI output stream failure gracefully stops the watcher and exits as a failure.
 - The process remains the single owner of watching while allowing checkpoint, restore, and rebuild Offline Commands to serialize with watcher writes through `write.lock`.
-- P5-T5 registers `--http` and `--port` as clear usage errors; P5-T6 implements their behavior.
+- P5-T5 registers `--http` and `--port` as clear usage errors; P5-T7 implements their behavior.
 
 TDD Vertical Slices:
 
@@ -932,7 +932,7 @@ TDD Vertical Slices:
 - [x] CLI default logs and reserved HTTP flags behave correctly
   - Public call: CLI process.
   - Assert: default watcher runtime logs go to stderr, stdout is not polluted with human-readable status, and `--http` or `--port` fail clearly without starting the watcher.
-  - Other information: P5-T6 implements the actual HTTP Adapter behavior.
+  - Other information: P5-T7 implements the actual HTTP Adapter behavior.
 
 Latest slice verification:
 
@@ -984,13 +984,78 @@ Verification:
 - `pnpm lint`: passed
 - `pnpm test`: passed
 
-### P5-T6 Add Optional HTTP Adapter To Watch Process
+### P5-T6 Incrementally Update Semantic Read Model During Observation
+
+Status: complete
+
+Depends on:
+
+- P4-T2
+- P5-T5
+
+Owned files or likely files:
+
+- `packages/history/`
+- history integration tests
+
+Relevant docs and ADRs:
+
+- `docs/save-history-design.md`
+- [ADR-0001](adr/0001-save-history-artifacts.md)
+- [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-history-api.md)
+- [ADR-0013](adr/0013-history-module-interface-and-testing.md)
+- [ADR-0016](adr/0016-commit-unrecognized-schema-observations.md)
+
+Acceptance criteria:
+
+- `observeSave` updates the SQLite Semantic Read Model after committing a Raw Save Observation.
+- Recognized observations append raw observation rows, Semantic Snapshots, and Semantic Events without requiring a full rebuild.
+- Unrecognized Schema Observations are retained as raw observations but do not produce Semantic Snapshots or Semantic Events.
+- Incremental query results match a later full `rebuildSemanticReadModel`.
+- Missing or stale read-model state is rebuilt to the previous Git HEAD before appending the newly committed Raw Save Observation.
+- The SQLite schema remains private to `packages/history`; tests verify behavior through public history Interfaces.
+
+TDD Vertical Slices:
+
+- [x] First recognized observation creates a queryable Semantic Read Model
+  - Public call: `observeSave`, then `queryHistory({ includeRawObservations: true })`.
+  - Assert: `semanticUpdate.status` is `updated`, `eventCount` is `0`, and the raw observation is queryable without running `rebuildSemanticReadModel`.
+- [x] Second recognized observation records Semantic Events incrementally
+  - Public call: two `observeSave` calls for recognized Encoded Saves, then `queryHistory`.
+  - Assert: the second observation reports one Semantic Event; the queried event points to the second commit and previous recognized commit.
+- [x] Incremental read model matches a full rebuild
+  - Public call: observe a recognized fixture sequence, query history, run `rebuildSemanticReadModel`, then query history again.
+  - Assert: rebuilt history equals the incremental history, including filtered events and raw observations.
+- [x] Unrecognized observations do not interrupt recognized diffs
+  - Public call: observe recognized, unrecognized, and recognized saves, then `queryHistory({ includeRawObservations: true })`.
+  - Assert: the unrecognized observation appears in raw observations, but the later recognized Semantic Event diffs against the previous recognized commit.
+- [x] Missing read model is rebuilt before append
+  - Public call: observe one recognized save, delete `.silksong-git/read-model.sqlite`, observe a second recognized save, then query history.
+  - Assert: history includes both raw observations and the Semantic Event between them.
+
+Verification:
+
+- RED: `pnpm --filter @silksong-git/history test`: failed as expected before implementation; recognized `observeSave` still returned `semanticUpdate.status: "notAvailable"` and did not create a queryable read model.
+- `pnpm --filter @silksong-git/history format`: passed
+- `pnpm --filter @silksong-git/history lint`: passed
+- `pnpm --filter @silksong-git/history test`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- `pnpm test`: passed
+
+Notes:
+
+- Added internal read-model append helpers behind the existing `packages/history` Interface.
+- `observeSave` still commits the Raw Save Observation first; if SQLite append fails, Git remains the source of truth and the result reports `readModelUnavailable`.
+- `insertEventsBetween` lets rebuild and incremental append share the same Semantic Event insertion logic.
+
+### P5-T7 Add Optional HTTP Adapter To Watch Process
 
 Status: pending
 
 Depends on:
 
-- P5-T5
+- P5-T6
 
 Owned files or likely files:
 
@@ -1070,7 +1135,7 @@ Status: pending
 
 Depends on:
 
-- P5-T6
+- P5-T7
 - P4-T2
 - P6-T1
 
