@@ -6,6 +6,8 @@
     "silksong-git": "./src/main.ts"
   },
   "scripts": {
+    "format": "tsx ../../scripts/format.ts apps/cli",
+    "lint": "tsx ../../scripts/lint.ts apps/cli",
     "test": "tsx --test --test-reporter=dot src/**/*.test.ts"
   },
   "dependencies": {

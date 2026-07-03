@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "format": "tsx ../../scripts/format.ts apps/web",
+    "lint": "tsx ../../scripts/lint.ts apps/web",
     "preview": "vite preview",
     "start": "vite dev"
   },

@@ -10,7 +10,7 @@ async function execFileAsync(
   args: readonly string[],
 ): Promise<{ readonly stderr: string; readonly stdout: string }> {
   return await new Promise((resolve, reject) => {
-    execFile(file, [...args], (error, stdout, stderr) => {
+    execFile(file, [...args], { cwd: REPO_ROOT }, (error, stdout, stderr) => {
       if (error === null) {
         resolve({ stderr, stdout });
         return;
@@ -26,6 +26,7 @@ async function runCommand(command: string, args: readonly string[]) {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: "inherit",
+      cwd: REPO_ROOT,
     });
 
     child.on("error", reject);
@@ -128,11 +129,18 @@ function normalizeFilePath(filePath: string): string {
 }
 
 async function main() {
+  const targets = process.argv.slice(2);
+  const formatTargets = targets.length > 0 ? targets : ["."];
   const candidateFilePaths = await getGitCandidateFilePaths();
   const beforeHashes = await snapshotFileHashes(candidateFilePaths);
 
-  await runCommand("eslint", ["--fix", "."]);
-  await runCommand("prettier", ["--write", ".", "--log-level", "warn"]);
+  await runCommand("eslint", ["--fix", ...formatTargets]);
+  await runCommand("prettier", [
+    "--write",
+    ...formatTargets,
+    "--log-level",
+    "warn",
+  ]);
 
   const afterHashes = await snapshotFileHashes(candidateFilePaths);
   printFormattedFiles(getChangedFilePaths(beforeHashes, afterHashes));

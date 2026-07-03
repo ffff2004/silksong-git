@@ -95,10 +95,12 @@ When both an ADR and a commit body are needed, the ADR records the durable decis
 
 ## Validation
 
-During implementation, prefer the narrowest relevant package test for fast behavioral feedback:
+During implementation, prefer the narrowest relevant package command for fast behavioral feedback:
 
 ```sh
 pnpm --filter <changed-package> test
+pnpm --filter <changed-package> format
+pnpm --filter <changed-package> lint
 ```
 
 Expand to dependent packages or full `pnpm test` when a change affects shared Interfaces, cross-package behavior, root tooling, fixtures, or integration paths.
@@ -112,6 +114,8 @@ pnpm test
 ```
 
 `pnpm format` runs ESLint fixes and Prettier. `pnpm lint` runs TypeScript, ESLint, JSON schema validation, stylelint, knip, Prettier checks, and custom repository checks.
+
+Package-scoped `format` and `lint` commands are for fast feedback while developing. They do not replace the root `pnpm format` and `pnpm lint` checks before commit, because the root lint command also runs cross-repository checks.
 
 If only docs or agent instructions changed, `pnpm test` may be skipped. If code or tests changed, run `pnpm test` after `pnpm format` and `pnpm lint`.
 
