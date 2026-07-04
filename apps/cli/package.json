@@ -17,7 +17,7 @@
     "lint": "tsx ../../scripts/lint.ts apps/cli",
     "prepack": "pnpm run build",
     "preview": "./dist/main.js",
-    "test": "tsx --test --test-reporter=dot src/**/*.test.ts",
+    "test": "pnpm run build && tsx --test --test-reporter=dot src/**/*.test.ts",
     "verify-pack": "tmpdir=\"$(mktemp -d)\" && trap 'rm -rf \"$tmpdir\"' EXIT && mkdir -p \"$tmpdir/pack\" \"$tmpdir/install\" && pnpm pack --pack-destination \"$tmpdir/pack\" && pnpm --dir \"$tmpdir/install\" add \"$tmpdir\"/pack/*.tgz && \"$tmpdir/install/node_modules/.bin/silksong-git\" --help && \"$tmpdir/install/node_modules/.bin/ssgit\" --help"
   },
   "dependencies": {
