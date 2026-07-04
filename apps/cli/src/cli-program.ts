@@ -1,8 +1,8 @@
 import { DecodeEncodedSaveError } from "@silksong-git/core";
 import { Command } from "commander";
 
-import type { CliRuntime } from "./cli-io.ts";
-import { processCliRuntime } from "./cli-io.ts";
+import type { CliRuntime } from "./cli-runtime.ts";
+import { processCliRuntime } from "./cli-runtime.ts";
 import { exitCodes } from "./exit-codes.ts";
 import { registerHistoryCommands } from "./history-commands.ts";
 import { registerRepoCommands } from "./repo-commands.ts";
@@ -32,7 +32,7 @@ export async function runCli(
     await program.parseAsync([...argv]);
   } catch (error) {
     if (error instanceof DecodeEncodedSaveError) {
-      runtime.io.writeStderr("cannot decode save\n");
+      runtime.writeStderr("cannot decode save\n");
       runtime.setExitCode(exitCodes.decodeFailure);
       return;
     }

@@ -14,7 +14,7 @@ import {
 } from "@silksong-git/core";
 import type { Command } from "commander";
 
-import type { CliIo, CliRuntime } from "./cli-io.ts";
+import type { CliRuntime } from "./cli-runtime.ts";
 import { exitCodes } from "./exit-codes.ts";
 import { formatJson, writeJsonOutput } from "./output.ts";
 
@@ -41,7 +41,7 @@ export function registerSaveCommands(
     .option("--out <decoded-save.json>")
     .option("--schema-check")
     .action(async (savePath: string, options: DecodeCommandOptions) => {
-      await runDecodeCommand(savePath, options, runtime.io);
+      await runDecodeCommand(savePath, options, runtime);
     });
 
   saveCommand
@@ -56,17 +56,17 @@ export function registerSaveCommands(
 async function runDecodeCommand(
   savePath: string,
   options: DecodeCommandOptions,
-  io: CliIo,
+  runtime: CliRuntime,
 ) {
   const decoded = await decodeSaveFile(savePath);
   const output = formatJson(decoded.decodedSave, {
     compact: options.compact === true,
   });
 
-  await writeJsonOutput(output, options.out, io);
+  await writeJsonOutput(output, options.out, runtime);
 
   if (options.schemaCheck === true) {
-    reportSchemaCheck(decoded.decodedSave, io);
+    reportSchemaCheck(decoded.decodedSave, runtime);
   }
 }
 
@@ -76,7 +76,7 @@ async function runSnapshotCommand(
   runtime: CliRuntime,
 ) {
   if (options.json !== true) {
-    runtime.io.writeStderr("save snapshot requires --json\n");
+    runtime.writeStderr("save snapshot requires --json\n");
     runtime.setExitCode(exitCodes.usage);
     return;
   }
@@ -86,20 +86,20 @@ async function runSnapshotCommand(
     return;
   }
 
-  runtime.io.writeStdout(formatJson(snapshot));
+  runtime.writeStdout(formatJson(snapshot));
 }
 
 async function decodeSaveFile(savePath: string): Promise<DecodedEncodedSave> {
   return decodeEncodedSave(await readFile(savePath));
 }
 
-function reportSchemaCheck(decodedSave: unknown, io: CliIo) {
+function reportSchemaCheck(decodedSave: unknown, runtime: CliRuntime) {
   try {
     parseDecodedSave(decodedSave);
-    io.writeStderr("recognized save schema\n");
+    runtime.writeStderr("recognized save schema\n");
   } catch (error) {
     if (error instanceof UnrecognizedSaveSchemaError) {
-      io.writeStderr(
+      runtime.writeStderr(
         "warning: decoded save does not match a recognized schema\n",
       );
       return;
@@ -135,7 +135,7 @@ function parseSaveForSnapshot(
     return parseDecodedSave(decodedSave);
   } catch (error) {
     if (error instanceof UnrecognizedSaveSchemaError) {
-      runtime.io.writeStderr(
+      runtime.writeStderr(
         `decoded save does not match a recognized schema\ntry: silksong-git save decode ${savePath}\n`,
       );
       runtime.setExitCode(exitCodes.unrecognizedSchema);

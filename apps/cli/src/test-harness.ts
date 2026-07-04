@@ -1,5 +1,5 @@
-import type { CliRuntime } from "./cli-io.ts";
 import { runCli } from "./cli-program.ts";
+import type { CliRuntime } from "./cli-runtime.ts";
 
 export interface InProcessCliResult {
   readonly exitCode: number;
@@ -20,13 +20,11 @@ export async function runCliEntryInProcess(
   let stdout = "";
   let stderr = "";
   const runtime: CliRuntime = {
-    io: {
-      writeStdout(output: string) {
-        stdout += output;
-      },
-      writeStderr(output: string) {
-        stderr += output;
-      },
+    writeStdout(output: string) {
+      stdout += output;
+    },
+    writeStderr(output: string) {
+      stderr += output;
     },
     setExitCode(code: number) {
       exitCode = code;

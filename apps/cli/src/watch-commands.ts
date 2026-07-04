@@ -6,7 +6,7 @@ import type {
 import { startLocalHistoryWatchProcess } from "@silksong-git/history";
 import type { Command } from "commander";
 
-import type { CliRuntime } from "./cli-io.ts";
+import type { CliRuntime } from "./cli-runtime.ts";
 import { exitCodes } from "./exit-codes.ts";
 import { formatJson } from "./output.ts";
 import { resolveRepositoryContext } from "./repo-context.ts";
@@ -142,7 +142,7 @@ function rejectReservedHttpOptions(
     return false;
   }
 
-  runtime.io.writeStderr(
+  runtime.writeStderr(
     "error: HTTP Adapter is implemented by P5-T6 and is not available in this command yet\n",
   );
   runtime.setExitCode(exitCodes.usage);

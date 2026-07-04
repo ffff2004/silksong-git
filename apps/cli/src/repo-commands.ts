@@ -5,7 +5,7 @@ import path from "node:path";
 import { initSaveHistory } from "@silksong-git/history";
 import type { Command } from "commander";
 
-import type { CliIo, CliRuntime } from "./cli-io.ts";
+import type { CliRuntime } from "./cli-runtime.ts";
 import { exitCodes } from "./exit-codes.ts";
 import { formatJson } from "./output.ts";
 
@@ -36,10 +36,10 @@ async function runInitCommand(
   runtime: CliRuntime,
 ) {
   try {
-    await runInitCommandOrThrow(options, runtime.io);
+    await runInitCommandOrThrow(options, runtime);
   } catch (error) {
     if (error instanceof RepoInitUsageError) {
-      runtime.io.writeStderr(`${error.message}\n`);
+      runtime.writeStderr(`${error.message}\n`);
       runtime.setExitCode(exitCodes.usage);
       return;
     }
@@ -48,7 +48,10 @@ async function runInitCommand(
   }
 }
 
-async function runInitCommandOrThrow(options: InitCommandOptions, io: CliIo) {
+async function runInitCommandOrThrow(
+  options: InitCommandOptions,
+  runtime: CliRuntime,
+) {
   const watchedSavePath = path.resolve(requireOption(options.save, "--save"));
   const repoPath = path.resolve(requireOption(options.repo, "--repo"));
 
@@ -61,11 +64,11 @@ async function runInitCommandOrThrow(options: InitCommandOptions, io: CliIo) {
   });
 
   if (options.json === true) {
-    io.writeStdout(formatJson(result));
+    runtime.writeStdout(formatJson(result));
     return;
   }
 
-  io.writeStdout(
+  runtime.writeStdout(
     `initialized save history repository\nrepo: ${result.repoPath}\nconfig: ${result.configPath}\nnext: silksong-git history checkpoint --repo ${result.repoPath}\n`,
   );
 }

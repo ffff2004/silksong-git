@@ -18,7 +18,7 @@ import {
 import type { Command } from "commander";
 import path from "node:path";
 
-import type { CliIo, CliRuntime } from "./cli-io.ts";
+import type { CliRuntime } from "./cli-runtime.ts";
 import { exitCodes } from "./exit-codes.ts";
 import { formatJson } from "./output.ts";
 import {
@@ -166,7 +166,7 @@ async function runListCommand(
   runtime: CliRuntime,
 ) {
   try {
-    await runListCommandOrThrow(options, runtime.io);
+    await runListCommandOrThrow(options, runtime);
   } catch (error) {
     if (handleHistoryCommandError(error, runtime)) {
       return;
@@ -181,7 +181,7 @@ async function runSearchCommand(
   runtime: CliRuntime,
 ) {
   try {
-    await runSearchCommandOrThrow(options, runtime.io);
+    await runSearchCommandOrThrow(options, runtime);
   } catch (error) {
     if (handleHistoryCommandError(error, runtime)) {
       return;
@@ -198,7 +198,7 @@ async function runDiffCommand(
   runtime: CliRuntime,
 ) {
   try {
-    await runDiffCommandOrThrow(fromRef, toRef, options, runtime.io);
+    await runDiffCommandOrThrow(fromRef, toRef, options, runtime);
   } catch (error) {
     if (handleHistoryCommandError(error, runtime)) {
       return;
@@ -214,7 +214,7 @@ async function runRestoreCommand(
   runtime: CliRuntime,
 ) {
   try {
-    await runRestoreCommandOrThrow(commitRef, options, runtime.io);
+    await runRestoreCommandOrThrow(commitRef, options, runtime);
   } catch (error) {
     if (handleHistoryCommandError(error, runtime)) {
       return;
@@ -224,7 +224,10 @@ async function runRestoreCommand(
   }
 }
 
-async function runListCommandOrThrow(options: ListCommandOptions, io: CliIo) {
+async function runListCommandOrThrow(
+  options: ListCommandOptions,
+  runtime: CliRuntime,
+) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
   });
@@ -237,16 +240,16 @@ async function runListCommandOrThrow(options: ListCommandOptions, io: CliIo) {
   });
 
   if (options.json === true) {
-    io.writeStdout(formatJson(result));
+    runtime.writeStdout(formatJson(result));
     return;
   }
 
   if (result.events.length === 0) {
-    io.writeStdout("no semantic events\n");
+    runtime.writeStdout("no semantic events\n");
     return;
   }
 
-  io.writeStdout(
+  runtime.writeStdout(
     result.events
       .map((event) => `${event.commit.shortRef} ${event.event.eventType}`)
       .join("\n")
@@ -269,36 +272,36 @@ async function runCheckpointCommandOrThrow(
   });
 
   if (result.status === "watcherError") {
-    runtime.io.writeStderr("cannot decode save\n");
+    runtime.writeStderr("cannot decode save\n");
     runtime.setExitCode(exitCodes.decodeFailure);
     return;
   }
 
   if (options.json === true) {
-    runtime.io.writeStdout(formatJson(result));
+    runtime.writeStdout(formatJson(result));
     return;
   }
 
   if (result.status === "committed") {
-    runtime.io.writeStdout(
+    runtime.writeStdout(
       `checkpoint recorded\ncommit: ${result.observation.commit.shortRef}\n`,
     );
     return;
   }
 
   if (result.reason === "unchanged") {
-    runtime.io.writeStdout(
+    runtime.writeStdout(
       "checkpoint skipped: unchanged\nnext: rerun with --allow-unchanged to record identical bytes\n",
     );
     return;
   }
 
-  runtime.io.writeStdout(`checkpoint skipped: ${result.reason}\n`);
+  runtime.writeStdout(`checkpoint skipped: ${result.reason}\n`);
 }
 
 async function runSearchCommandOrThrow(
   options: SearchCommandOptions,
-  io: CliIo,
+  runtime: CliRuntime,
 ) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
@@ -310,16 +313,16 @@ async function runSearchCommandOrThrow(
   });
 
   if (options.json === true) {
-    io.writeStdout(formatJson(result));
+    runtime.writeStdout(formatJson(result));
     return;
   }
 
   if (result.events.length === 0) {
-    io.writeStdout("no matching semantic events\n");
+    runtime.writeStdout("no matching semantic events\n");
     return;
   }
 
-  io.writeStdout(
+  runtime.writeStdout(
     result.events
       .map((event) => `${event.commit.shortRef} ${event.event.eventType}`)
       .join("\n")
@@ -331,7 +334,7 @@ async function runDiffCommandOrThrow(
   fromRef: string,
   toRef: string,
   options: DiffCommandOptions,
-  io: CliIo,
+  runtime: CliRuntime,
 ) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
@@ -344,16 +347,16 @@ async function runDiffCommandOrThrow(
   });
 
   if (options.json === true) {
-    io.writeStdout(formatJson(result));
+    runtime.writeStdout(formatJson(result));
     return;
   }
 
   if (result.events.length === 0) {
-    io.writeStdout("no semantic changes\n");
+    runtime.writeStdout("no semantic changes\n");
     return;
   }
 
-  io.writeStdout(
+  runtime.writeStdout(
     result.events
       .map((event) => `${event.commit.shortRef} ${event.event.eventType}`)
       .join("\n")
@@ -364,7 +367,7 @@ async function runDiffCommandOrThrow(
 async function runRestoreCommandOrThrow(
   commitRef: string,
   options: RestoreCommandOptions,
-  io: CliIo,
+  runtime: CliRuntime,
 ) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
@@ -376,7 +379,7 @@ async function runRestoreCommandOrThrow(
     target,
   });
 
-  io.writeStdout(
+  runtime.writeStdout(
     `restore complete\ncommit: ${result.commit.shortRef}\ntarget: ${result.targetPath}\nbackup: ${result.backupPath ?? "none"}\nsha256: ${result.writtenSha256}\n`,
   );
 }
@@ -386,7 +389,7 @@ async function runRebuildCommand(
   runtime: CliRuntime,
 ) {
   try {
-    await runRebuildCommandOrThrow(options, runtime.io);
+    await runRebuildCommandOrThrow(options, runtime);
   } catch (error) {
     if (handleHistoryCommandError(error, runtime)) {
       return;
@@ -398,7 +401,7 @@ async function runRebuildCommand(
 
 async function runRebuildCommandOrThrow(
   options: RebuildCommandOptions,
-  io: CliIo,
+  runtime: CliRuntime,
 ) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
@@ -406,11 +409,11 @@ async function runRebuildCommandOrThrow(
   const result = await rebuildSemanticReadModel({ repoPath });
 
   if (options.json === true) {
-    io.writeStdout(formatJson(result));
+    runtime.writeStdout(formatJson(result));
     return;
   }
 
-  io.writeStdout(
+  runtime.writeStdout(
     `read model rebuilt\nobservations: ${result.observationCount}\nevents: ${result.eventCount}\n`,
   );
 }
@@ -544,22 +547,20 @@ function handleHistoryCommandError(
   error: unknown,
   runtime: CliRuntime,
 ): boolean {
-  const { io } = runtime;
-
   if (error instanceof RepositoryContextError) {
-    io.writeStderr(`${error.message}\n`);
+    runtime.writeStderr(`${error.message}\n`);
     runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof HistoryCommandUsageError) {
-    io.writeStderr(`${error.message}\n`);
+    runtime.writeStderr(`${error.message}\n`);
     runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof ReadModelUnavailableError) {
-    io.writeStderr(
+    runtime.writeStderr(
       "semantic read model unavailable\nnext: silksong-git history rebuild\n",
     );
     runtime.setExitCode(exitCodes.readModelUnavailable);
@@ -567,13 +568,13 @@ function handleHistoryCommandError(
   }
 
   if (error instanceof InvalidCommitRefError) {
-    io.writeStderr("error: invalid commit ref\n");
+    runtime.writeStderr("error: invalid commit ref\n");
     runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof RestoreTargetExistsError) {
-    io.writeStderr(
+    runtime.writeStderr(
       "error: restore target already exists\nnext: choose a new --to path\n",
     );
     runtime.setExitCode(exitCodes.usage);
@@ -581,31 +582,31 @@ function handleHistoryCommandError(
   }
 
   if (error instanceof InvalidRestoreBackupDirectoryError) {
-    io.writeStderr("error: invalid restore backup directory\n");
+    runtime.writeStderr("error: invalid restore backup directory\n");
     runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof RestoreBackupFailedError) {
-    io.writeStderr("error: failed to create restore backup\n");
+    runtime.writeStderr("error: failed to create restore backup\n");
     runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof RestoreWriteFailedError) {
-    io.writeStderr(formatRestoreWriteFailure(error));
+    runtime.writeStderr(formatRestoreWriteFailure(error));
     runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof RestoreWriteVerificationError) {
-    io.writeStderr(formatRestoreVerificationFailure(error));
+    runtime.writeStderr(formatRestoreVerificationFailure(error));
     runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof SaveHistoryRepositoryBusyError) {
-    io.writeStderr("error: save history repository is busy\n");
+    runtime.writeStderr("error: save history repository is busy\n");
     runtime.setExitCode(exitCodes.repositoryBusy);
     return true;
   }

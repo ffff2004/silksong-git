@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 
-import type { CliIo } from "./cli-io.ts";
+import type { CliRuntime } from "./cli-runtime.ts";
 
 export function formatJson(
   value: unknown,
@@ -18,10 +18,10 @@ export function formatJson(
 export async function writeJsonOutput(
   output: string,
   outputPath: string | undefined,
-  io: CliIo,
+  runtime: CliRuntime,
 ): Promise<void> {
   if (outputPath === undefined) {
-    io.writeStdout(output);
+    runtime.writeStdout(output);
     return;
   }
 
