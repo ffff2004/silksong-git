@@ -14,6 +14,7 @@ import {
 } from "@silksong-git/core";
 import type { Command } from "commander";
 
+import type { CliIo, CliRuntime } from "./cli-io.ts";
 import { exitCodes } from "./exit-codes.ts";
 import { formatJson, writeJsonOutput } from "./output.ts";
 
@@ -27,7 +28,10 @@ interface SnapshotCommandOptions {
   readonly json?: boolean;
 }
 
-export function registerSaveCommands(program: Command): void {
+export function registerSaveCommands(
+  program: Command,
+  runtime: CliRuntime,
+): void {
   const saveCommand = program.command("save");
 
   saveCommand
@@ -37,7 +41,7 @@ export function registerSaveCommands(program: Command): void {
     .option("--out <decoded-save.json>")
     .option("--schema-check")
     .action(async (savePath: string, options: DecodeCommandOptions) => {
-      await runDecodeCommand(savePath, options);
+      await runDecodeCommand(savePath, options, runtime.io);
     });
 
   saveCommand
@@ -45,55 +49,57 @@ export function registerSaveCommands(program: Command): void {
     .argument("<save.dat>")
     .option("--json")
     .action(async (savePath: string, options: SnapshotCommandOptions) => {
-      await runSnapshotCommand(savePath, options);
+      await runSnapshotCommand(savePath, options, runtime);
     });
 }
 
 async function runDecodeCommand(
   savePath: string,
   options: DecodeCommandOptions,
+  io: CliIo,
 ) {
   const decoded = await decodeSaveFile(savePath);
   const output = formatJson(decoded.decodedSave, {
     compact: options.compact === true,
   });
 
-  await writeJsonOutput(output, options.out);
+  await writeJsonOutput(output, options.out, io);
 
   if (options.schemaCheck === true) {
-    reportSchemaCheck(decoded.decodedSave);
+    reportSchemaCheck(decoded.decodedSave, io);
   }
 }
 
 async function runSnapshotCommand(
   savePath: string,
   options: SnapshotCommandOptions,
+  runtime: CliRuntime,
 ) {
   if (options.json !== true) {
-    process.stderr.write("save snapshot requires --json\n");
-    process.exitCode = exitCodes.usage;
+    runtime.io.writeStderr("save snapshot requires --json\n");
+    runtime.setExitCode(exitCodes.usage);
     return;
   }
 
-  const snapshot = await createSnapshotFromSaveFile(savePath);
+  const snapshot = await createSnapshotFromSaveFile(savePath, runtime);
   if (snapshot === undefined) {
     return;
   }
 
-  process.stdout.write(formatJson(snapshot));
+  runtime.io.writeStdout(formatJson(snapshot));
 }
 
 async function decodeSaveFile(savePath: string): Promise<DecodedEncodedSave> {
   return decodeEncodedSave(await readFile(savePath));
 }
 
-function reportSchemaCheck(decodedSave: unknown) {
+function reportSchemaCheck(decodedSave: unknown, io: CliIo) {
   try {
     parseDecodedSave(decodedSave);
-    process.stderr.write("recognized save schema\n");
+    io.writeStderr("recognized save schema\n");
   } catch (error) {
     if (error instanceof UnrecognizedSaveSchemaError) {
-      process.stderr.write(
+      io.writeStderr(
         "warning: decoded save does not match a recognized schema\n",
       );
       return;
@@ -105,9 +111,14 @@ function reportSchemaCheck(decodedSave: unknown) {
 
 async function createSnapshotFromSaveFile(
   savePath: string,
+  runtime: CliRuntime,
 ): Promise<SemanticSnapshot | undefined> {
   const decoded = await decodeSaveFile(savePath);
-  const parsedSave = parseSaveForSnapshot(decoded.decodedSave, savePath);
+  const parsedSave = parseSaveForSnapshot(
+    decoded.decodedSave,
+    savePath,
+    runtime,
+  );
   if (parsedSave === undefined) {
     return undefined;
   }
@@ -118,15 +129,16 @@ async function createSnapshotFromSaveFile(
 function parseSaveForSnapshot(
   decodedSave: unknown,
   savePath: string,
+  runtime: CliRuntime,
 ): ParsedDecodedSave | undefined {
   try {
     return parseDecodedSave(decodedSave);
   } catch (error) {
     if (error instanceof UnrecognizedSaveSchemaError) {
-      process.stderr.write(
+      runtime.io.writeStderr(
         `decoded save does not match a recognized schema\ntry: silksong-git save decode ${savePath}\n`,
       );
-      process.exitCode = exitCodes.unrecognizedSchema;
+      runtime.setExitCode(exitCodes.unrecognizedSchema);
       return undefined;
     }
 

@@ -5,6 +5,7 @@ import path from "node:path";
 import { initSaveHistory } from "@silksong-git/history";
 import type { Command } from "commander";
 
+import type { CliIo, CliRuntime } from "./cli-io.ts";
 import { exitCodes } from "./exit-codes.ts";
 import { formatJson } from "./output.ts";
 
@@ -14,7 +15,10 @@ interface InitCommandOptions {
   readonly json?: boolean;
 }
 
-export function registerRepoCommands(program: Command): void {
+export function registerRepoCommands(
+  program: Command,
+  runtime: CliRuntime,
+): void {
   const repoCommand = program.command("repo");
 
   repoCommand
@@ -23,17 +27,20 @@ export function registerRepoCommands(program: Command): void {
     .requiredOption("--repo <history-repo>")
     .option("--json")
     .action(async (options: InitCommandOptions) => {
-      await runInitCommand(options);
+      await runInitCommand(options, runtime);
     });
 }
 
-async function runInitCommand(options: InitCommandOptions) {
+async function runInitCommand(
+  options: InitCommandOptions,
+  runtime: CliRuntime,
+) {
   try {
-    await runInitCommandOrThrow(options);
+    await runInitCommandOrThrow(options, runtime.io);
   } catch (error) {
     if (error instanceof RepoInitUsageError) {
-      process.stderr.write(`${error.message}\n`);
-      process.exitCode = exitCodes.usage;
+      runtime.io.writeStderr(`${error.message}\n`);
+      runtime.setExitCode(exitCodes.usage);
       return;
     }
 
@@ -41,7 +48,7 @@ async function runInitCommand(options: InitCommandOptions) {
   }
 }
 
-async function runInitCommandOrThrow(options: InitCommandOptions) {
+async function runInitCommandOrThrow(options: InitCommandOptions, io: CliIo) {
   const watchedSavePath = path.resolve(requireOption(options.save, "--save"));
   const repoPath = path.resolve(requireOption(options.repo, "--repo"));
 
@@ -54,11 +61,11 @@ async function runInitCommandOrThrow(options: InitCommandOptions) {
   });
 
   if (options.json === true) {
-    process.stdout.write(formatJson(result));
+    io.writeStdout(formatJson(result));
     return;
   }
 
-  process.stdout.write(
+  io.writeStdout(
     `initialized save history repository\nrepo: ${result.repoPath}\nconfig: ${result.configPath}\nnext: silksong-git history checkpoint --repo ${result.repoPath}\n`,
   );
 }

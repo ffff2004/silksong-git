@@ -1,10 +1,12 @@
 import type {
+  LocalHistoryWatchProcess,
   LocalHistoryWatchProcessEvent,
   ObserveSaveResult,
 } from "@silksong-git/history";
 import { startLocalHistoryWatchProcess } from "@silksong-git/history";
 import type { Command } from "commander";
 
+import type { CliRuntime } from "./cli-io.ts";
 import { exitCodes } from "./exit-codes.ts";
 import { formatJson } from "./output.ts";
 import { resolveRepositoryContext } from "./repo-context.ts";
@@ -16,7 +18,10 @@ interface WatchStartCommandOptions {
   readonly port?: string;
 }
 
-export function registerWatchCommands(program: Command): void {
+export function registerWatchCommands(
+  program: Command,
+  runtime: CliRuntime,
+): void {
   const watchCommand = program.command("watch");
 
   watchCommand
@@ -26,12 +31,15 @@ export function registerWatchCommands(program: Command): void {
     .option("--http")
     .option("--port <port>")
     .action(async (options: WatchStartCommandOptions) => {
-      await runWatchStartCommand(options);
+      await runWatchStartCommand(options, runtime);
     });
 }
 
-async function runWatchStartCommand(options: WatchStartCommandOptions) {
-  if (rejectReservedHttpOptions(options)) {
+async function runWatchStartCommand(
+  options: WatchStartCommandOptions,
+  runtime: CliRuntime,
+) {
+  if (rejectReservedHttpOptions(options, runtime)) {
     return;
   }
 
@@ -45,14 +53,18 @@ async function runWatchStartCommand(options: WatchStartCommandOptions) {
   const stopRequest: { stop: () => void } = {
     stop: () => undefined,
   };
-  let stopStarted = false;
+  let localHistoryProcess: LocalHistoryWatchProcess | undefined;
+  const stopState = {
+    requested: false,
+    started: false,
+  };
   const output = createWatchEventRenderer(options, (target, error) => {
     if (outputState.failed) {
       return;
     }
 
     outputState.failed = true;
-    process.exitCode = 1;
+    runtime.setExitCode(1);
 
     if (target !== "stderr") {
       writeStderrSafely(`watch output failed: ${getErrorMessage(error)}\n`);
@@ -61,62 +73,79 @@ async function runWatchStartCommand(options: WatchStartCommandOptions) {
     stopRequest.stop();
   });
 
-  const localHistoryProcess = await startLocalHistoryWatchProcess({
-    repoPath,
-    onEvent: (event) => {
-      if (!outputState.failed) {
-        output.render(event);
-      }
-
-      if (event.type === "fatalError") {
-        process.exitCode = 1;
-      } else if (event.type === "stopped") {
-        stopped.resolve(undefined);
-      }
-    },
-  });
-
   stopRequest.stop = stop;
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
 
-  if (outputState.failed) {
-    stop();
+  try {
+    await runStartedWatchProcess();
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    output.dispose();
+  }
+
+  async function runStartedWatchProcess() {
+    localHistoryProcess = await startLocalHistoryWatchProcess({
+      repoPath,
+      onEvent: (event) => {
+        if (!outputState.failed) {
+          output.render(event);
+        }
+
+        if (event.type === "fatalError") {
+          runtime.setExitCode(1);
+        } else if (event.type === "stopped") {
+          stopped.resolve(undefined);
+        }
+      },
+    });
+
+    if (outputState.failed || stopState.requested) {
+      stop();
+    }
+
+    await stopped.promise;
   }
 
   function stop() {
+    stopState.requested = true;
+
+    if (localHistoryProcess === undefined) {
+      return;
+    }
+
     stopProcess().catch((error: unknown) => {
       writeStderrSafely(`watch stop failed: ${getErrorMessage(error)}\n`);
-      process.exitCode = 1;
+      runtime.setExitCode(1);
       stopped.resolve(undefined);
     });
   }
 
   async function stopProcess() {
-    if (stopStarted) {
+    const process = localHistoryProcess;
+
+    if (stopState.started || process === undefined) {
       return;
     }
 
-    stopStarted = true;
-    await localHistoryProcess.stop();
+    stopState.started = true;
+    await process.stop();
   }
-
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
-
-  await stopped.promise;
-  process.off("SIGINT", stop);
-  process.off("SIGTERM", stop);
-  output.dispose();
 }
 
-function rejectReservedHttpOptions(options: WatchStartCommandOptions): boolean {
+function rejectReservedHttpOptions(
+  options: WatchStartCommandOptions,
+  runtime: CliRuntime,
+): boolean {
   if (options.http !== true && options.port === undefined) {
     return false;
   }
 
-  process.stderr.write(
+  runtime.io.writeStderr(
     "error: HTTP Adapter is implemented by P5-T6 and is not available in this command yet\n",
   );
-  process.exitCode = exitCodes.usage;
+  runtime.setExitCode(exitCodes.usage);
 
   return true;
 }

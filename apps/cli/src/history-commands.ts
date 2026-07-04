@@ -18,6 +18,7 @@ import {
 import type { Command } from "commander";
 import path from "node:path";
 
+import type { CliIo, CliRuntime } from "./cli-io.ts";
 import { exitCodes } from "./exit-codes.ts";
 import { formatJson } from "./output.ts";
 import {
@@ -70,7 +71,10 @@ interface DiffCommandOptions {
   readonly json?: boolean;
 }
 
-export function registerHistoryCommands(program: Command): void {
+export function registerHistoryCommands(
+  program: Command,
+  runtime: CliRuntime,
+): void {
   const historyCommand = program.command("history");
 
   historyCommand
@@ -81,7 +85,7 @@ export function registerHistoryCommands(program: Command): void {
     .option("--include-filtered")
     .option("--json")
     .action(async (options: ListCommandOptions) => {
-      await runListCommand(options);
+      await runListCommand(options, runtime);
     });
 
   historyCommand
@@ -93,7 +97,7 @@ export function registerHistoryCommands(program: Command): void {
     .option("--json")
     .action(
       async (fromRef: string, toRef: string, options: DiffCommandOptions) => {
-        await runDiffCommand(fromRef, toRef, options);
+        await runDiffCommand(fromRef, toRef, options, runtime);
       },
     );
 
@@ -109,7 +113,7 @@ export function registerHistoryCommands(program: Command): void {
     .option("--include-filtered")
     .option("--json")
     .action(async (options: SearchCommandOptions) => {
-      await runSearchCommand(options);
+      await runSearchCommand(options, runtime);
     });
 
   historyCommand
@@ -119,7 +123,7 @@ export function registerHistoryCommands(program: Command): void {
     .option("--allow-unchanged")
     .option("--json")
     .action(async (options: CheckpointCommandOptions) => {
-      await runCheckpointCommand(options);
+      await runCheckpointCommand(options, runtime);
     });
 
   historyCommand
@@ -130,7 +134,7 @@ export function registerHistoryCommands(program: Command): void {
     .option("--confirm-in-place")
     .option("--repo <history-repo>")
     .action(async (commitRef: string, options: RestoreCommandOptions) => {
-      await runRestoreCommand(commitRef, options);
+      await runRestoreCommand(commitRef, options, runtime);
     });
 
   historyCommand
@@ -138,15 +142,18 @@ export function registerHistoryCommands(program: Command): void {
     .option("--repo <history-repo>")
     .option("--json")
     .action(async (options: RebuildCommandOptions) => {
-      await runRebuildCommand(options);
+      await runRebuildCommand(options, runtime);
     });
 }
 
-async function runCheckpointCommand(options: CheckpointCommandOptions) {
+async function runCheckpointCommand(
+  options: CheckpointCommandOptions,
+  runtime: CliRuntime,
+) {
   try {
-    await runCheckpointCommandOrThrow(options);
+    await runCheckpointCommandOrThrow(options, runtime);
   } catch (error) {
-    if (handleHistoryCommandError(error)) {
+    if (handleHistoryCommandError(error, runtime)) {
       return;
     }
 
@@ -154,11 +161,14 @@ async function runCheckpointCommand(options: CheckpointCommandOptions) {
   }
 }
 
-async function runListCommand(options: ListCommandOptions) {
+async function runListCommand(
+  options: ListCommandOptions,
+  runtime: CliRuntime,
+) {
   try {
-    await runListCommandOrThrow(options);
+    await runListCommandOrThrow(options, runtime.io);
   } catch (error) {
-    if (handleHistoryCommandError(error)) {
+    if (handleHistoryCommandError(error, runtime)) {
       return;
     }
 
@@ -166,11 +176,14 @@ async function runListCommand(options: ListCommandOptions) {
   }
 }
 
-async function runSearchCommand(options: SearchCommandOptions) {
+async function runSearchCommand(
+  options: SearchCommandOptions,
+  runtime: CliRuntime,
+) {
   try {
-    await runSearchCommandOrThrow(options);
+    await runSearchCommandOrThrow(options, runtime.io);
   } catch (error) {
-    if (handleHistoryCommandError(error)) {
+    if (handleHistoryCommandError(error, runtime)) {
       return;
     }
 
@@ -182,11 +195,12 @@ async function runDiffCommand(
   fromRef: string,
   toRef: string,
   options: DiffCommandOptions,
+  runtime: CliRuntime,
 ) {
   try {
-    await runDiffCommandOrThrow(fromRef, toRef, options);
+    await runDiffCommandOrThrow(fromRef, toRef, options, runtime.io);
   } catch (error) {
-    if (handleHistoryCommandError(error)) {
+    if (handleHistoryCommandError(error, runtime)) {
       return;
     }
 
@@ -197,11 +211,12 @@ async function runDiffCommand(
 async function runRestoreCommand(
   commitRef: string,
   options: RestoreCommandOptions,
+  runtime: CliRuntime,
 ) {
   try {
-    await runRestoreCommandOrThrow(commitRef, options);
+    await runRestoreCommandOrThrow(commitRef, options, runtime.io);
   } catch (error) {
-    if (handleHistoryCommandError(error)) {
+    if (handleHistoryCommandError(error, runtime)) {
       return;
     }
 
@@ -209,7 +224,7 @@ async function runRestoreCommand(
   }
 }
 
-async function runListCommandOrThrow(options: ListCommandOptions) {
+async function runListCommandOrThrow(options: ListCommandOptions, io: CliIo) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
   });
@@ -222,16 +237,16 @@ async function runListCommandOrThrow(options: ListCommandOptions) {
   });
 
   if (options.json === true) {
-    process.stdout.write(formatJson(result));
+    io.writeStdout(formatJson(result));
     return;
   }
 
   if (result.events.length === 0) {
-    process.stdout.write("no semantic events\n");
+    io.writeStdout("no semantic events\n");
     return;
   }
 
-  process.stdout.write(
+  io.writeStdout(
     result.events
       .map((event) => `${event.commit.shortRef} ${event.event.eventType}`)
       .join("\n")
@@ -239,7 +254,10 @@ async function runListCommandOrThrow(options: ListCommandOptions) {
   );
 }
 
-async function runCheckpointCommandOrThrow(options: CheckpointCommandOptions) {
+async function runCheckpointCommandOrThrow(
+  options: CheckpointCommandOptions,
+  runtime: CliRuntime,
+) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
   });
@@ -251,34 +269,37 @@ async function runCheckpointCommandOrThrow(options: CheckpointCommandOptions) {
   });
 
   if (result.status === "watcherError") {
-    process.stderr.write("cannot decode save\n");
-    process.exitCode = exitCodes.decodeFailure;
+    runtime.io.writeStderr("cannot decode save\n");
+    runtime.setExitCode(exitCodes.decodeFailure);
     return;
   }
 
   if (options.json === true) {
-    process.stdout.write(formatJson(result));
+    runtime.io.writeStdout(formatJson(result));
     return;
   }
 
   if (result.status === "committed") {
-    process.stdout.write(
+    runtime.io.writeStdout(
       `checkpoint recorded\ncommit: ${result.observation.commit.shortRef}\n`,
     );
     return;
   }
 
   if (result.reason === "unchanged") {
-    process.stdout.write(
+    runtime.io.writeStdout(
       "checkpoint skipped: unchanged\nnext: rerun with --allow-unchanged to record identical bytes\n",
     );
     return;
   }
 
-  process.stdout.write(`checkpoint skipped: ${result.reason}\n`);
+  runtime.io.writeStdout(`checkpoint skipped: ${result.reason}\n`);
 }
 
-async function runSearchCommandOrThrow(options: SearchCommandOptions) {
+async function runSearchCommandOrThrow(
+  options: SearchCommandOptions,
+  io: CliIo,
+) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
   });
@@ -289,16 +310,16 @@ async function runSearchCommandOrThrow(options: SearchCommandOptions) {
   });
 
   if (options.json === true) {
-    process.stdout.write(formatJson(result));
+    io.writeStdout(formatJson(result));
     return;
   }
 
   if (result.events.length === 0) {
-    process.stdout.write("no matching semantic events\n");
+    io.writeStdout("no matching semantic events\n");
     return;
   }
 
-  process.stdout.write(
+  io.writeStdout(
     result.events
       .map((event) => `${event.commit.shortRef} ${event.event.eventType}`)
       .join("\n")
@@ -310,6 +331,7 @@ async function runDiffCommandOrThrow(
   fromRef: string,
   toRef: string,
   options: DiffCommandOptions,
+  io: CliIo,
 ) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
@@ -322,16 +344,16 @@ async function runDiffCommandOrThrow(
   });
 
   if (options.json === true) {
-    process.stdout.write(formatJson(result));
+    io.writeStdout(formatJson(result));
     return;
   }
 
   if (result.events.length === 0) {
-    process.stdout.write("no semantic changes\n");
+    io.writeStdout("no semantic changes\n");
     return;
   }
 
-  process.stdout.write(
+  io.writeStdout(
     result.events
       .map((event) => `${event.commit.shortRef} ${event.event.eventType}`)
       .join("\n")
@@ -342,6 +364,7 @@ async function runDiffCommandOrThrow(
 async function runRestoreCommandOrThrow(
   commitRef: string,
   options: RestoreCommandOptions,
+  io: CliIo,
 ) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
@@ -353,16 +376,19 @@ async function runRestoreCommandOrThrow(
     target,
   });
 
-  process.stdout.write(
+  io.writeStdout(
     `restore complete\ncommit: ${result.commit.shortRef}\ntarget: ${result.targetPath}\nbackup: ${result.backupPath ?? "none"}\nsha256: ${result.writtenSha256}\n`,
   );
 }
 
-async function runRebuildCommand(options: RebuildCommandOptions) {
+async function runRebuildCommand(
+  options: RebuildCommandOptions,
+  runtime: CliRuntime,
+) {
   try {
-    await runRebuildCommandOrThrow(options);
+    await runRebuildCommandOrThrow(options, runtime.io);
   } catch (error) {
-    if (handleHistoryCommandError(error)) {
+    if (handleHistoryCommandError(error, runtime)) {
       return;
     }
 
@@ -370,18 +396,21 @@ async function runRebuildCommand(options: RebuildCommandOptions) {
   }
 }
 
-async function runRebuildCommandOrThrow(options: RebuildCommandOptions) {
+async function runRebuildCommandOrThrow(
+  options: RebuildCommandOptions,
+  io: CliIo,
+) {
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
   });
   const result = await rebuildSemanticReadModel({ repoPath });
 
   if (options.json === true) {
-    process.stdout.write(formatJson(result));
+    io.writeStdout(formatJson(result));
     return;
   }
 
-  process.stdout.write(
+  io.writeStdout(
     `read model rebuilt\nobservations: ${result.observationCount}\nevents: ${result.eventCount}\n`,
   );
 }
@@ -511,68 +540,73 @@ class HistoryCommandUsageError extends Error {
   override name = "HistoryCommandUsageError";
 }
 
-function handleHistoryCommandError(error: unknown): boolean {
+function handleHistoryCommandError(
+  error: unknown,
+  runtime: CliRuntime,
+): boolean {
+  const { io } = runtime;
+
   if (error instanceof RepositoryContextError) {
-    process.stderr.write(`${error.message}\n`);
-    process.exitCode = exitCodes.usage;
+    io.writeStderr(`${error.message}\n`);
+    runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof HistoryCommandUsageError) {
-    process.stderr.write(`${error.message}\n`);
-    process.exitCode = exitCodes.usage;
+    io.writeStderr(`${error.message}\n`);
+    runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof ReadModelUnavailableError) {
-    process.stderr.write(
+    io.writeStderr(
       "semantic read model unavailable\nnext: silksong-git history rebuild\n",
     );
-    process.exitCode = exitCodes.readModelUnavailable;
+    runtime.setExitCode(exitCodes.readModelUnavailable);
     return true;
   }
 
   if (error instanceof InvalidCommitRefError) {
-    process.stderr.write("error: invalid commit ref\n");
-    process.exitCode = exitCodes.usage;
+    io.writeStderr("error: invalid commit ref\n");
+    runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof RestoreTargetExistsError) {
-    process.stderr.write(
+    io.writeStderr(
       "error: restore target already exists\nnext: choose a new --to path\n",
     );
-    process.exitCode = exitCodes.usage;
+    runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof InvalidRestoreBackupDirectoryError) {
-    process.stderr.write("error: invalid restore backup directory\n");
-    process.exitCode = exitCodes.usage;
+    io.writeStderr("error: invalid restore backup directory\n");
+    runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof RestoreBackupFailedError) {
-    process.stderr.write("error: failed to create restore backup\n");
-    process.exitCode = exitCodes.usage;
+    io.writeStderr("error: failed to create restore backup\n");
+    runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof RestoreWriteFailedError) {
-    process.stderr.write(formatRestoreWriteFailure(error));
-    process.exitCode = exitCodes.usage;
+    io.writeStderr(formatRestoreWriteFailure(error));
+    runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof RestoreWriteVerificationError) {
-    process.stderr.write(formatRestoreVerificationFailure(error));
-    process.exitCode = exitCodes.usage;
+    io.writeStderr(formatRestoreVerificationFailure(error));
+    runtime.setExitCode(exitCodes.usage);
     return true;
   }
 
   if (error instanceof SaveHistoryRepositoryBusyError) {
-    process.stderr.write("error: save history repository is busy\n");
-    process.exitCode = exitCodes.repositoryBusy;
+    io.writeStderr("error: save history repository is busy\n");
+    runtime.setExitCode(exitCodes.repositoryBusy);
     return true;
   }
 

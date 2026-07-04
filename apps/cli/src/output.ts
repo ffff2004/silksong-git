@@ -1,5 +1,7 @@
 import { writeFile } from "node:fs/promises";
 
+import type { CliIo } from "./cli-io.ts";
+
 export function formatJson(
   value: unknown,
   options: { readonly compact?: boolean } = {},
@@ -16,9 +18,10 @@ export function formatJson(
 export async function writeJsonOutput(
   output: string,
   outputPath: string | undefined,
+  io: CliIo,
 ): Promise<void> {
   if (outputPath === undefined) {
-    process.stdout.write(output);
+    io.writeStdout(output);
     return;
   }
 
