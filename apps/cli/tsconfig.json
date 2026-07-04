@@ -8,5 +8,5 @@
     "rootDir": ".",
   },
 
-  "include": ["src/**/*.ts", "tsup.config.ts"],
+  "include": ["scripts/**/*.ts", "src/**/*.ts", "tsup.config.ts"],
 }
