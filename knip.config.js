@@ -8,10 +8,9 @@ const config = {
   eslint: {
     config: ["eslint.config.mjs", "eslint.config.json.mjs"],
   },
-  ignore: [
-    "prettier.config.mjs", // Prettier is provided by "complete-lint".
-  ],
   ignoreDependencies: [
+    "@tsconfig/node-lts", // This is resolved through complete-tsconfig's Node preset.
+    "@tsconfig/strictest", // This is resolved through complete-tsconfig's base preset.
     "ajv-cli", // This is used by the lint script.
     "ajv-formats", // This is used by the lint script.
     "complete-lint", // This is a linting meta-package.

@@ -31,6 +31,9 @@
   },
   "devDependencies": {
     "@eslint/json": "2.0.0",
+    "@tsconfig/node-lts": "24.0.0",
+    "@tsconfig/strictest": "2.0.8",
+    "@types/node": "26.0.0",
     "ajv-cli": "5.0.0",
     "ajv-formats": "3.0.1",
     "complete-common": "2.29.0",
@@ -40,6 +43,10 @@
     "eslint": "10.5.0",
     "eslint-config-complete": "4.16.0",
     "globby": "16.2.0",
+    "knip": "6.17.1",
+    "prettier": "3.8.4",
+    "prettier-plugin-organize-imports": "4.3.0",
+    "prettier-plugin-packagejson": "3.0.2",
     "stylelint": "17.13.0",
     "tsx": "4.22.4",
     "typescript": "6.0.3"

@@ -11,6 +11,15 @@ importers:
       '@eslint/json':
         specifier: 2.0.0
         version: 2.0.0
+      '@tsconfig/node-lts':
+        specifier: 24.0.0
+        version: 24.0.0
+      '@tsconfig/strictest':
+        specifier: 2.0.8
+        version: 2.0.8
+      '@types/node':
+        specifier: 26.0.0
+        version: 26.0.0
       ajv-cli:
         specifier: 5.0.0
         version: 5.0.0
@@ -38,6 +47,18 @@ importers:
       globby:
         specifier: 16.2.0
         version: 16.2.0
+      knip:
+        specifier: 6.17.1
+        version: 6.17.1
+      prettier:
+        specifier: 3.8.4
+        version: 3.8.4
+      prettier-plugin-organize-imports:
+        specifier: 4.3.0
+        version: 4.3.0(prettier@3.8.4)(typescript@6.0.3)
+      prettier-plugin-packagejson:
+        specifier: 3.0.2
+        version: 3.0.2(prettier@3.8.4)
       stylelint:
         specifier: 17.13.0
         version: 17.13.0(typescript@6.0.3)
