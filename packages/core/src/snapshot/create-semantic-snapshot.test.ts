@@ -1108,7 +1108,10 @@ function assertSnapshotItem(
 ) {
   const item = snapshot.items.find((candidate) => candidate.id === id);
 
-  assert.ok(item, `Expected snapshot item '${id}' to exist.`);
+  if (item === undefined) {
+    assert.fail(`Expected snapshot item '${id}' to exist.`);
+  }
+
   assert.equal(item.status, expected.status);
 
   if ("value" in expected) {

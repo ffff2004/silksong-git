@@ -1,5 +1,5 @@
 import loader from "@monaco-editor/loader";
-import type * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+import type * as monaco from "monaco-editor";
 import { getHTMLElement } from "../elements.ts";
 import { getSaveData } from "../save-data.ts";
 import { showToast } from "../utils.ts";

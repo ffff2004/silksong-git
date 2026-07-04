@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import type { ExecFileException } from "node:child_process";
+import type { ExecException } from "node:child_process";
 import { execFile, spawn } from "node:child_process";
 import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -54,7 +54,7 @@ async function runBuiltCli(args: readonly string[]): Promise<CliResult> {
       {
         cwd: repoRoot,
       },
-      (error: ExecFileException | null, stdout, stderr) => {
+      (error: ExecException | null, stdout, stderr) => {
         resolve({
           exitCode: getExitCode(error),
           stdout,
@@ -199,7 +199,7 @@ async function withTimeout<T>(
   }
 }
 
-function getExitCode(error: ExecFileException | null): number {
+function getExitCode(error: ExecException | null): number {
   if (error === null) {
     return 0;
   }
