@@ -26,10 +26,14 @@ try {
     "add",
     await findPackedArchive(packDirectory),
   ]);
-  await run(path.join(installDirectory, "node_modules/.bin/silksong-git"), [
+  await run("pnpm", [
+    "--dir",
+    installDirectory,
+    "exec",
+    "silksong-git",
     "--help",
   ]);
-  await run(path.join(installDirectory, "node_modules/.bin/ssgit"), ["--help"]);
+  await run("pnpm", ["--dir", installDirectory, "exec", "ssgit", "--help"]);
 } finally {
   await rm(tempDirectory, { recursive: true, force: true });
 }

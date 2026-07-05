@@ -15,7 +15,7 @@
     "format": "tsx ../../scripts/format.ts apps/cli",
     "lint": "tsx ../../scripts/lint.ts apps/cli",
     "prepack": "pnpm run build",
-    "preview": "./dist/main.js",
+    "preview": "node ./dist/main.js",
     "test": "pnpm run build && tsx --test --test-reporter=dot src/**/*.test.ts",
     "verify-pack": "tsx scripts/verify-pack.ts"
   },
