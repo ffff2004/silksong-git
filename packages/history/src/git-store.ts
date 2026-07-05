@@ -140,15 +140,14 @@ export async function readHistoryCommit(
   repoPath: string,
   ref: string,
 ): Promise<HistoryCommit> {
-  let fullRef: string;
-  let shortRef: string;
-  let committedAt: string;
+  let output: string;
 
   try {
-    [fullRef, shortRef, committedAt] = await Promise.all([
-      runGitOutput(repoPath, ["rev-parse", ref]),
-      runGitOutput(repoPath, ["rev-parse", "--short", ref]),
-      runGitOutput(repoPath, ["show", "-s", "--format=%cI", ref]),
+    output = await runGitOutput(repoPath, [
+      "show",
+      "-s",
+      "--format=%H%x00%h%x00%cI",
+      `${ref}^{commit}`,
     ]);
   } catch (error) {
     if (error instanceof GitCommandError && isInvalidGitRefError(error)) {
@@ -156,6 +155,16 @@ export async function readHistoryCommit(
     }
 
     throw error;
+  }
+
+  const [fullRef, shortRef, committedAt] = output.split("\0");
+
+  if (
+    fullRef === undefined
+    || shortRef === undefined
+    || committedAt === undefined
+  ) {
+    throw new Error(`Unexpected git show output for commit ref: ${ref}`);
   }
 
   return {

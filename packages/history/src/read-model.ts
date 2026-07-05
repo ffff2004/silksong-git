@@ -230,11 +230,9 @@ async function queryAvailableReadModelHistory(
 async function diffAvailableReadModelCommits(
   input: DiffCommitsInput,
 ): Promise<DiffCommitsResult> {
-  const [config, from, to] = await Promise.all([
-    readProjectConfig(input.repoPath),
-    readHistoryCommit(input.repoPath, input.fromRef),
-    readHistoryCommit(input.repoPath, input.toRef),
-  ]);
+  const config = await readProjectConfig(input.repoPath);
+  const from = await readHistoryCommit(input.repoPath, input.fromRef);
+  const to = await readHistoryCommit(input.repoPath, input.toRef);
   const filters = config.displaySemanticEventFilters;
   using db = openReadModel(input.repoPath);
   const before = selectSnapshot(db, from.ref);
