@@ -9,6 +9,13 @@ import { defineConfig } from "eslint/config";
 export default defineConfig(
   ...completeConfigBase,
   {
+    files: ["**/*"],
+    rules: {
+      // 我说中文
+      "complete/require-ascii": "off",
+    },
+  },
+  {
     files: ["apps/web/**/*.ts"],
     rules: {
       // By default, the upstream "n/file-extension-in-import" rule is enabled to lint for ".js"
@@ -73,6 +80,9 @@ export default defineConfig(
 
       // Synchronous event APIs sometimes need explicit Promise rejection handlers.
       "unicorn/prefer-await": "off",
+
+      // 弱智规则，会导致传给 Git 命令的参数被错误地认为是错误的模板字符串
+      "unicorn/no-incorrect-template-string-interpolation": "off",
     },
   },
   {

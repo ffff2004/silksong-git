@@ -6,7 +6,6 @@ import {
   checkCoreMappingJSONFiles,
   checkCoreMappingJSONSchemas,
 } from "./lint/core-mapping-json.ts";
-import { checkForIllegalCharacters } from "./lint/illegal-characters.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 
@@ -50,9 +49,6 @@ function getLintCommands(
 
       // Ensure that the core mapping JSON files satisfy their schemas.
       ["check core mapping JSON schemas", checkCoreMappingJSONSchemas()],
-
-      // Ensure that certain characters do not appear in any files.
-      ["check for illegal characters", checkForIllegalCharacters()],
 
       // Ensure that the core mapping JSON files adhere to certain quality standards.
       ["check core mapping JSON files", checkCoreMappingJSONFiles()],
