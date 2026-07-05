@@ -39,16 +39,16 @@ Do not rely on chat history for project state. If progress, dependencies, or tas
 - Web, CLI, and HTTP adapters must call public package Interfaces rather than internal helpers, SQLite tables, or Git command details.
 - Display Semantic Event Filters affect query/display behavior only; they must not decide raw Git commits or delete events from SQLite.
 
-## TDD Guidance
+## TDD Strategy
 
-For test-driven work, follow the `tdd` skill. Do not duplicate its general workflow here.
+Follow `tdd` skill. Use vertical slices, not horizontal batches. One behavior test should go red, then implementation should make it green, then move to the next behavior.
 
-Project-specific guidance:
+Tests should verify behavior through public Interfaces:
 
-- Start implementation with the `packages/core` tracer bullet described in `docs/save-history-design.md` and ADR-0017.
-- Test behavior through public Interfaces, not internal helpers.
-- For `packages/history`, prefer temporary directories with real Git and real SQLite.
-- Mock only true system boundaries such as time and watcher event delivery.
+- `packages/core` tests use `createSemanticSnapshot` and `diffSemanticSnapshots`.
+- `packages/history` tests use the history Interface with temporary directories, real Git, and real SQLite.
+- Mocks are limited to true system boundaries such as time and watcher event delivery.
+- Tests should not assert internal helper calls, Git command calls, or SQLite table layout.
 
 ## Commit Messages
 

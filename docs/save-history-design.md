@@ -1153,17 +1153,6 @@ Restore/Export
 
 Static Web Mode exposes only Current Save behavior. Local History Web Mode exposes History, Diff, Search, Watcher, and Restore/Export.
 
-## TDD Strategy
-
-Use vertical slices, not horizontal batches. One behavior test should go red, then implementation should make it green, then move to the next behavior.
-
-Tests should verify behavior through public Interfaces:
-
-- `packages/core` tests use `createSemanticSnapshot` and `diffSemanticSnapshots`.
-- `packages/history` tests use the history Interface with temporary directories, real Git, and real SQLite.
-- Mocks are limited to true system boundaries such as time and watcher event delivery.
-- Tests should not assert internal helper calls, Git command calls, or SQLite table layout.
-
 ## Accepted ADRs
 
 The current accepted decisions are:
