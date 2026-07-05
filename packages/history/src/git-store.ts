@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
 
 import { InvalidCommitRefError } from "./errors.ts";
+import { defaultGitAttributesContent, getRepositoryLayout } from "./layout.ts";
 import type { HistoryCommit } from "./types.ts";
 
 class GitCommandError extends Error {
@@ -38,6 +40,45 @@ export async function runGit(
       },
     );
   });
+}
+
+export async function runManagedGit(
+  cwd: string,
+  args: readonly string[],
+  env?: NodeJS.ProcessEnv,
+): Promise<void> {
+  await prepareManagedGitRepository(cwd);
+  await runGit(cwd, [...createManagedGitConfigArgs(cwd), ...args], env);
+}
+
+export async function prepareManagedGitRepository(
+  repoPath: string,
+): Promise<void> {
+  const layout = getRepositoryLayout(repoPath);
+
+  await mkdir(layout.silksongGitDirectory, { recursive: true });
+  await mkdir(layout.gitInfoDirectory, { recursive: true });
+  await mkdir(layout.noHooksDirectory, { recursive: true });
+  await writeFile(layout.gitAttributesPath, defaultGitAttributesContent);
+  await writeFile(layout.gitInfoAttributesPath, defaultGitAttributesContent);
+  await writeFile(layout.globalAttributesPath, "");
+}
+
+function createManagedGitConfigArgs(repoPath: string): readonly string[] {
+  const layout = getRepositoryLayout(repoPath);
+
+  return [
+    "-c",
+    "user.name=silksong-git",
+    "-c",
+    "user.email=silksong-git@example.invalid",
+    "-c",
+    "commit.gpgSign=false",
+    "-c",
+    `core.hooksPath=${layout.noHooksDirectory}`,
+    "-c",
+    `core.attributesFile=${layout.globalAttributesPath}`,
+  ];
 }
 
 async function runGitOutput(
@@ -170,6 +211,9 @@ function createGitEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...process.env,
     ...env,
+    GIT_ATTR_NOSYSTEM: "1",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_TERMINAL_PROMPT: "0",
     LANG: "C",
     LC_ALL: "C",
     LC_MESSAGES: "C",

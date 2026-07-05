@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 
-import { readHistoryCommit, runGit } from "./git-store.ts";
+import { readHistoryCommit, runManagedGit } from "./git-store.ts";
 import { getRepositoryLayout, trackedRawObservationPaths } from "./layout.ts";
 import type { ObservationMetadata } from "./observation.ts";
 import type { RawSaveObservation } from "./types.ts";
@@ -23,18 +23,10 @@ export async function commitRawSaveObservation(
     layout.observationPath,
     `${JSON.stringify(input.metadata, undefined, 2)}\n`,
   );
-  await runGit(input.repoPath, ["add", ...trackedRawObservationPaths]);
-  await runGit(
+  await runManagedGit(input.repoPath, ["add", ...trackedRawObservationPaths]);
+  await runManagedGit(
     input.repoPath,
-    [
-      "-c",
-      "user.name=silksong-git",
-      "-c",
-      "user.email=silksong-git@example.invalid",
-      "commit",
-      "-m",
-      createCommitMessage(input.metadata),
-    ],
+    ["commit", "-m", createCommitMessage(input.metadata)],
     {
       GIT_AUTHOR_DATE: input.metadata.observedAt,
       GIT_COMMITTER_DATE: input.metadata.observedAt,

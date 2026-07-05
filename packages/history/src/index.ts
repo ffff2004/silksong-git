@@ -4,8 +4,12 @@ import {
   readProjectConfig,
   serializeProjectConfig,
 } from "./config.ts";
-import { runGit } from "./git-store.ts";
-import { defaultGitignoreContent, getRepositoryLayout } from "./layout.ts";
+import { prepareManagedGitRepository, runGit } from "./git-store.ts";
+import {
+  defaultGitAttributesContent,
+  defaultGitignoreContent,
+  getRepositoryLayout,
+} from "./layout.ts";
 import { observeSaveUsingConfig } from "./observe-save.ts";
 import {
   diffReadModelCommits,
@@ -86,9 +90,11 @@ export async function initSaveHistory(
 
   await mkdir(input.repoPath, { recursive: true });
   await runGit(input.repoPath, ["init"]);
+  await prepareManagedGitRepository(input.repoPath);
 
   await mkdir(layout.silksongGitDirectory, { recursive: true });
   await writeFile(layout.gitignorePath, defaultGitignoreContent);
+  await writeFile(layout.gitAttributesPath, defaultGitAttributesContent);
   await writeFile(
     layout.configPath,
     serializeProjectConfig(createProjectConfig(input)),
