@@ -76,12 +76,14 @@ async function runWatchStartCommand(
   stopRequest.stop = stop;
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
+  process.once("SIGBREAK", stop);
 
   try {
     await runStartedWatchProcess();
   } finally {
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
+    process.off("SIGBREAK", stop);
     output.dispose();
   }
 

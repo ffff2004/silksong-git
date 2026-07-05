@@ -21,6 +21,10 @@ const maskShard2CollectedEncodedSavePath = path.join(
   fixtureDirectory,
   "mask-shard-2-collected-save.dat",
 );
+const skipChildSigtermTestsOnWindows =
+  process.platform === "win32"
+    ? "child.kill('SIGTERM') terminates Node child processes on Windows instead of delivering a catchable signal"
+    : false;
 
 interface CliResult {
   readonly exitCode: number;
@@ -245,66 +249,76 @@ async function createCliHistoryRepo(
   };
 }
 
-test("watch start --jsonl emits JSON Lines and exits cleanly on SIGTERM", async (t) => {
-  const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
-  const cli = spawnBuiltCli(["watch", "start", "--repo", repoPath, "--jsonl"]);
+test(
+  "watch start --jsonl emits JSON Lines and exits cleanly on SIGTERM",
+  { skip: skipChildSigtermTestsOnWindows },
+  async (t) => {
+    const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
+    const cli = spawnBuiltCli([
+      "watch",
+      "start",
+      "--repo",
+      repoPath,
+      "--jsonl",
+    ]);
 
-  t.after(() => {
+    t.after(() => {
+      cli.kill("SIGTERM");
+    });
+
+    const started = JSON.parse(
+      await withTimeout(
+        cli.readStdoutLine(),
+        5000,
+        "timed out waiting for started JSONL event",
+      ),
+    ) as {
+      readonly type?: unknown;
+      readonly repoPath?: unknown;
+      readonly watchedSavePath?: unknown;
+      readonly capturePolicy?: unknown;
+    };
+    const observation = JSON.parse(
+      await withTimeout(
+        cli.readStdoutLine(),
+        5000,
+        "timed out waiting for observation JSONL event",
+      ),
+    ) as {
+      readonly type?: unknown;
+      readonly repoPath?: unknown;
+      readonly cause?: unknown;
+      readonly status?: unknown;
+      readonly result?: unknown;
+    };
+
+    assert.deepEqual(started, {
+      type: "started",
+      repoPath,
+      watchedSavePath,
+      capturePolicy: {
+        debounceWriteMs: 500,
+        minCommitIntervalMs: 0,
+      },
+    });
+    assert.equal(observation.type, "observation");
+    assert.equal(observation.repoPath, repoPath);
+    assert.equal(observation.cause, "startup");
+    assert.equal(observation.status, "committed");
+    assert.equal("result" in observation, false);
+
     cli.kill("SIGTERM");
-  });
-
-  const started = JSON.parse(
-    await withTimeout(
-      cli.readStdoutLine(),
+    const exit = await withTimeout(
+      cli.waitForExit(),
       5000,
-      "timed out waiting for started JSONL event",
-    ),
-  ) as {
-    readonly type?: unknown;
-    readonly repoPath?: unknown;
-    readonly watchedSavePath?: unknown;
-    readonly capturePolicy?: unknown;
-  };
-  const observation = JSON.parse(
-    await withTimeout(
-      cli.readStdoutLine(),
-      5000,
-      "timed out waiting for observation JSONL event",
-    ),
-  ) as {
-    readonly type?: unknown;
-    readonly repoPath?: unknown;
-    readonly cause?: unknown;
-    readonly status?: unknown;
-    readonly result?: unknown;
-  };
+      "timed out waiting for watch command to exit after SIGTERM",
+    );
 
-  assert.deepEqual(started, {
-    type: "started",
-    repoPath,
-    watchedSavePath,
-    capturePolicy: {
-      debounceWriteMs: 500,
-      minCommitIntervalMs: 0,
-    },
-  });
-  assert.equal(observation.type, "observation");
-  assert.equal(observation.repoPath, repoPath);
-  assert.equal(observation.cause, "startup");
-  assert.equal(observation.status, "committed");
-  assert.equal("result" in observation, false);
-
-  cli.kill("SIGTERM");
-  const exit = await withTimeout(
-    cli.waitForExit(),
-    5000,
-    "timed out waiting for watch command to exit after SIGTERM",
-  );
-
-  assert.equal(exit.code, 0);
-  assert.equal(exit.signal, undefined);
-  assert.equal(cli.stderr, "");
-});
+    assert.equal(exit.code, 0);
+    assert.equal(exit.signal, undefined);
+    assert.equal(cli.stderr, "");
+  },
+);
 
 test("watch start stops and exits with failure when JSONL output fails", async (t) => {
   const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
@@ -362,6 +376,16 @@ test("watch start stops and exits with failure when JSONL output fails", async (
     "timed out waiting for second startup observation after output failure",
   );
 
+  if (process.platform === "win32") {
+    nextCli.kill("SIGTERM");
+    await withTimeout(
+      nextCli.waitForExit(),
+      5000,
+      "timed out waiting for second watch command to terminate on Windows",
+    );
+    return;
+  }
+
   nextCli.kill("SIGTERM");
   const nextExit = await withTimeout(
     nextCli.waitForExit(),
@@ -373,29 +397,33 @@ test("watch start stops and exits with failure when JSONL output fails", async (
   assert.equal(nextExit.signal, undefined);
 });
 
-test("watch start defaults to stderr logs", async (t) => {
-  const { repoPath } = await createCliHistoryRepo(t);
-  const cli = spawnBuiltCli(["watch", "start", "--repo", repoPath]);
+test(
+  "watch start defaults to stderr logs",
+  { skip: skipChildSigtermTestsOnWindows },
+  async (t) => {
+    const { repoPath } = await createCliHistoryRepo(t);
+    const cli = spawnBuiltCli(["watch", "start", "--repo", repoPath]);
 
-  t.after(() => {
+    t.after(() => {
+      cli.kill("SIGTERM");
+    });
+
+    await withTimeout(
+      cli.waitForStderrIncludes("watch observation startup: committed\n"),
+      5000,
+      "timed out waiting for default watch startup observation log",
+    );
+
+    assert.equal(cli.stdout, "");
+
     cli.kill("SIGTERM");
-  });
+    const exit = await withTimeout(
+      cli.waitForExit(),
+      5000,
+      "timed out waiting for default watch command to exit after SIGTERM",
+    );
 
-  await withTimeout(
-    cli.waitForStderrIncludes("watch observation startup: committed\n"),
-    5000,
-    "timed out waiting for default watch startup observation log",
-  );
-
-  assert.equal(cli.stdout, "");
-
-  cli.kill("SIGTERM");
-  const exit = await withTimeout(
-    cli.waitForExit(),
-    5000,
-    "timed out waiting for default watch command to exit after SIGTERM",
-  );
-
-  assert.equal(exit.code, 0);
-  assert.equal(exit.signal, undefined);
-});
+    assert.equal(exit.code, 0);
+    assert.equal(exit.signal, undefined);
+  },
+);
