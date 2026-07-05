@@ -1,7 +1,9 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+
+import { runPnpmExec } from "./pnpm-exec.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 
@@ -18,24 +20,6 @@ async function execFileAsync(
 
       const commandError: Error = Object.assign(error, { stderr, stdout });
       reject(commandError);
-    });
-  });
-}
-
-async function runCommand(command: string, args: readonly string[]) {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: "inherit",
-      cwd: REPO_ROOT,
-    });
-
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`${command} exited with code ${code}`));
-      }
     });
   });
 }
@@ -136,13 +120,18 @@ async function main() {
   let formatError: Error | undefined;
 
   try {
-    await runCommand("eslint", ["--fix", ...formatTargets]);
-    await runCommand("prettier", [
-      "--write",
-      ...formatTargets,
-      "--log-level",
-      "warn",
-    ]);
+    await runPnpmExec("eslint", ["--fix", ...formatTargets], {
+      cwd: REPO_ROOT,
+      stdio: "inherit",
+    });
+    await runPnpmExec(
+      "prettier",
+      ["--write", ...formatTargets, "--log-level", "warn"],
+      {
+        cwd: REPO_ROOT,
+        stdio: "inherit",
+      },
+    );
   } catch (error) {
     formatError = error instanceof Error ? error : new Error(String(error));
   }

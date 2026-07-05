@@ -6,28 +6,14 @@ import {
   isObject,
 } from "complete-common";
 import { getFilePathsInDirectory, readFile } from "complete-node";
-import { execFile } from "node:child_process";
 import path from "node:path";
 
-import { CORE_PACKAGE_ROOT } from "./paths.ts";
+import { runPnpmExec } from "../pnpm-exec.ts";
+import { CORE_PACKAGE_ROOT, REPO_ROOT } from "./paths.ts";
 
 interface CommandErrorOutput {
   readonly stderr?: unknown;
   readonly stdout?: unknown;
-}
-
-async function execFileAsync(file: string, args: readonly string[]) {
-  await new Promise<void>((resolve, reject) => {
-    execFile(file, [...args], (error, stdout, stderr) => {
-      if (error === null) {
-        resolve();
-        return;
-      }
-
-      const commandError: Error = Object.assign(error, { stderr, stdout });
-      reject(commandError);
-    });
-  });
 }
 
 async function getCoreMappingJSONFilePaths(): Promise<readonly string[]> {
@@ -48,15 +34,19 @@ export async function checkCoreMappingJSONSchemas(): Promise<void> {
     const schemaFilePath = path.join(dir, `${name}.schema.json`);
 
     try {
-      await execFileAsync("ajv", [
-        "validate",
-        "-c",
-        "ajv-formats",
-        "-d",
-        jsonFilePath,
-        "-s",
-        schemaFilePath,
-      ]);
+      await runPnpmExec(
+        "ajv",
+        [
+          "validate",
+          "-c",
+          "ajv-formats",
+          "-d",
+          jsonFilePath,
+          "-s",
+          schemaFilePath,
+        ],
+        { cwd: REPO_ROOT },
+      );
     } catch (error) {
       const details = getCommandErrorDetails(error);
       throw new Error(
