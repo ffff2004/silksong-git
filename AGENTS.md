@@ -113,7 +113,7 @@ Before commit, run the full repository verification:
 pnpm verify
 ```
 
-`pnpm verify` runs formatting, linting, tests, and custom verifications. `pnpm format` runs ESLint fixes and Prettier. `pnpm lint` runs TypeScript, ESLint, JSON schema validation, stylelint, knip, Prettier checks, and custom repository checks.
+`pnpm verify` runs formatting, linting, tests, builds, and custom verifications. `pnpm format` runs ESLint fixes and Prettier. `pnpm lint` runs TypeScript, ESLint, JSON schema validation, stylelint, knip, Prettier checks, and custom repository checks.
 
 Package-scoped `format` and `lint` commands are for fast feedback while developing. They do not replace the root `pnpm verify` checks before commit, because the root lint command also runs cross-repository checks.
 
