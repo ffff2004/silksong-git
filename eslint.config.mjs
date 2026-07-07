@@ -36,20 +36,10 @@ export default defineConfig(
       // Complete-lint 5 enables stricter rules that would require broad rewrites of the current
       // static Web app. Keep the remaining overrides focused on lower-signal compatibility churn
       // instead of changing existing DOM, state, parser, and user-facing text patterns.
-      "@typescript-eslint/strict-boolean-expressions": "off",
-      "complete/require-ascii": "off",
       "regexp/require-unicode-regexp": "off",
       "regexp/require-unicode-sets-regexp": "off",
       "unicorn/max-nested-calls": "off",
-      "unicorn/no-declarations-before-early-exit": "off",
-      "unicorn/no-this-outside-of-class": "off",
-      "unicorn/no-top-level-assignment-in-function": "off",
-      "unicorn/no-unsafe-dom-html": "off",
-      "unicorn/no-unreadable-new-expression": "off",
-      "unicorn/no-useless-template-literals": "off",
       "unicorn/prefer-await": "off",
-      "unicorn/prefer-dom-node-html-methods": "off",
-      "unicorn/text-encoding-identifier-case": "off",
       "unicorn/try-complexity": "off",
 
       "@typescript-eslint/explicit-module-boundary-types": "off",

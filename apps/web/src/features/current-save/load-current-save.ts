@@ -63,7 +63,8 @@ export async function loadCurrentSave(file: File): Promise<LoadedCurrentSave> {
 
 function parseRawDecodedSaveJson(buffer: ArrayBuffer): unknown {
   try {
-    return JSON.parse(new TextDecoder("utf8").decode(buffer));
+    const decoder = new TextDecoder("utf-8");
+    return JSON.parse(decoder.decode(buffer));
   } catch (error) {
     throw new LoadCurrentSaveError("Invalid or corrupted save file", {
       cause: error,

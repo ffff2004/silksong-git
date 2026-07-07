@@ -97,7 +97,7 @@ function formatJournalCounter(item: ProgressItemData, value: unknown): string {
   const required =
     "required" in item && typeof item.required === "number" ? item.required : 0;
 
-  return current >= required ? `${current}` : `${current}/${required}`;
+  return current >= required ? current.toString() : `${current}/${required}`;
 }
 
 function getFlagLabel(item: ProgressItemData): string | undefined {
