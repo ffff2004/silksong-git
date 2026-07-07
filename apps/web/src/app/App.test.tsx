@@ -36,7 +36,7 @@ describe("Solid Web app routing", () => {
   it("loads decoded JSON through Static Web Mode and renders summary metrics", async () => {
     render(() => <App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Upload save" }));
+    fireEvent.click(getRequiredElement("#upload-save"));
     const fileInput = getRequiredFileInput();
 
     const file = new File([JSON.stringify(decodedSave)], "save.json", {
@@ -64,14 +64,14 @@ describe("Solid Web app routing", () => {
     const { container } = render(() => <App />);
 
     expect(screen.getByText("Base Needle")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: /Acts/ }));
-    fireEvent.click(screen.getByLabelText("Act II"));
-    fireEvent.click(screen.getByLabelText("Act III"));
+    fireEvent.click(getRequiredElement("#acts-dropdown-button"));
+    fireEvent.click(getRequiredElement('#acts-dropdown-menu input[value="2"]'));
+    fireEvent.click(getRequiredElement('#acts-dropdown-menu input[value="3"]'));
 
     expect(screen.queryByText("Shining Needle")).toBeNull();
     expect(screen.getByText("Base Needle")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Upload save" }));
+    fireEvent.click(getRequiredElement("#upload-save"));
     const fileInput = getRequiredFileInput();
     const file = new File([JSON.stringify(decodedSave)], "save.json", {
       type: "application/json",
@@ -83,14 +83,14 @@ describe("Solid Web app routing", () => {
       );
     });
 
-    fireEvent.click(screen.getByLabelText("Show only missing"));
+    fireEvent.click(getRequiredElement("#show-only-missing"));
     expect(container.querySelector(".boss.done")).toBeNull();
   }, 20_000);
 
   it("shows Raw Save and Map routes from loaded Static Web Mode state", async () => {
     render(() => <App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Upload save" }));
+    fireEvent.click(getRequiredElement("#upload-save"));
     const fileInput = getRequiredFileInput();
     const file = new File([JSON.stringify(decodedSave)], "save.json", {
       type: "application/json",
@@ -142,6 +142,15 @@ function getRequiredFileInput(): HTMLInputElement {
   }
 
   return fileInput;
+}
+
+function getRequiredElement(selector: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element === null) {
+    throw new Error(`Expected ${selector} to exist.`);
+  }
+
+  return element;
 }
 
 function getCssRuleBody(selector: string): string {
