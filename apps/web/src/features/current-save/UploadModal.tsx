@@ -26,6 +26,23 @@ export function UploadModal(props: UploadModalProps) {
     toastStore.showToast(result.message);
   };
 
+  const startUpload = (file: File | undefined) => {
+    uploadFile(file).catch(() => {
+      toastStore.showToast("Unable to load save file.");
+    });
+  };
+
+  const copyPath = (path: string) => {
+    writeClipboardText(path).then(
+      () => {
+        toastStore.showToast("Path copied to clipboard!");
+      },
+      () => {
+        toastStore.showToast("Unable to copy path.");
+      },
+    );
+  };
+
   const openFilePicker = () => {
     fileInput?.click();
   };
@@ -34,7 +51,7 @@ export function UploadModal(props: UploadModalProps) {
     event.preventDefault();
     event.stopPropagation();
     setIsDragOver(false);
-    void uploadFile(event.dataTransfer?.files[0]);
+    startUpload(event.dataTransfer?.files[0]);
   };
 
   return (
@@ -106,7 +123,7 @@ export function UploadModal(props: UploadModalProps) {
             id="fileInput"
             hidden
             onChange={(event) => {
-              void uploadFile(event.currentTarget.files?.[0]);
+              startUpload(event.currentTarget.files?.[0]);
             }}
           />
 
@@ -150,13 +167,7 @@ export function UploadModal(props: UploadModalProps) {
         class="pill"
         type="button"
         onClick={() => {
-          void writeClipboardText(pillProps.path)
-            .then(() => {
-              toastStore.showToast("Path copied to clipboard!");
-            })
-            .catch(() => {
-              toastStore.showToast("Unable to copy path.");
-            });
+          copyPath(pillProps.path);
         }}
       >
         {pillProps.label}

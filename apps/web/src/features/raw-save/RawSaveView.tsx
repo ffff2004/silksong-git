@@ -8,6 +8,29 @@ export function RawSaveView() {
   const saveStore = useSaveStore();
   const toastStore = useToastStore();
   const rawJson = () => getRawSaveJson(saveStore.decodedSave());
+  const copyRawJson = () => {
+    if (!saveStore.hasSave()) {
+      toastStore.showToast("No save loaded yet.");
+      return;
+    }
+
+    writeClipboardText(rawJson()).then(
+      () => {
+        toastStore.showToast("JSON copied to clipboard.");
+      },
+      () => {
+        toastStore.showToast("Copy failed.");
+      },
+    );
+  };
+  const downloadRawJson = () => {
+    if (!saveStore.hasSave()) {
+      toastStore.showToast("No save loaded yet.");
+      return;
+    }
+
+    downloadRawSaveJson(saveStore.decodedSave());
+  };
 
   return (
     <section id="rawsave-section" class="tab" data-testid="raw-save-view">
@@ -19,20 +42,7 @@ export function RawSaveView() {
               id="raw-save-data-copy"
               class="rawsave-btn"
               type="button"
-              onClick={() => {
-                if (!saveStore.hasSave()) {
-                  toastStore.showToast("No save loaded yet.");
-                  return;
-                }
-
-                void writeClipboardText(rawJson())
-                  .then(() => {
-                    toastStore.showToast("JSON copied to clipboard.");
-                  })
-                  .catch(() => {
-                    toastStore.showToast("Copy failed.");
-                  });
-              }}
+              onClick={copyRawJson}
             >
               Copy
             </button>
@@ -40,14 +50,7 @@ export function RawSaveView() {
               id="raw-save-json-data-download"
               class="rawsave-btn"
               type="button"
-              onClick={() => {
-                if (!saveStore.hasSave()) {
-                  toastStore.showToast("No save loaded yet.");
-                  return;
-                }
-
-                downloadRawSaveJson(saveStore.decodedSave());
-              }}
+              onClick={downloadRawJson}
             >
               Download JSON
             </button>

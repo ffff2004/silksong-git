@@ -52,8 +52,12 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }) {
       const nextActs = acts.filter((act) => defaultActs.includes(act as never));
       setSelectedActsSignal(nextActs.length === 0 ? [1] : nextActs);
     },
-    setShowOnlyMissing,
-    setShowSpoilers,
+    setShowOnlyMissing(nextShowOnlyMissing) {
+      setShowOnlyMissing(nextShowOnlyMissing);
+    },
+    setShowSpoilers(nextShowSpoilers) {
+      setShowSpoilers(nextShowSpoilers);
+    },
     showOnlyMissing,
     showSpoilers,
   };

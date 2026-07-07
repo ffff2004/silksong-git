@@ -43,7 +43,12 @@ export function ProgressView() {
         <div id="allprogress-grid">
           <For each={sections}>
             {(section) => (
-              <ProgressSection section={section} onOpenInfo={setInfoItem} />
+              <ProgressSection
+                section={section}
+                onOpenInfo={(item) => {
+                  setInfoItem(item);
+                }}
+              />
             )}
           </For>
         </div>

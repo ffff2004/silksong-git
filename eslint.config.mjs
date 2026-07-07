@@ -34,15 +34,9 @@ export default defineConfig(
       "import-x/no-cycle": "off",
 
       // Complete-lint 5 enables stricter rules that would require broad rewrites of the current
-      // static Web app. Keep this upgrade focused on tool compatibility instead of changing
-      // existing DOM, state, parser, and user-facing text patterns.
-      "@typescript-eslint/no-unsafe-argument": "off",
-      "@typescript-eslint/no-unsafe-assignment": "off",
-      "@typescript-eslint/no-unsafe-call": "off",
-      "@typescript-eslint/no-unsafe-member-access": "off",
-      "@typescript-eslint/no-unsafe-return": "off",
+      // static Web app. Keep the remaining overrides focused on lower-signal compatibility churn
+      // instead of changing existing DOM, state, parser, and user-facing text patterns.
       "@typescript-eslint/strict-boolean-expressions": "off",
-      "@typescript-eslint/strict-void-return": "off",
       "complete/require-ascii": "off",
       "regexp/require-unicode-regexp": "off",
       "regexp/require-unicode-sets-regexp": "off",
@@ -59,8 +53,6 @@ export default defineConfig(
       "unicorn/try-complexity": "off",
 
       "@typescript-eslint/explicit-module-boundary-types": "off",
-      "@typescript-eslint/no-floating-promises": "off",
-      "no-void": "off",
       "no-unassigned-vars": "off",
       "perfectionist/sort-jsx-props": "off",
     },

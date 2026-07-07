@@ -98,7 +98,9 @@ export function MapView() {
           activeCategories={activeCategories()}
           categories={categories}
           isOpen={isFiltersOpen()}
-          onSearch={setSearchTerm}
+          onSearch={(term) => {
+            setSearchTerm(term);
+          }}
           onSetAllCategories={(checked) => {
             setActiveCategories(
               checked ? new Set<string>(categories) : new Set<string>(),
