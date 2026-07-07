@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import {
   cleanup,
   fireEvent,
@@ -5,6 +7,7 @@ import {
   screen,
   waitFor,
 } from "@solidjs/testing-library";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import decodedSave from "../test-fixtures/mask-shard-2-collected-rosaries-save.decoded.json";
@@ -110,6 +113,26 @@ describe("Solid Web app routing", () => {
     expect(document.querySelector("#worldMap")).not.toBeNull();
     expect(document.querySelectorAll(".map-pin").length).toBeGreaterThan(0);
   }, 20_000);
+
+  it("resets upload platform pill styling for both links and buttons", () => {
+    const pillRule = getCssRuleBody(".pill");
+    const pillHoverRule = getCssRuleBody(".pill:hover");
+
+    expect(pillRule).toContain("appearance: none;");
+    expect(pillRule).toContain("box-sizing: content-box;");
+    expect(pillRule).toContain("color: var(--accent);");
+    expect(pillHoverRule).toContain("background: #2a2a2a;");
+    expect(pillHoverRule).toContain("color: #e69b50;");
+    expect(pillHoverRule).toContain(
+      "text-shadow: 0 0 8px rgba(197, 106, 45, 0.4);",
+    );
+  });
+
+  it("lets button-rendered controls inherit the page font", () => {
+    const buttonRule = getCssRuleBody("button");
+
+    expect(buttonRule).toContain("font: inherit;");
+  });
 });
 
 function getRequiredFileInput(): HTMLInputElement {
@@ -119,4 +142,21 @@ function getRequiredFileInput(): HTMLInputElement {
   }
 
   return fileInput;
+}
+
+function getCssRuleBody(selector: string): string {
+  const stylesheet = readFileSync("public/assets/css/style.css", "utf8");
+  const rulePattern = new RegExp(
+    String.raw`${escapeRegExp(selector)}\s*\{([^}]*)\}`,
+  );
+  const match = rulePattern.exec(stylesheet);
+  if (match?.[1] === undefined) {
+    throw new Error(`Expected ${selector} CSS rule to exist.`);
+  }
+
+  return match[1];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
 }

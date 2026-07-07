@@ -77,6 +77,10 @@ body {
     auto;
 }
 
+button {
+  font: inherit;
+}
+
 .home-active main {
   overflow: hidden; /* block scroll only in home */
 }
@@ -591,6 +595,8 @@ main a:hover,
 }
 
 .pill {
+  appearance: none;
+  box-sizing: content-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -598,14 +604,16 @@ main a:hover,
   background: #242424;
   border: 1px solid #333;
   border-radius: 10px;
-  color: #ddd;
+  color: var(--accent);
   text-decoration: none;
   cursor: default;
 }
 
 .pill:hover {
   background: #2a2a2a;
+  color: #e69b50;
   cursor: pointer;
+  text-shadow: 0 0 8px rgba(197, 106, 45, 0.4);
 }
 
 .boss.done {
