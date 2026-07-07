@@ -61,7 +61,8 @@ export function MonacoJsonViewer(props: MonacoJsonViewerProps) {
   });
 
   createEffect(() => {
-    editor?.setValue(props.value);
+    const { value } = props;
+    editor?.setValue(value);
   });
 
   onCleanup(() => {
