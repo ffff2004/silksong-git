@@ -6,20 +6,20 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 ## Current Status
 
-- Current phase: P5 CLI
-- Next task: P5-T7 Add Optional HTTP Adapter To Watch Process
-- Last updated: 2026-07-03
+- Current phase: P6 Web Integration
+- Next task: P6-T2 Refactor Web App To Solid
+- Last updated: 2026-07-06
 
 ## Phase Overview
 
-| Phase                                 | Status      | Depends On | Goal                                                                                                 |
-| ------------------------------------- | ----------- | ---------- | ---------------------------------------------------------------------------------------------------- |
-| P1 Documentation / Repository Hygiene | complete    | none       | Documentation is coherent, old references are moved, and validation passes.                          |
-| P2 Workspace Skeleton                 | complete    | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                                 |
-| P3 Core Semantic Module               | complete    | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface. |
-| P4 History Module                     | complete    | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.           |
-| P5 CLI                                | in progress | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                          |
-| P6 Web Integration                    | in progress | P3, P4     | Web UI uses core and supports static and local history modes.                                        |
+| Phase                                 | Status      | Depends On | Goal                                                                                                                     |
+| ------------------------------------- | ----------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| P1 Documentation / Repository Hygiene | complete    | none       | Documentation is coherent, old references are moved, and validation passes.                                              |
+| P2 Workspace Skeleton                 | complete    | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                                                     |
+| P3 Core Semantic Module               | complete    | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface.                     |
+| P4 History Module                     | complete    | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.                               |
+| P5 CLI                                | in progress | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                                              |
+| P6 Web Integration                    | in progress | P3, P4     | Web UI uses core, keeps static mode working, and gains the Solid routing/state foundation needed for local history mode. |
 
 ## Task Rules
 
@@ -1081,7 +1081,67 @@ Notes:
 - Mapping JSON and schema validation ownership moved to `packages/core/src/data`; duplicated Web data files and Web-local decoder/parser files were removed.
 - `apps/web` now depends on `@silksong-git/core` and no longer directly depends on `crypto-js`, `zod`, or `@types/crypto-js`.
 
-### P6-T2 Add Local History Web Mode
+### P6-T2 Refactor Web App To Solid
+
+Status: in progress
+
+Depends on:
+
+- P6-T1
+
+Owned files or likely files:
+
+- `apps/web/`
+- `apps/web/package.json`
+- `apps/web/vite.config.ts`
+- `apps/web/tsconfig*.json`
+- `pnpm-lock.yaml`
+
+Relevant docs and ADRs:
+
+- `docs/current-design-reference/overview.md`
+- `docs/current-design-reference/save-to-semantic.md`
+- [ADR-0009](adr/0009-one-web-ui-with-static-and-local-history-modes.md)
+- [ADR-0011](adr/0011-workspace-package-architecture.md)
+- [ADR-0012](adr/0012-core-semantic-module-interface.md)
+
+Acceptance criteria:
+
+- Static Web Mode remains behavior-compatible with the current upload/current-save workflow, without requiring DOM structure or pixel-level equivalence.
+- Existing user-visible static behavior remains available: encoded `.dat` and decoded `.json` upload, drag/drop upload, clear data, view switching, missing-only filtering, spoiler display, Act filtering, Raw Save display, summary metrics, mode banner, and map pins.
+- The app entry renders through Solid. The old global `DOMContentLoaded` initialization, centralized DOM query module, manual sidebar/tab show-hide path, and module-level save-data globals are removed from the main runtime path.
+- Major UI markup moves from `index.html` into the Solid component tree. `index.html` keeps only the app mount point, metadata, and required static links.
+- View/tab state is represented by lightweight Solid routing, using a static-deployment-friendly hash route strategy such as `#/progress`, `#/map`, and `#/raw-save`.
+- Static deployment compatibility is preserved: `pnpm --filter @silksong-git/web build` produces a pure static Vite SPA, respects the existing `BASE_PATH`/Vite base behavior, and does not require a local HTTP endpoint, CLI process, Node server, or filesystem permission.
+- Runtime state has a clear application-owned boundary, split as needed into slices such as `save`, `ui`, and future `localHistory`; components read and write through explicit state/actions/selectors rather than DOM state, scattered module globals, or `localStorage` as the runtime source of truth.
+- `localStorage` remains only a persistence adapter for UI preferences such as Act filter, missing-only filter, and spoiler display. But active tab will be dropped and new routing system will handle it.
+- Web code continues to use `@silksong-git/core` public Interfaces such as `decodeEncodedSave`, `parseDecodedSave`, `getBuiltinMappingData`, and `createSemanticSnapshot`; it does not copy mapping data, read core internals, or reimplement save-to-semantic mapping.
+- Raw Save display may continue to show the raw Decoded Save JSON, while semantic progress and summaries continue to come from Semantic Snapshots.
+- Local History Web Mode is not implemented in this task. The task may reserve a state slice or file boundary for future local history work, but it must not probe local HTTP endpoints, call a local history API, or add Current Save, History, Diff, Search, Watcher, Restore, or Export local-history behavior to the runtime path.
+- The migration uses minimal Web-scoped dependency changes, expected to include `solid-js`, a Solid-compatible router such as `@solidjs/router`, and any required Vite Solid plugin. It must not perform unrelated root tooling or workspace-wide dependency upgrades.
+- Existing CSS and visual language remain the default path. CSS changes are limited to componentization needs or removal of obsolete old-DOM styles; no theme redesign, layout redesign, CSS-in-JS migration, or UI framework migration is included.
+
+Manual QA checklist:
+
+- [ ] Visual layout remains approximately equivalent on desktop and mobile, including spacing, fonts, icon rendering, and dark visual language.
+- [ ] Map zoom and pan feel usable with mouse, touchpad, and representative touch interaction.
+- [ ] Real browser drag-and-drop upload works, in addition to file-input upload covered by automated tests.
+- [ ] Clipboard path copy works in a real browser session, including permission behavior for supported browsers.
+- [ ] Raw Save JSON download creates a usable file through the browser download flow.
+- [ ] External links such as Wiki, GitHub, and Steam Cloud open as expected.
+- [ ] Back-to-top, TOC scrolling, modal close behavior, and long-page scrolling feel usable on desktop and mobile.
+- [ ] Monaco Raw Save display remains usable for representative large save JSON.
+- [ ] Static build behavior works when served with the GitHub Pages-style `/silksong-git/` base path.
+- [ ] Representative real user saves, if available locally and not committed, still load and render without obvious regressions.
+
+Verification:
+
+- `pnpm --filter @silksong-git/web test`: pending
+- `pnpm --filter @silksong-git/web build`: pending
+- `pnpm --filter @silksong-git/web format`: pending
+- `pnpm --filter @silksong-git/web lint`: pending
+
+### P6-T3 Add Local History Web Mode
 
 Status: pending
 
@@ -1089,7 +1149,7 @@ Depends on:
 
 - P5-T7
 - P4-T2
-- P6-T1
+- P6-T2
 
 Owned files or likely files:
 
@@ -1119,13 +1179,13 @@ Verification:
 - Web test/build command: pending
 - local Web UI smoke test: pending
 
-### P6-T3 Add UI Open CLI Workflow
+### P6-T4 Add UI Open CLI Workflow
 
 Status: pending
 
 Depends on:
 
-- P6-T2
+- P6-T3
 
 Owned files or likely files:
 
