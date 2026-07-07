@@ -181,6 +181,33 @@ describe("Solid Web app routing", () => {
     expect(document.querySelectorAll(".toc-category.open").length).toBe(1);
   });
 
+  it("keeps the progress legend in the progress view and persists its collapsed state", () => {
+    const { unmount } = render(() => <App />);
+
+    const progressSection = getRequiredElement("#allprogress-section");
+    const legend = progressSection.querySelector(".progress-legend");
+    expect(legend).not.toBeNull();
+    expect(
+      document.querySelector(".toc-container .progress-legend"),
+    ).toBeNull();
+    expect(screen.getByText("Upgrade of another tool")).toBeDefined();
+
+    const collapseButton = getRequiredElement(".progress-legend-toggle");
+    expect(collapseButton.getAttribute("aria-label")).toBe("Collapse legend");
+    fireEvent.click(collapseButton);
+    expect(screen.queryByText("Upgrade of another tool")).toBeNull();
+    expect(localStorage.getItem("progressLegendCollapsed")).toBe("true");
+
+    unmount();
+    cleanup();
+    render(() => <App />);
+
+    expect(screen.queryByText("Upgrade of another tool")).toBeNull();
+    expect(
+      getRequiredElement(".progress-legend-toggle").getAttribute("aria-label"),
+    ).toBe("Expand legend");
+  });
+
   it("shows Raw Save and Map routes from loaded Static Web Mode state", async () => {
     render(() => <App />);
 

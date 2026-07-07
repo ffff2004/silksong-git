@@ -140,20 +140,6 @@ export function ProgressToc(props: ProgressTocProps) {
           )}
         </For>
       </ul>
-      <div class="toc-legend">
-        <div class="legend-title">Legend</div>
-        <ul class="legend-list">
-          <li>
-            <i class="fa-solid fa-arrow-up" /> Upgrade of another tool
-          </li>
-          <li>
-            <i class="fa-solid fa-code-branch" /> Mutually exclusive item
-          </li>
-          <li>
-            <span class="legend-missable">!</span> Missable item
-          </li>
-        </ul>
-      </div>
     </nav>
   );
 

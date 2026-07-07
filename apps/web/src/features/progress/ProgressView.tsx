@@ -3,6 +3,7 @@ import { For, createSignal } from "solid-js";
 import { useSaveStore } from "../../state/save-store.tsx";
 import { formatPlayTime } from "../../utils/format.ts";
 import { InfoModal } from "./InfoModal.tsx";
+import { ProgressLegend } from "./ProgressLegend.tsx";
 import { ProgressSection } from "./ProgressSection.tsx";
 import { ProgressToc } from "./ProgressToc.tsx";
 import { getProgressSections } from "./progress-selectors.ts";
@@ -52,6 +53,7 @@ export function ProgressView() {
             )}
           </For>
         </div>
+        <ProgressLegend />
       </section>
       <ProgressToc sections={sections} />
       <InfoModal

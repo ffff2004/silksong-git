@@ -9,7 +9,9 @@ import {
 } from "solid-js";
 
 interface PreferencesStore {
+  readonly progressLegendCollapsed: () => boolean;
   readonly selectedActs: () => readonly number[];
+  readonly setProgressLegendCollapsed: (collapsed: boolean) => void;
   readonly setSelectedActs: (acts: readonly number[]) => void;
   readonly setShowOnlyMissing: (showOnlyMissing: boolean) => void;
   readonly setShowSpoilers: (showSpoilers: boolean) => void;
@@ -25,12 +27,18 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }) {
     createSignal<readonly number[]>(defaultActs);
   const [showOnlyMissing, setShowOnlyMissing] = createSignal(false);
   const [showSpoilers, setShowSpoilers] = createSignal(false);
+  const [progressLegendCollapsed, setProgressLegendCollapsed] = createSignal(
+    readStoredBoolean("progressLegendCollapsed"),
+  );
   let hydrated = false;
 
   onMount(() => {
     setSelectedActsSignal(readStoredActs());
     setShowOnlyMissing(localStorage.getItem("showOnlyMissing") === "true");
     setShowSpoilers(localStorage.getItem("showSpoilers") === "true");
+    setProgressLegendCollapsed(
+      localStorage.getItem("progressLegendCollapsed") === "true",
+    );
     hydrated = true;
   });
 
@@ -44,10 +52,18 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }) {
     localStorage.setItem("actsDropdown", JSON.stringify(selectedActs()));
     localStorage.setItem("showOnlyMissing", showOnlyMissing().toString());
     localStorage.setItem("showSpoilers", showSpoilers().toString());
+    localStorage.setItem(
+      "progressLegendCollapsed",
+      progressLegendCollapsed().toString(),
+    );
   });
 
   const store: PreferencesStore = {
+    progressLegendCollapsed,
     selectedActs: () => selectedActs(),
+    setProgressLegendCollapsed(nextCollapsed) {
+      setProgressLegendCollapsed(nextCollapsed);
+    },
     setSelectedActs(acts) {
       const nextActs = acts.filter((act) => defaultActs.includes(act as never));
       setSelectedActsSignal(nextActs.length === 0 ? [1] : nextActs);
@@ -67,6 +83,10 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }) {
       {props.children}
     </PreferencesContext.Provider>
   );
+}
+
+function readStoredBoolean(key: string): boolean {
+  return localStorage.getItem(key) === "true";
 }
 
 function readStoredActs(): readonly number[] {
