@@ -1,0 +1,90 @@
+import { For, Show } from "solid-js";
+
+import { usePreferencesStore } from "../../state/preferences-store.tsx";
+import { useSaveStore } from "../../state/save-store.tsx";
+import { ProgressItemCard } from "./ProgressItemCard.tsx";
+import {
+  getProgressSectionTitle,
+  getVisibleCategoryView,
+} from "./progress-selectors.ts";
+import type {
+  ProgressItemData,
+  ProgressSectionData,
+} from "./progress-types.ts";
+
+interface ProgressSectionProps {
+  readonly onOpenInfo: (item: ProgressItemData) => void;
+  readonly section: ProgressSectionData;
+}
+
+export function ProgressSection(props: ProgressSectionProps) {
+  const saveStore = useSaveStore();
+  const preferences = usePreferencesStore();
+  const title = () => getProgressSectionTitle(props.section);
+  const categoryViews = () =>
+    props.section.categories
+      .map((category) =>
+        getVisibleCategoryView({
+          category,
+          hasSave: saveStore.hasSave(),
+          isObtained,
+          mode: saveStore.mode(),
+          sectionTitle: title(),
+          selectedActs: preferences.selectedActs(),
+          showOnlyMissing: preferences.showOnlyMissing(),
+        }),
+      )
+      .filter((view) => view !== undefined);
+
+  return (
+    <Show when={categoryViews().length > 0}>
+      <h2 class="category-header" id={toHeadingId(title())}>
+        {title()}
+      </h2>
+      <For each={categoryViews()}>
+        {(view) => (
+          <div class="main-section-block">
+            <h3
+              class="category-title"
+              id={toHeadingId(`${title()} ${view.category.label}`)}
+            >
+              {view.category.label}
+              <span class="category-count">
+                {" "}
+                {view.obtained}/{view.total}
+              </span>
+            </h3>
+            <p class="category-description">{view.category.description}</p>
+            <div class="grid">
+              <For each={view.items}>
+                {(item) => (
+                  <ProgressItemCard item={item} onOpenInfo={props.onOpenInfo} />
+                )}
+              </For>
+            </div>
+          </div>
+        )}
+      </For>
+    </Show>
+  );
+
+  function isObtained(item: ProgressItemData): boolean {
+    const status = saveStore.semanticItem(item.id)?.status;
+    if (
+      item.type === "relic"
+      || item.type === "materium"
+      || item.type === "device"
+    ) {
+      return status === "done" || status === "accepted";
+    }
+
+    return status === "done";
+  }
+}
+
+export function toHeadingId(label: string): string {
+  return `section-${label
+    .toLowerCase()
+    .replaceAll(/\s+/g, "-")
+    .replaceAll(/[^\w-]/g, "")}`;
+}

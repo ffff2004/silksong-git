@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
   <head>
     <link
       rel="preload"
@@ -10,18 +10,16 @@
         this.rel = 'stylesheet';
       "
     />
-    <noscript
-      ><link rel="stylesheet" href="/assets/fontawesome/css/all.min.css"
-    /></noscript>
+    <noscript>
+      <link rel="stylesheet" href="/assets/fontawesome/css/all.min.css" />
+    </noscript>
 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Silksong Git</title>
     <link rel="icon" type="image/png" href="/assets/misc/favicon.png" />
     <link rel="preload" href="/assets/ui/labelled_map_act3.png" as="image" />
-    <!-- <base href="https://ffff2004.github.io/silksong-git/"> -->
 
-    <!-- Social Preview -->
     <meta property="og:title" content="Silksong Git" />
     <meta
       property="og:description"
@@ -39,269 +37,7 @@
     <link rel="stylesheet" href="/assets/css/style.css" />
   </head>
   <body>
-    <aside class="sidebar">
-      <a
-        href="/"
-        id="logo-link"
-        style="text-decoration: none; color: inherit; cursor: pointer"
-      >
-        <div class="sidebar-header">
-          <img
-            src="/assets/misc/favicon.png"
-            class="logo-icon"
-            width="64"
-            height="64"
-            alt="Silksong Git Logo"
-          />
-          <div class="app-name">Silksong Git</div>
-        </div>
-      </a>
-
-      <!-- Actions: horizontal icons -->
-
-      <div class="sidebar-links">
-        <a
-          href="https://hollowknight.wiki"
-          target="_blank"
-          class="sidebar-wiki-btn"
-        >
-          Wiki
-        </a>
-      </div>
-      <div class="sidebar-actions">
-        <a
-          href="https://github.com/ffff2004/silksong-git"
-          class="icon-btn"
-          title="GitHub Repository"
-          target="_blank"
-        >
-          <i class="fab fa-github"></i>
-        </a>
-      </div>
-
-      <div class="sidebar-divider"></div>
-
-      <!-- Progress -->
-      <div class="sidebar-section">
-        <a href="#" class="sidebar-item" data-tab="allprogress">Progress</a>
-        <a href="#" class="sidebar-item" data-tab="map">Interactive Map</a>
-        <a href="#" class="sidebar-item" data-tab="rawsave">Raw Save Data</a>
-        <!-- add other items here -->
-      </div>
-    </aside>
-
-    <div class="main-wrapper">
-      <header class="topbar">
-        <div id="modeBanner"></div>
-
-        <div class="topbar-right">
-          <!--  Act Filter -->
-          <div id="act-filter" class="dropdown">
-            <button class="dropdown-toggle" id="acts-dropdown-button">
-              <i class="fa-solid fa-feather-pointed"></i> Acts
-              <i class="fa-solid fa-chevron-down"></i>
-            </button>
-
-            <div id="acts-dropdown-menu" class="dropdown-menu hidden">
-              <label><input type="checkbox" value="1" checked /> Act I</label>
-              <label><input type="checkbox" value="2" checked /> Act II</label>
-              <label><input type="checkbox" value="3" checked /> Act III</label>
-            </div>
-          </div>
-
-          <label class="toggle">
-            <input type="checkbox" id="show-only-missing" /> Show only missing
-          </label>
-          <label
-            ><input type="checkbox" id="show-spoilers" /> Show spoilers</label
-          >
-          <button id="upload-save" class="btn-primary">Upload save</button>
-          <input type="file" id="fileInput" hidden />
-
-          <button id="clearDataBtn" class="btn-reset" title="Reset all data">
-            <i class="fa-solid fa-trash-can"></i> Reset
-          </button>
-        </div>
-      </header>
-
-      <main id="main">
-        <!-- Scroll-to-top button -->
-        <button id="back-to-top">
-          <img src="/assets/icons/Up_Arrow.png" alt="Back to Top" width="50" />
-          <span>Top</span>
-        </button>
-
-        <section id="allprogress-section" class="tab hidden">
-          <h2>All Progress</h2>
-
-          <!-- Progress summary -->
-          <div id="main-stats" class="main-stats">
-            <div class="completion">
-              <span class="label">Completion:</span>
-              <span id="completionValue">0%</span>
-            </div>
-            <div class="playtime">
-              <span class="label">Play Time:</span>
-              <span id="playtimeValue">0h 00m</span>
-            </div>
-            <div class="rosaries">
-              <span class="label">Rosaries:</span>
-              <span id="rosariesValue">0</span>
-            </div>
-            <div class="shards">
-              <span class="label">Shell Shards:</span>
-              <span id="shardsValue">0</span>
-            </div>
-          </div>
-
-          <div id="allprogress-grid"></div>
-        </section>
-
-        <section id="rawsave-section" class="tab hidden">
-          <div class="rawsave-container">
-            <div class="rawsave-header">
-              <h2>Raw Save Data</h2>
-              <div class="rawsave-actions">
-                <button id="raw-save-data-copy" class="rawsave-btn">
-                  Copy
-                </button>
-                <button id="raw-save-json-data-download" class="rawsave-btn">
-                  Download JSON
-                </button>
-              </div>
-            </div>
-
-            <pre id="raw-save-data-output"></pre>
-          </div>
-        </section>
-
-        <section id="map-section" class="tab hidden">
-          <h2>Interactive Map</h2>
-          <div class="map-controls">
-            <label for="map-act-select">Select Map:</label>
-            <select id="map-act-select" aria-label="Select map act">
-              <option
-                value="/silksong-git/assets/ui/labelled_map_act3.png"
-                selected
-              >
-                Act 3
-              </option>
-              <option value="/silksong-git/assets/ui/scene's_name_map.png">
-                Room's Name
-              </option>
-            </select>
-          </div>
-
-          <div class="map-wrapper">
-            <div id="worldMapStage">
-              <div id="worldMapInner" class="world-map-inner">
-                <img
-                  id="worldMap"
-                  src="/assets/ui/labelled_map_act3.png"
-                  draggable="false"
-                />
-                <div id="mapPinsOverlay"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="map-sidebar collapsed">
-            <div id="map-filters-body">
-              <div class="map-sidebar-header">
-                <h3>Map Filters</h3>
-                <button
-                  id="toggle-map-filters"
-                  class="map-filter-toggle"
-                  title="Hide filters"
-                >
-                  <i class="fa-solid fa-sliders"></i>
-                  <span>Hide Filters</span>
-                </button>
-              </div>
-
-              <div class="search-container">
-                <input
-                  type="text"
-                  id="map-search"
-                  placeholder="Search item..."
-                  autocomplete="off"
-                />
-                <span id="map-search-count"></span>
-              </div>
-
-              <div class="filter-controls">
-                <button id="show-all-filters" class="btn-small">
-                  Show All
-                </button>
-                <button id="hide-all-filters" class="btn-small">
-                  Hide All
-                </button>
-              </div>
-
-              <div id="map-filters" class="filter-list"></div>
-            </div>
-
-            <!-- This stays outside so it's always visible when collapsed -->
-            <button
-              id="toggle-map-filters-collapsed"
-              class="map-filter-show-btn"
-            >
-              <i class="fa-solid fa-sliders"></i>
-              <span>Show Filters</span>
-            </button>
-          </div>
-        </section>
-
-        <!-- Scripts -->
-        <script type="module" src="./src/main.ts"></script>
-
-        <div
-          id="uploadOverlay"
-          class="overlay hidden"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="uploadTitle"
-        >
-          <div class="modal">
-            <div class="modal-header">
-              <h3 id="uploadTitle">Upload your save file</h3>
-              <button
-                class="modal-close"
-                id="closeUploadModal"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div id="dropzone" class="dropzone" tabindex="0">
-              <p>Drag and drop your save file here, or click to browse!</p>
-              <p>Choose the correct save file: user*.dat (e.g. user1.dat)</p>
-            </div>
-
-            <div class="help">
-              <h4>Need help finding your save?</h4>
-              <p class="muted">What do you play on?</p>
-              <div class="platforms">
-                <a class="pill">Mac</a>
-                <a class="pill">Windows</a>
-                <a class="pill">Linux</a>
-                <a class="pill">Steam Cloud</a>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div id="info-overlay" class="overlay hidden">
-          <div id="info-content" class="modal">
-            <!-- JS will populate this -->
-            <button id="closeInfoModal" class="modal-close">✕</button>
-          </div>
-        </div>
-        <!-- Table of Contents (TOC) -->
-        <nav id="toc" class="toc-container">
-          <ul id="toc-list"></ul>
-        </nav>
-      </main>
-    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

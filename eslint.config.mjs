@@ -16,7 +16,7 @@ export default defineConfig(
     },
   },
   {
-    files: ["apps/web/**/*.ts"],
+    files: ["apps/web/**/*.{ts,tsx}"],
     rules: {
       // By default, the upstream "n/file-extension-in-import" rule is enabled to lint for ".js"
       // file extensions, which is standard practice when writing TypeScript with ECMAScript modules
@@ -57,6 +57,19 @@ export default defineConfig(
       "unicorn/prefer-dom-node-html-methods": "off",
       "unicorn/text-encoding-identifier-case": "off",
       "unicorn/try-complexity": "off",
+
+      "@typescript-eslint/explicit-module-boundary-types": "off",
+      "@typescript-eslint/no-floating-promises": "off",
+      "no-void": "off",
+      "no-unassigned-vars": "off",
+      "perfectionist/sort-jsx-props": "off",
+    },
+  },
+  {
+    files: ["apps/web/**/*.test.{ts,tsx}"],
+    rules: {
+      "import-x/no-extraneous-dependencies": "off",
+      "unicorn/no-global-object-property-assignment": "off",
     },
   },
   {
@@ -86,7 +99,7 @@ export default defineConfig(
     },
   },
   {
-    files: ["**/*.test.ts"],
+    files: ["**/*.test.{ts,tsx}"],
     rules: {
       // Tests often use small helper classes and queue-like fixtures.
       "@typescript-eslint/require-await": "off",

@@ -4,5 +4,10 @@
 
   "extends": "../../tsconfig.browser.base.json",
 
-  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+  },
+
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
 }

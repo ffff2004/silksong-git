@@ -7,8 +7,8 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 ## Current Status
 
 - Current phase: P6 Web Integration
-- Next task: P6-T2 Refactor Web App To Solid
-- Last updated: 2026-07-06
+- Next task: P6-T3 Add Local History Web Mode
+- Last updated: 2026-07-07
 
 ## Phase Overview
 
@@ -1083,7 +1083,7 @@ Notes:
 
 ### P6-T2 Refactor Web App To Solid
 
-Status: in progress
+Status: complete
 
 Depends on:
 
@@ -1136,10 +1136,27 @@ Manual QA checklist:
 
 Verification:
 
-- `pnpm --filter @silksong-git/web test`: pending
-- `pnpm --filter @silksong-git/web build`: pending
-- `pnpm --filter @silksong-git/web format`: pending
-- `pnpm --filter @silksong-git/web lint`: pending
+- `pnpm --filter @silksong-git/web test`: passed
+- `pnpm --filter @silksong-git/web build`: passed
+- `pnpm --filter @silksong-git/web format`: passed
+- `pnpm --filter @silksong-git/web lint`: passed
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- `pnpm test`: passed
+- `pnpm build`: passed
+- `pnpm verify`: passed
+
+Notes:
+
+- Replaced the old DOM-driven Web runtime with a Solid app rendered from `apps/web/src/main.tsx`.
+- `index.html` now keeps only metadata, static links, the app mount point, and the module entry.
+- Static Web Mode state is owned by Solid stores for current save data, preferences, and toasts.
+- Hash routes now select the Current Save views: `#/progress`, `#/map`, and `#/raw-save`; old active-tab localStorage is not read or written.
+- Static save upload continues to route encoded `.dat` and decoded `.json` files through `@silksong-git/core` public Interfaces.
+- Progress rendering, summary metrics, Act filtering, missing-only filtering, spoiler preference persistence, item details, Raw Save display, and map pins are covered by Web behavior tests.
+- Raw Save uses lazy Monaco initialization in browser runtime and a test fallback for jsdom.
+- Local History Web Mode was not implemented and no local HTTP endpoint probing was added.
+- Manual QA checklist was not run in a real browser session during this task; browser-only drag/drop, clipboard permission behavior, download flow, touch map interaction, Monaco large-save feel, GitHub Pages-style preview, and representative private user saves remain manual verification items.
 
 ### P6-T3 Add Local History Web Mode
 
