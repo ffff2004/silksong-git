@@ -87,6 +87,27 @@ describe("Solid Web app routing", () => {
     expect(container.querySelector(".boss.done")).toBeNull();
   }, 20_000);
 
+  it("reveals undiscovered progress items when Show spoilers is enabled", () => {
+    render(() => <App />);
+
+    const card = screen.getByText("Shining Needle").closest(".boss");
+    if (card === null) {
+      throw new Error("Expected Shining Needle card to exist.");
+    }
+
+    expect(card.classList.contains("locked")).toBe(true);
+    expect(card.querySelector("img")?.getAttribute("src")).toContain(
+      "locked.png",
+    );
+
+    fireEvent.click(getRequiredElement("#show-spoilers"));
+
+    expect(card.classList.contains("locked")).toBe(false);
+    expect(card.querySelector("img")?.getAttribute("src")).not.toContain(
+      "locked.png",
+    );
+  });
+
   it("shows Raw Save and Map routes from loaded Static Web Mode state", async () => {
     render(() => <App />);
 

@@ -1,6 +1,7 @@
 import { Show } from "solid-js";
 
 import { assetUrl } from "../../app/asset-url.ts";
+import { usePreferencesStore } from "../../state/preferences-store.tsx";
 import { useSaveStore } from "../../state/save-store.tsx";
 import type { ProgressItemData } from "./progress-types.ts";
 
@@ -17,6 +18,7 @@ interface ProgressItemCardProps {
 
 export function ProgressItemCard(props: ProgressItemCardProps) {
   const saveStore = useSaveStore();
+  const preferences = usePreferencesStore();
   const semanticItem = () => saveStore.semanticItem(props.item.id);
   const isDone = () => semanticItem()?.status === "done";
   const isAccepted = () => semanticItem()?.status === "accepted";
@@ -31,8 +33,11 @@ export function ProgressItemCard(props: ProgressItemCardProps) {
 
     return isDone();
   };
+  const isSpoilerRevealed = () =>
+    preferences.showSpoilers() && !isDone() && !isAccepted();
   const shouldRevealIcon = () =>
-    saveStore.hasSave() ? isObtained() || isAccepted() : false;
+    isSpoilerRevealed()
+    || (saveStore.hasSave() ? isObtained() || isAccepted() : false);
   const iconSrc = () =>
     shouldRevealIcon()
       ? resolveIconSrc(props.item.icon)
@@ -46,6 +51,7 @@ export function ProgressItemCard(props: ProgressItemCardProps) {
         accepted: isAccepted(),
         done: isDone(),
         locked: !shouldRevealIcon(),
+        unlocked: isSpoilerRevealed(),
         unobtainable: props.item.unobtainable === true && saveStore.hasSave(),
       }}
       data-flag={getFlagLabel(props.item)}
