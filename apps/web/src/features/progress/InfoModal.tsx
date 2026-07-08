@@ -1,6 +1,9 @@
 import { Show } from "solid-js";
 
 import { assetUrl } from "../../app/asset-url.ts";
+import type { InteractiveMapPin } from "../map/InteractiveMapCanvas.tsx";
+import { InteractiveMapCanvas } from "../map/InteractiveMapCanvas.tsx";
+import { resolveMapImageSrc } from "../map/map-selectors.ts";
 import type { ProgressItemData } from "./progress-types.ts";
 
 interface InfoModalProps {
@@ -69,29 +72,17 @@ export function InfoModal(props: InfoModalProps) {
             <Show when={item().mapViewer}>
               {(mapViewer) => (
                 <div class="info-map-wrapper">
-                  <div class="custom-map-viewer">
-                    <div class="custom-map-inner">
-                      <img
-                        src={resolveMapImageSrc(mapViewer().src)}
-                        class="custom-map-image"
-                        draggable={false}
-                        loading="lazy"
-                        alt=""
-                      />
-                      <Show when={item().showOnMap === true}>
-                        <img
-                          src={resolveIconSrc(item().icon)}
-                          class="custom-map-pin"
-                          style={{
-                            left: `${mapViewer().x * 100}%`,
-                            top: `${mapViewer().y * 100}%`,
-                          }}
-                          alt=""
-                          draggable={false}
-                        />
-                      </Show>
-                    </div>
-                  </div>
+                  <InteractiveMapCanvas
+                    alt={`${item().label} map location`}
+                    focus={{
+                      x: mapViewer().x,
+                      y: mapViewer().y,
+                      zoom: mapViewer().zoom,
+                    }}
+                    imageSrc={resolveMapImageSrc(mapViewer().src)}
+                    pins={getInfoMapPins(item())}
+                    variant="modal"
+                  />
                 </div>
               )}
             </Show>
@@ -131,11 +122,22 @@ function resolveIconSrc(icon: string | undefined): string {
   return assetUrl(`assets/${clean}`);
 }
 
-function resolveMapImageSrc(src: string): string {
-  const clean = src.trim();
-  if (clean.startsWith("http")) {
-    return clean;
+function getInfoMapPins(
+  item: ProgressItemData,
+): ReadonlyArray<InteractiveMapPin<ProgressItemData>> {
+  const { mapViewer } = item;
+  if (mapViewer === undefined || item.showOnMap !== true) {
+    return [];
   }
 
-  return assetUrl(clean);
+  return [
+    {
+      iconSrc: resolveIconSrc(item.icon),
+      id: item.id,
+      label: item.label,
+      payload: item,
+      x: mapViewer.x,
+      y: mapViewer.y,
+    },
+  ];
 }

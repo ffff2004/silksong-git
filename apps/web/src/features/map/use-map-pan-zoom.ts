@@ -1,6 +1,13 @@
 import { onCleanup, onMount } from "solid-js";
 
+export interface MapPanZoomFocus {
+  readonly x: number;
+  readonly y: number;
+  readonly zoom?: number;
+}
+
 export function useMapPanZoom(input: {
+  readonly getFocus?: () => MapPanZoomFocus | undefined;
   readonly getImage: () => HTMLImageElement | undefined;
   readonly getStage: () => HTMLElement | undefined;
   readonly getWrapper: () => HTMLElement | undefined;
@@ -26,7 +33,12 @@ export function useMapPanZoom(input: {
     };
 
     const fitToScreen = () => {
-      if (image.naturalWidth === 0 || wrapper.clientWidth === 0) {
+      if (
+        image.naturalWidth === 0
+        || image.naturalHeight === 0
+        || wrapper.clientWidth === 0
+        || wrapper.clientHeight === 0
+      ) {
         return;
       }
 
@@ -35,9 +47,19 @@ export function useMapPanZoom(input: {
           wrapper.clientWidth / image.naturalWidth,
           wrapper.clientHeight / image.naturalHeight,
         ) * 0.9;
-      scale = minScale;
-      translateX = 0;
-      translateY = 0;
+
+      const focus = input.getFocus?.();
+      if (focus === undefined) {
+        scale = minScale;
+        translateX = 0;
+        translateY = 0;
+      } else {
+        const focusZoom = focus.zoom ?? 1;
+        scale = Math.max(0.2, Math.min(focusZoom, 6));
+        translateX = (0.5 - focus.x) * image.naturalWidth * scale;
+        translateY = (0.5 - focus.y) * image.naturalHeight * scale;
+      }
+
       applyTransform();
     };
 

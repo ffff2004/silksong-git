@@ -4,15 +4,15 @@ import { assetUrl } from "../../app/asset-url.ts";
 import { useSaveStore } from "../../state/save-store.tsx";
 import { InfoModal } from "../progress/InfoModal.tsx";
 import type { ProgressItemData } from "../progress/progress-types.ts";
+import type { InteractiveMapPin } from "./InteractiveMapCanvas.tsx";
+import { InteractiveMapCanvas } from "./InteractiveMapCanvas.tsx";
 import { MapFiltersPanel } from "./MapFiltersPanel.tsx";
-import { MapPinsLayer } from "./MapPinsLayer.tsx";
 import type { MapPinView } from "./map-selectors.ts";
 import {
   getMapCategories,
   getMapPins,
   resolveMapImageSrc,
 } from "./map-selectors.ts";
-import { useMapPanZoom } from "./use-map-pan-zoom.ts";
 
 const mapOptions = [
   {
@@ -26,9 +26,6 @@ const mapOptions = [
 ] as const;
 
 export function MapView() {
-  let image: HTMLImageElement | undefined;
-  let stage: HTMLDivElement | undefined;
-  let wrapper: HTMLDivElement | undefined;
   const saveStore = useSaveStore();
   const categories = getMapCategories();
   const [selectedMapSrc, setSelectedMapSrc] = createSignal<string>(
@@ -49,12 +46,7 @@ export function MapView() {
       searchTerm: searchTerm(),
     }),
   );
-
-  useMapPanZoom({
-    getImage: () => image,
-    getStage: () => stage,
-    getWrapper: () => wrapper,
-  });
+  const interactivePins = createMemo(() => pins().map(toInteractiveMapPin));
 
   return (
     <>
@@ -75,25 +67,16 @@ export function MapView() {
             ))}
           </select>
         </div>
-        <div class="map-wrapper" ref={wrapper}>
-          <div id="worldMapStage" ref={stage}>
-            <div id="worldMapInner" class="world-map-inner">
-              <img
-                id="worldMap"
-                ref={image}
-                src={assetUrl(selectedMapSrc())}
-                draggable={false}
-                alt="Pharloom Map"
-              />
-              <MapPinsLayer
-                pins={pins()}
-                onOpenInfo={(pin: MapPinView) => {
-                  setInfoItem(pin.item);
-                }}
-              />
-            </div>
-          </div>
-        </div>
+        <InteractiveMapCanvas
+          alt="Pharloom Map"
+          imageId="worldMap"
+          imageSrc={assetUrl(selectedMapSrc())}
+          onActivatePin={(pin) => {
+            setInfoItem(pin.payload);
+          }}
+          pins={interactivePins()}
+          variant="page"
+        />
         <MapFiltersPanel
           activeCategories={activeCategories()}
           categories={categories}
@@ -143,4 +126,18 @@ export function MapView() {
 
     return status === "done";
   }
+}
+
+function toInteractiveMapPin(
+  pin: MapPinView,
+): InteractiveMapPin<ProgressItemData> {
+  return {
+    iconSrc: pin.iconSrc,
+    id: pin.item.id,
+    isObtained: pin.isObtained,
+    label: pin.item.label,
+    payload: pin.item,
+    x: pin.x,
+    y: pin.y,
+  };
 }

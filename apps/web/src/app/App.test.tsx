@@ -235,6 +235,47 @@ describe("Solid Web app routing", () => {
     expect(document.querySelectorAll(".map-pin").length).toBeGreaterThan(0);
   }, 20_000);
 
+  it("shows progress item map locations in the shared interactive map canvas", () => {
+    render(() => <App />);
+
+    fireEvent.click(getRequiredElement("#progress-bell_beast"));
+
+    const modal = getRequiredElement("#info-overlay");
+    const canvas = modal.querySelector(".interactive-map-canvas");
+    if (canvas === null) {
+      throw new Error("Expected modal map canvas to exist.");
+    }
+
+    expect(canvas.classList.contains("interactive-map-canvas-modal")).toBe(
+      true,
+    );
+    expect(canvas.querySelector("img")?.getAttribute("src")).toContain(
+      "labelled_map_act3.png",
+    );
+    expect(
+      canvas.querySelector<HTMLElement>('.map-pin[aria-label="Bell Beast"]'),
+    ).not.toBeNull();
+
+    const image = canvas.querySelector<HTMLImageElement>(
+      ".interactive-map-image",
+    );
+    const stage = canvas.querySelector<HTMLElement>(".interactive-map-stage");
+    if (image === null || stage === null) {
+      throw new Error("Expected modal map image and stage to exist.");
+    }
+
+    setReadonlyNumberProperty(canvas, "clientWidth", 100);
+    setReadonlyNumberProperty(canvas, "clientHeight", 50);
+    setReadonlyNumberProperty(image, "naturalWidth", 100);
+    setReadonlyNumberProperty(image, "naturalHeight", 100);
+    fireEvent.load(image);
+
+    const transform = parseMapTransform(stage.style.transform);
+    expect(transform.x).toBeCloseTo(42.4);
+    expect(transform.y).toBeCloseTo(-34);
+    expect(transform.scale).toBe(2);
+  });
+
   it("resets upload platform pill styling for both links and buttons", () => {
     const pillRule = getCssRuleBody(".pill");
     const pillHoverRule = getCssRuleBody(".pill:hover");
@@ -303,4 +344,37 @@ function createIntersectionEntry(target: Element): IntersectionObserverEntry {
 
 function escapeRegExp(value: string): string {
   return value.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
+}
+
+function setReadonlyNumberProperty(
+  object: object,
+  property: "clientHeight" | "clientWidth" | "naturalHeight" | "naturalWidth",
+  value: number,
+) {
+  Object.defineProperty(object, property, { configurable: true, value });
+}
+
+function parseMapTransform(value: string): {
+  readonly scale: number;
+  readonly x: number;
+  readonly y: number;
+} {
+  const match =
+    /translate3d\((?<x>-?\d+(?:\.\d+)?)px, (?<y>-?\d+(?:\.\d+)?)px, 0\) scale\((?<scale>\d+(?:\.\d+)?)\)/u.exec(
+      value,
+    );
+  const groups = match?.groups;
+  if (
+    groups?.["x"] === undefined
+    || groups["y"] === undefined
+    || groups["scale"] === undefined
+  ) {
+    throw new Error(`Expected map transform, got ${value}.`);
+  }
+
+  return {
+    scale: Number(groups["scale"]),
+    x: Number(groups["x"]),
+    y: Number(groups["y"]),
+  };
 }
