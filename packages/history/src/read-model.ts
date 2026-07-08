@@ -47,6 +47,7 @@ import type {
   DiffCommitsResult,
   HistoryResult,
   ObserveSaveResult,
+  ProjectConfig,
   RawSaveObservation,
   RebuildSemanticReadModelResult,
   SearchSemanticEventsInput,
@@ -158,6 +159,7 @@ export function appendObservationToReadModel(input: {
   readonly repoPath: string;
   readonly observation: RawSaveObservation;
   readonly decodedSave: unknown;
+  readonly displaySemanticEventFilters: ProjectConfig["displaySemanticEventFilters"];
 }): Extract<
   ObserveSaveResult,
   { readonly status: "committed" }
@@ -347,6 +349,7 @@ function appendObservationInTransaction(
   input: {
     readonly observation: RawSaveObservation;
     readonly decodedSave: unknown;
+    readonly displaySemanticEventFilters: ProjectConfig["displaySemanticEventFilters"];
   },
 ): Extract<
   ObserveSaveResult,
@@ -379,18 +382,44 @@ function appendObservationInTransaction(
   };
 
   insertSnapshot(db, snapshotRecord);
-  const eventCount =
+  const newEvents =
     previousSnapshot === undefined
-      ? 0
+      ? []
       : insertEventsBetween(db, previousSnapshot, snapshotRecord);
+  const previousObservation =
+    previousSnapshot === undefined
+      ? undefined
+      : selectObservation(db, previousSnapshot.commitRef);
+  const observation = selectObservation(db, input.observation.commit.ref);
 
   upsertMetadata(db, "sourceHeadRef", input.observation.commit.ref);
 
   return {
     status: "updated",
     snapshotId: snapshotRecord.snapshotId,
-    eventCount,
+    eventCount: newEvents.length,
+    events: newEvents.map((event, eventIndex) => {
+      const storedEvent = toStoredJsonValue(event);
+
+      return {
+        id: `${input.observation.commit.ref}:${eventIndex}`,
+        commit: observation.commit,
+        previousCommit: previousObservation?.commit,
+        observation,
+        event: storedEvent,
+        visibility: getEventVisibility(
+          storedEvent,
+          input.displaySemanticEventFilters,
+        ),
+      };
+    }),
   };
+}
+
+function toStoredJsonValue<T>(value: T): T {
+  const json = JSON.stringify(value);
+
+  return JSON.parse(json) as T;
 }
 
 function throwReadModelUnavailableError(error: unknown): never {

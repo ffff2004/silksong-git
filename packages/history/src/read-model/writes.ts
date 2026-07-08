@@ -94,7 +94,7 @@ export function insertEvents(
       continue;
     }
 
-    eventCount += insertEventsBetween(db, before, after);
+    eventCount += insertEventsBetween(db, before, after).length;
   }
 
   return eventCount;
@@ -104,7 +104,7 @@ export function insertEventsBetween(
   db: DatabaseSync,
   before: RecognizedSnapshotRecord,
   after: RecognizedSnapshotRecord,
-): number {
+): readonly SemanticEvent[] {
   const events = diffSemanticSnapshots(before.snapshot, after.snapshot);
 
   for (const [eventIndex, event] of events.entries()) {
@@ -116,7 +116,7 @@ export function insertEventsBetween(
     });
   }
 
-  return events.length;
+  return events;
 }
 
 function insertEvent(

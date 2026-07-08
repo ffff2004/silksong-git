@@ -1000,6 +1000,7 @@ Notes:
 - Added internal read-model append helpers behind the existing `packages/history` Interface.
 - `observeSave` still commits the Raw Save Observation first; if SQLite append fails, Git remains the source of truth and the result reports `readModelUnavailable`.
 - `insertEventsBetween` lets rebuild and incremental append share the same Semantic Event insertion logic.
+- `SemanticUpdateResult` now includes the Semantic Events appended for the current observation so CLI and watcher adapters can render newly observed events without issuing a separate history query.
 
 ### P5-T7 Add Optional HTTP Adapter To Watch Process
 

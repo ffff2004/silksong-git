@@ -120,6 +120,7 @@ export async function observeSaveUsingConfig(
       repoPath: input.repoPath,
       observation,
       decodedSave: decoded.decodedSave,
+      displaySemanticEventFilters: config.displaySemanticEventFilters,
     });
   } catch {
     semanticUpdate = {

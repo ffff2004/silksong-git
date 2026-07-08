@@ -84,6 +84,7 @@ export type SemanticUpdateResult =
       readonly status: "updated";
       readonly snapshotId: string;
       readonly eventCount: number;
+      readonly events: readonly HistoricalSemanticEvent[];
     }
   | {
       readonly status: "notAvailable";

@@ -462,6 +462,7 @@ type SemanticUpdateResult =
       status: "updated";
       snapshotId: string;
       eventCount: number;
+      events: readonly HistoricalSemanticEvent[];
     }
   | {
       status: "notAvailable";

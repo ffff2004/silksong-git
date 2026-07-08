@@ -397,6 +397,7 @@ test("observeSave incrementally records Semantic Events for recognized observati
   assert.equal(afterResult.status, "committed");
   assert.equal(afterResult.semanticUpdate.status, "updated");
   assert.equal(afterResult.semanticUpdate.eventCount, 1);
+  assert.equal(afterResult.semanticUpdate.events.length, 1);
 
   const history = await queryHistory({ repoPath: repo.repoPath });
 
@@ -409,6 +410,7 @@ test("observeSave incrementally records Semantic Events for recognized observati
   assert.equal(event.event.kind, "item");
   assert.equal(event.event.item.id, "mask-shard-2");
   assert.equal(event.event.after.status, "done");
+  assert.deepEqual(afterResult.semanticUpdate.events[0], event);
 });
 
 test("observeSave incremental Semantic Read Model matches a full rebuild", async (t) => {
