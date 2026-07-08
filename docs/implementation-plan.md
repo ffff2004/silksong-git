@@ -8,7 +8,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 - Current phase: P6 Web Integration
 - Next task: P6-T3 Add Local History Web Mode
-- Last updated: 2026-07-07
+- Last updated: 2026-07-08
 
 ## Phase Overview
 
@@ -937,6 +937,10 @@ TDD Vertical Slices:
   - Public call: CLI process `watch start --repo <history-repo>`.
   - Assert: default stderr output for watcher observations includes committed observation details, the new event count, and readable event summaries from `SemanticUpdateResult.events`.
   - Other information: `--jsonl` remains a compact stable summary and does not expose full observation results.
+- [x] CLI default watch logs include current render timestamps
+  - Public call: CLI process `watch start --repo <history-repo>`.
+  - Assert: default stderr output prefixes human-readable watcher event blocks with the current local timestamp.
+  - Other information: `--jsonl` remains unchanged; timestamps are a human-readable CLI rendering concern.
 
 - CLI default logs and reserved HTTP flags behave correctly:
   - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before implementation; `--http` reported Commander unknown option instead of reserved HTTP Adapter usage.
@@ -945,6 +949,9 @@ TDD Vertical Slices:
   - `pnpm --filter @silksong-git/cli test`: passed
 - CLI default watch logs report newly added Semantic Events:
   - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before default watch text rendering used `SemanticUpdateResult.events`; change observations logged only the committed status.
+  - `pnpm --filter @silksong-git/cli test`: passed
+- CLI default watch logs include current render timestamps:
+  - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before default watch text rendering prefixed event blocks with timestamps.
   - `pnpm --filter @silksong-git/cli test`: passed
 
 Verification:

@@ -185,7 +185,11 @@ function createWatchEventRenderer(
         return;
       }
 
-      writeWatchOutput("stderr", toHumanWatchEvent(event), onFailure);
+      writeWatchOutput(
+        "stderr",
+        withWatchTimestamp(toHumanWatchEvent(event), new Date()),
+        onFailure,
+      );
     },
     dispose() {
       process.stdout.off("error", onStdoutError);
@@ -305,6 +309,32 @@ function toHumanWatchEvent(event: LocalHistoryWatchProcessEvent): string {
       return "watch stopped\n";
     }
   }
+}
+
+function withWatchTimestamp(output: string, now: Date): string {
+  return `[${formatWatchTimestamp(now)}] ${output}`;
+}
+
+function formatWatchTimestamp(date: Date): string {
+  const offsetMinutes = -date.getTimezoneOffset();
+  const offsetSign = offsetMinutes >= 0 ? "+" : "-";
+  const absoluteOffsetMinutes = Math.abs(offsetMinutes);
+  const offsetHours = Math.floor(absoluteOffsetMinutes / 60);
+  const offsetRemainderMinutes = absoluteOffsetMinutes % 60;
+
+  return `${date.getFullYear().toString().padStart(4, "0")}-${formatTimestampPart(
+    date.getMonth() + 1,
+  )}-${formatTimestampPart(date.getDate())}T${formatTimestampPart(
+    date.getHours(),
+  )}:${formatTimestampPart(date.getMinutes())}:${formatTimestampPart(
+    date.getSeconds(),
+  )}.${date.getMilliseconds().toString().padStart(3, "0")}${offsetSign}${formatTimestampPart(
+    offsetHours,
+  )}:${formatTimestampPart(offsetRemainderMinutes)}`;
+}
+
+function formatTimestampPart(value: number): string {
+  return value.toString().padStart(2, "0");
 }
 
 function formatHumanWatchObservation(

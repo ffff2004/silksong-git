@@ -403,6 +403,7 @@ test(
   async (t) => {
     const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
     const cli = spawnBuiltCli(["watch", "start", "--repo", repoPath]);
+    const timestampPrefixPattern = String.raw`\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:\+|-)\d{2}:\d{2}\]`;
 
     t.after(() => {
       cli.kill("SIGTERM");
@@ -413,6 +414,13 @@ test(
       5000,
       "timed out waiting for default watch startup observation log",
     );
+    assert.match(
+      cli.stderr,
+      new RegExp(
+        String.raw`${timestampPrefixPattern} watch observation startup: committed\n`,
+        "v",
+      ),
+    );
 
     assert.equal(cli.stdout, "");
 
@@ -421,6 +429,13 @@ test(
       cli.waitForStderrIncludes("watch observation change: committed\n"),
       5000,
       "timed out waiting for default watch change observation log",
+    );
+    assert.match(
+      cli.stderr,
+      new RegExp(
+        String.raw`${timestampPrefixPattern} watch observation change: committed\n`,
+        "v",
+      ),
     );
     await withTimeout(
       cli.waitForStderrIncludes("events: 1\n"),
