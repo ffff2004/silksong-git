@@ -276,6 +276,41 @@ describe("Solid Web app routing", () => {
     expect(transform.scale).toBe(2);
   });
 
+  it("zooms the map around the mouse pointer", async () => {
+    render(() => <App />);
+
+    fireEvent.click(screen.getByRole("link", { name: "Interactive Map" }));
+    expect(await screen.findByTestId("map-view")).toBeDefined();
+
+    const canvas = getRequiredElement(".interactive-map-canvas");
+    const image = canvas.querySelector<HTMLImageElement>(
+      ".interactive-map-image",
+    );
+    const stage = canvas.querySelector<HTMLElement>(".interactive-map-stage");
+    if (image === null || stage === null) {
+      throw new Error("Expected map image and stage to exist.");
+    }
+
+    setReadonlyNumberProperty(canvas, "clientWidth", 100);
+    setReadonlyNumberProperty(canvas, "clientHeight", 50);
+    setReadonlyNumberProperty(image, "naturalWidth", 100);
+    setReadonlyNumberProperty(image, "naturalHeight", 100);
+    setElementRect(canvas, {
+      height: 50,
+      left: 0,
+      top: 0,
+      width: 100,
+    });
+    fireEvent.load(image);
+
+    fireEvent.wheel(canvas, { clientX: 75, clientY: 35, deltaY: -100 });
+
+    const transform = parseMapTransform(stage.style.transform);
+    expect(transform.x).toBeCloseTo(-2.5);
+    expect(transform.y).toBeCloseTo(-1);
+    expect(transform.scale).toBeCloseTo(0.495);
+  });
+
   it("resets upload platform pill styling for both links and buttons", () => {
     const pillRule = getCssRuleBody(".pill");
     const pillHoverRule = getCssRuleBody(".pill:hover");
@@ -352,6 +387,23 @@ function setReadonlyNumberProperty(
   value: number,
 ) {
   Object.defineProperty(object, property, { configurable: true, value });
+}
+
+function setElementRect(
+  element: Element,
+  rect: Pick<DOMRect, "height" | "left" | "top" | "width">,
+) {
+  element.getBoundingClientRect = vi.fn(() => ({
+    bottom: rect.top + rect.height,
+    height: rect.height,
+    left: rect.left,
+    right: rect.left + rect.width,
+    top: rect.top,
+    width: rect.width,
+    x: rect.left,
+    y: rect.top,
+    toJSON: vi.fn(),
+  }));
 }
 
 function parseMapTransform(value: string): {

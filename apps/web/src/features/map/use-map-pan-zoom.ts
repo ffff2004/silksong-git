@@ -72,8 +72,20 @@ export function useMapPanZoom(input: {
 
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
+      const previousScale = scale;
       const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
-      scale = Math.max(minScale, Math.min(scale * factor, 6));
+      const nextScale = Math.max(minScale, Math.min(scale * factor, 6));
+      if (nextScale === previousScale) {
+        return;
+      }
+
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const pointerX = event.clientX - wrapperRect.left - wrapperRect.width / 2;
+      const pointerY = event.clientY - wrapperRect.top - wrapperRect.height / 2;
+      const scaleRatio = nextScale / previousScale;
+      translateX = pointerX - (pointerX - translateX) * scaleRatio;
+      translateY = pointerY - (pointerY - translateY) * scaleRatio;
+      scale = nextScale;
       applyTransform();
     };
 
