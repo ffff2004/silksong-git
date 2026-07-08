@@ -398,10 +398,10 @@ test("watch start stops and exits with failure when JSONL output fails", async (
 });
 
 test(
-  "watch start defaults to stderr logs",
+  "watch start defaults to stderr logs with newly added Semantic Events",
   { skip: skipChildSigtermTestsOnWindows },
   async (t) => {
-    const { repoPath } = await createCliHistoryRepo(t);
+    const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
     const cli = spawnBuiltCli(["watch", "start", "--repo", repoPath]);
 
     t.after(() => {
@@ -415,6 +415,23 @@ test(
     );
 
     assert.equal(cli.stdout, "");
+
+    await copyFile(maskShard2CollectedEncodedSavePath, watchedSavePath);
+    await withTimeout(
+      cli.waitForStderrIncludes("watch observation change: committed\n"),
+      5000,
+      "timed out waiting for default watch change observation log",
+    );
+    await withTimeout(
+      cli.waitForStderrIncludes("events: 1\n"),
+      5000,
+      "timed out waiting for default watch event count log",
+    );
+    await withTimeout(
+      cli.waitForStderrIncludes("- Mask Shard #2: missing -> done\n"),
+      5000,
+      "timed out waiting for default watch Semantic Event log",
+    );
 
     cli.kill("SIGTERM");
     const exit = await withTimeout(

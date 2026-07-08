@@ -1,8 +1,4 @@
-import type {
-  HistoricalSemanticEvent,
-  SearchSemanticEventsInput,
-  SemanticUpdateResult,
-} from "@silksong-git/history";
+import type { SearchSemanticEventsInput } from "@silksong-git/history";
 import {
   diffCommits,
   InvalidCommitRefError,
@@ -29,6 +25,7 @@ import {
   RepositoryContextError,
   resolveRepositoryContext,
 } from "./repo-context.ts";
+import { formatSemanticUpdate } from "./semantic-event-output.ts";
 
 interface CheckpointCommandOptions {
   readonly repo?: string;
@@ -288,7 +285,7 @@ async function runCheckpointCommandOrThrow(
 
   if (result.status === "committed") {
     runtime.writeStdout(
-      `checkpoint recorded\ncommit: ${result.observation.commit.shortRef}\n${formatCheckpointSemanticUpdate(result.semanticUpdate)}`,
+      `checkpoint recorded\ncommit: ${result.observation.commit.shortRef}\n${formatSemanticUpdate(result.semanticUpdate)}`,
     );
     return;
   }
@@ -301,72 +298,6 @@ async function runCheckpointCommandOrThrow(
   }
 
   runtime.writeStdout(`checkpoint skipped: ${result.reason}\n`);
-}
-
-function formatCheckpointSemanticUpdate(update: SemanticUpdateResult): string {
-  if (update.status === "notAvailable") {
-    return `events: unavailable (${update.reason})\n`;
-  }
-
-  if (update.events.length === 0) {
-    return "events: 0\n";
-  }
-
-  return `${[
-    `events: ${update.eventCount}`,
-    ...update.events.map((event) => `- ${formatSemanticEvent(event)}`),
-  ].join("\n")}\n`;
-}
-
-function formatSemanticEvent(event: HistoricalSemanticEvent): string {
-  const semanticEvent = event.event;
-
-  switch (semanticEvent.kind) {
-    case "item": {
-      return `${semanticEvent.item.label}: ${formatItemEventState(
-        semanticEvent.before,
-        semanticEvent.eventType,
-      )} -> ${formatItemEventState(semanticEvent.after, semanticEvent.eventType)}`;
-    }
-
-    case "summaryMetric": {
-      return `${semanticEvent.metric}: ${formatValue(
-        semanticEvent.beforeValue,
-      )} -> ${formatValue(semanticEvent.afterValue)}`;
-    }
-  }
-}
-
-function formatItemEventState(
-  state: HistoricalSemanticEvent["event"] extends infer Event
-    ? Event extends { readonly kind: "item"; readonly before: infer State }
-      ? State
-      : never
-    : never,
-  eventType: "itemStatusChanged" | "itemValueChanged",
-): string {
-  if (eventType === "itemStatusChanged") {
-    return state.status;
-  }
-
-  if (state.value === undefined || state.value === null) {
-    return state.status;
-  }
-
-  return `${state.status} (${formatValue(state.value)})`;
-}
-
-function formatValue(value: unknown): string {
-  if (
-    value === null
-    || typeof value === "string"
-    || typeof value === "number"
-    || typeof value === "boolean"
-  ) {
-    return String(value);
-  }
-
-  return JSON.stringify(value);
 }
 
 async function runSearchCommandOrThrow(

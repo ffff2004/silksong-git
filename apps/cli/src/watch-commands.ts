@@ -10,6 +10,7 @@ import type { CliRuntime } from "./cli-runtime.ts";
 import { exitCodes } from "./exit-codes.ts";
 import { formatJson } from "./output.ts";
 import { resolveRepositoryContext } from "./repo-context.ts";
+import { formatSemanticUpdate } from "./semantic-event-output.ts";
 
 interface WatchStartCommandOptions {
   readonly repo?: string;
@@ -289,7 +290,7 @@ function toHumanWatchEvent(event: LocalHistoryWatchProcessEvent): string {
     }
 
     case "observation": {
-      return `watch observation ${event.cause}: ${event.result.status}\n`;
+      return formatHumanWatchObservation(event);
     }
 
     case "fatalError": {
@@ -302,6 +303,33 @@ function toHumanWatchEvent(event: LocalHistoryWatchProcessEvent): string {
 
     case "stopped": {
       return "watch stopped\n";
+    }
+  }
+}
+
+function formatHumanWatchObservation(
+  event: Extract<
+    LocalHistoryWatchProcessEvent,
+    { readonly type: "observation" }
+  >,
+): string {
+  const { result } = event;
+
+  switch (result.status) {
+    case "committed": {
+      return `watch observation ${event.cause}: committed\ncommit: ${result.observation.commit.shortRef}\n${formatSemanticUpdate(result.semanticUpdate)}`;
+    }
+
+    case "skipped": {
+      return `watch observation ${event.cause}: skipped ${result.reason}\n${
+        result.reason === "minimumCommitInterval"
+          ? `next: ${result.nextAllowedAt}\n`
+          : ""
+      }`;
+    }
+
+    case "watcherError": {
+      return `watch observation ${event.cause}: watcherError ${result.error.reason}\nmessage: ${result.error.message}\n`;
     }
   }
 }

@@ -931,11 +931,18 @@ TDD Vertical Slices:
   - Public call: CLI process.
   - Assert: default watcher runtime logs go to stderr, stdout is not polluted with human-readable status, and `--http` or `--port` fail clearly without starting the watcher.
   - Other information: P5-T7 implements the actual HTTP Adapter behavior.
+- [x] CLI default watch logs report newly added Semantic Events
+  - Public call: CLI process `watch start --repo <history-repo>`.
+  - Assert: default stderr output for watcher observations includes committed observation details, the new event count, and readable event summaries from `SemanticUpdateResult.events`.
+  - Other information: `--jsonl` remains a compact stable summary and does not expose full observation results.
 
 - CLI default logs and reserved HTTP flags behave correctly:
   - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before implementation; `--http` reported Commander unknown option instead of reserved HTTP Adapter usage.
   - `pnpm --filter @silksong-git/cli format`: passed
   - `pnpm --filter @silksong-git/cli lint`: passed
+  - `pnpm --filter @silksong-git/cli test`: passed
+- CLI default watch logs report newly added Semantic Events:
+  - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before default watch text rendering used `SemanticUpdateResult.events`; change observations logged only the committed status.
   - `pnpm --filter @silksong-git/cli test`: passed
 
 Verification:
