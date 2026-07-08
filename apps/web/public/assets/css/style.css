@@ -2809,6 +2809,9 @@ main::-webkit-scrollbar-thumb:hover {
   z-index: 10;
   object-fit: contain;
   transition: transform 0.1s ease;
+  display: flex;
+  background: none;
+  border: none;
 }
 
 .map-pin.obtained {
