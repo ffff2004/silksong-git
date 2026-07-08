@@ -1123,16 +1123,16 @@ Acceptance criteria:
 
 Manual QA checklist:
 
-- [ ] Visual layout remains approximately equivalent on desktop and mobile, including spacing, fonts, icon rendering, and dark visual language.
-- [ ] Map zoom and pan feel usable with mouse, touchpad, and representative touch interaction.
-- [ ] Real browser drag-and-drop upload works, in addition to file-input upload covered by automated tests.
-- [ ] Clipboard path copy works in a real browser session, including permission behavior for supported browsers.
-- [ ] Raw Save JSON download creates a usable file through the browser download flow.
-- [ ] External links such as Wiki, GitHub, and Steam Cloud open as expected.
-- [ ] Back-to-top, TOC scrolling, modal close behavior, and long-page scrolling feel usable on desktop and mobile.
-- [ ] Monaco Raw Save display remains usable for representative large save JSON.
-- [ ] Static build behavior works when served with the GitHub Pages-style `/silksong-git/` base path.
-- [ ] Representative real user saves, if available locally and not committed, still load and render without obvious regressions.
+- [x] Visual layout remains approximately equivalent on desktop and mobile, including spacing, fonts, icon rendering, and dark visual language.
+- [x] Map zoom and pan feel usable with mouse, touchpad, and representative touch interaction.
+- [x] Real browser drag-and-drop upload works, in addition to file-input upload covered by automated tests.
+- [x] Clipboard path copy works in a real browser session, including permission behavior for supported browsers.
+- [x] Raw Save JSON download creates a usable file through the browser download flow.
+- [x] External links such as Wiki, GitHub, and Steam Cloud open as expected.
+- [x] Back-to-top, TOC scrolling, modal close behavior, and long-page scrolling feel usable on desktop and mobile.
+- [x] Monaco Raw Save display remains usable for representative large save JSON.
+- [x] Static build behavior works when served with the GitHub Pages-style `/silksong-git/` base path.
+- [x] Representative real user saves, if available locally and not committed, still load and render without obvious regressions.
 
 Verification:
 
