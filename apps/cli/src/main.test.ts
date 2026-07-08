@@ -346,7 +346,7 @@ test("history rebuild succeeds for an empty repository", async (t) => {
   });
 });
 
-test("history list prints Semantic Event history as JSON", async (t) => {
+test("history list prints Semantic Event history as JSON and text", async (t) => {
   const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
 
   await runCli(["history", "checkpoint", "--repo", repoPath]);
@@ -370,9 +370,16 @@ test("history list prints Semantic Event history as JSON", async (t) => {
     repoPath,
     "--json",
   ]);
+  const textResult = await runCli(["history", "list", "--repo", repoPath]);
 
   assert.equal(result.exitCode, 0);
   assert.equal(result.stderr, "");
+  assert.equal(textResult.exitCode, 0);
+  assert.equal(textResult.stderr, "");
+  assert.match(
+    textResult.stdout,
+    /^[0-9a-f]{7,12} Mask Shard #2: missing -> done$/mv,
+  );
   assert.deepEqual(parseStdoutJson(rebuildResult), {
     observationCount: 2,
     recognizedObservationCount: 2,
@@ -468,11 +475,25 @@ test("history search supports structured fields and event text", async (t) => {
     "Mask Shard",
     "--json",
   ]);
+  const textOutputResult = await runCli([
+    "history",
+    "search",
+    "--repo",
+    repoPath,
+    "--event",
+    "Mask Shard",
+  ]);
 
   assert.equal(structuredResult.exitCode, 0);
   assert.equal(textResult.exitCode, 0);
+  assert.equal(textOutputResult.exitCode, 0);
   assert.equal(structuredResult.stderr, "");
   assert.equal(textResult.stderr, "");
+  assert.equal(textOutputResult.stderr, "");
+  assert.match(
+    textOutputResult.stdout,
+    /^[0-9a-f]{7,12} Mask Shard #2: missing -> done$/mv,
+  );
   const structuredSearch = parseStdoutJson(structuredResult) as {
     readonly events?: readonly unknown[];
   };
@@ -546,9 +567,23 @@ test("history diff prints Semantic Snapshot diff as JSON", async (t) => {
     repoPath,
     "--json",
   ]);
+  const textResult = await runCli([
+    "history",
+    "diff",
+    String(before.observation?.commit?.ref),
+    String(after.observation?.commit?.ref),
+    "--repo",
+    repoPath,
+  ]);
 
   assert.equal(result.exitCode, 0);
   assert.equal(result.stderr, "");
+  assert.equal(textResult.exitCode, 0);
+  assert.equal(textResult.stderr, "");
+  assert.match(
+    textResult.stdout,
+    /^[0-9a-f]{7,12} Mask Shard #2: missing -> done$/mv,
+  );
   const diff = parseStdoutJson(result) as {
     readonly from?: { readonly ref?: unknown };
     readonly to?: { readonly ref?: unknown };

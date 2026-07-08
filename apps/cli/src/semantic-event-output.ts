@@ -23,7 +23,7 @@ export function formatSemanticUpdate(update: SemanticUpdateResult): string {
   ].join("\n")}\n`;
 }
 
-export function formatSemanticEvent(event: HistoricalSemanticEvent): string {
+function formatSemanticEvent(event: HistoricalSemanticEvent): string {
   const semanticEvent = event.event;
 
   switch (semanticEvent.kind) {
@@ -40,6 +40,12 @@ export function formatSemanticEvent(event: HistoricalSemanticEvent): string {
       )} -> ${formatValue(semanticEvent.afterValue)}`;
     }
   }
+}
+
+export function formatHistoricalSemanticEventLine(
+  event: HistoricalSemanticEvent,
+): string {
+  return `${event.commit.shortRef} ${formatSemanticEvent(event)}`;
 }
 
 function formatItemEventState(

@@ -25,7 +25,10 @@ import {
   RepositoryContextError,
   resolveRepositoryContext,
 } from "./repo-context.ts";
-import { formatSemanticUpdate } from "./semantic-event-output.ts";
+import {
+  formatHistoricalSemanticEventLine,
+  formatSemanticUpdate,
+} from "./semantic-event-output.ts";
 
 interface CheckpointCommandOptions {
   readonly repo?: string;
@@ -252,7 +255,7 @@ async function runListCommandOrThrow(
 
   runtime.writeStdout(
     result.events
-      .map((event) => `${event.commit.shortRef} ${event.event.eventType}`)
+      .map(formatHistoricalSemanticEventLine)
       .join("\n")
       .concat("\n"),
   );
@@ -325,7 +328,7 @@ async function runSearchCommandOrThrow(
 
   runtime.writeStdout(
     result.events
-      .map((event) => `${event.commit.shortRef} ${event.event.eventType}`)
+      .map(formatHistoricalSemanticEventLine)
       .join("\n")
       .concat("\n"),
   );
@@ -359,7 +362,7 @@ async function runDiffCommandOrThrow(
 
   runtime.writeStdout(
     result.events
-      .map((event) => `${event.commit.shortRef} ${event.event.eventType}`)
+      .map(formatHistoricalSemanticEventLine)
       .join("\n")
       .concat("\n"),
   );

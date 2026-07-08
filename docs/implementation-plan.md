@@ -711,15 +711,15 @@ Phase D: Read Model And History Queries
   - Other information: rebuild may mutate SQLite but must not rewrite Git history.
 - [x] CLI lists Semantic Event history
   - Public call: CLI process.
-  - Assert: list returns the public history result in JSON mode, readable empty output when there are no events, and documented pagination validation.
+  - Assert: list returns the public history result in JSON mode, readable Semantic Event text in default mode, readable empty output when there are no events, and documented pagination validation.
   - Other information: raw-observation listing is intentionally not exposed in P5-T2.
 - [x] CLI searches Semantic Event history
   - Public call: CLI process.
-  - Assert: at least one query flag is required, structured query flags work, free-text event search works as a convenience, and invalid enum values fail as usage errors.
+  - Assert: at least one query flag is required, structured query flags work, free-text event search works as a convenience, default text output renders readable Semantic Events, and invalid enum values fail as usage errors.
   - Other information: structured fields remain the stable search Interface.
 - [x] CLI diffs two history commits
   - Public call: CLI process.
-  - Assert: diff returns the public diff result in JSON mode, no-change diffs are successful empty results, missing snapshots map to semantic-unavailable behavior, and invalid refs are usage errors.
+  - Assert: diff returns the public diff result in JSON mode, default text output renders readable Semantic Events, no-change diffs are successful empty results, missing snapshots map to semantic-unavailable behavior, and invalid refs are usage errors.
   - Other information: include-filtered and read-model-unavailable behavior can be covered on the smallest command surface that proves the shared mapping.
 
 Verification:
@@ -727,6 +727,8 @@ Verification:
 - RED: `pnpm --filter @silksong-git/cli test`: failed as expected before text rendering used `SemanticUpdateResult.events`; checkpoint output only included the commit.
 - `pnpm --filter @silksong-git/cli format`: passed
 - `pnpm --filter @silksong-git/cli lint`: passed
+- `pnpm --filter @silksong-git/cli test`: passed
+- RED: `pnpm --filter @silksong-git/cli test`: failed as expected before `history list`, `history search`, and `history diff` default text output reused the shared Semantic Event formatter; each still printed only the event type.
 - `pnpm --filter @silksong-git/cli test`: passed
 - `pnpm format`: passed
 - `pnpm lint`: passed
