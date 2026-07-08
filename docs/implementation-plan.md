@@ -690,6 +690,10 @@ Phase C: Manual Checkpoint CLI
   - Public call: CLI process.
   - Assert: checkpoint command records a Raw Save Observation through `packages/history`, outputs stable JSON when requested, and records trigger/message metadata.
   - Other information: this is the first end-to-end repo/history workflow slice after repo init.
+- [x] CLI checkpoint text output reports newly added Semantic Events
+  - Public call: CLI process.
+  - Assert: default text output for a committed checkpoint includes the new event count and readable event summaries from `SemanticUpdateResult.events`.
+  - Other information: JSON output remains the public `ObserveSaveResult` body.
 - [x] CLI handles unchanged manual checkpoint behavior
   - Public call: CLI process.
   - Assert: unchanged checkpoint defaults to a skipped result with a text hint, and the documented explicit option records the checkpoint.
@@ -720,6 +724,10 @@ Phase D: Read Model And History Queries
 
 Verification:
 
+- RED: `pnpm --filter @silksong-git/cli test`: failed as expected before text rendering used `SemanticUpdateResult.events`; checkpoint output only included the commit.
+- `pnpm --filter @silksong-git/cli format`: passed
+- `pnpm --filter @silksong-git/cli lint`: passed
+- `pnpm --filter @silksong-git/cli test`: passed
 - `pnpm format`: passed
 - `pnpm lint`: passed
 - CLI test command: `pnpm --filter @silksong-git/cli test`: passed

@@ -226,6 +226,23 @@ test("history checkpoint records a manual checkpoint with JSON output", async (t
   );
 });
 
+test("history checkpoint prints newly added Semantic Events", async (t) => {
+  const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
+
+  await runCli(["history", "checkpoint", "--repo", repoPath]);
+  await writeFile(
+    watchedSavePath,
+    await readFile(maskShard2CollectedEncodedSavePath),
+  );
+  const result = await runCli(["history", "checkpoint", "--repo", repoPath]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /checkpoint recorded/v);
+  assert.match(result.stdout, /events: 1/v);
+  assert.match(result.stdout, /- Mask Shard #2: missing -> done/v);
+});
+
 test("history checkpoint hints when unchanged bytes are skipped", async (t) => {
   const { repoPath } = await createCliHistoryRepo(t);
 
