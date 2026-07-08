@@ -1,7 +1,10 @@
 import type { JSX } from "solid-js";
 import { createContext, createSignal, useContext } from "solid-js";
 
-import type { ToastMessage } from "./toast-types.ts";
+interface ToastMessage {
+  readonly id: number;
+  readonly message: string;
+}
 
 interface ToastStore {
   readonly messages: () => readonly ToastMessage[];
