@@ -22,13 +22,16 @@ function reloadPublicFiles(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: BASE_PATH,
-  plugins: [solid(), reloadPublicFiles()],
+  plugins: [
+    solid(mode === "test" ? { hot: false } : undefined),
+    reloadPublicFiles(),
+  ],
   test: {
     environment: "jsdom",
   },
   build: {
     chunkSizeWarningLimit: 700,
   },
-});
+}));
