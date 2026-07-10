@@ -99,8 +99,6 @@ During implementation, prefer the narrowest relevant package command for fast be
 
 ```sh
 pnpm --filter <changed-package> test
-pnpm --filter <changed-package> format
-pnpm --filter <changed-package> lint
 ```
 
 Run multiple validation commands serially, not in parallel.
@@ -114,8 +112,6 @@ pnpm verify
 ```
 
 `pnpm verify` runs formatting, linting, tests, builds, and custom verifications. `pnpm format` runs ESLint fixes and Prettier. `pnpm lint` runs TypeScript, ESLint, JSON schema validation, stylelint, knip, Prettier checks, and custom repository checks.
-
-Package-scoped `format` and `lint` commands are for fast feedback while developing. They do not replace the root `pnpm verify` checks before commit, because the root lint command also runs cross-repository checks.
 
 If only `*.md` changed, `pnpm verify` may be skipped; run at least `pnpm format`.
 

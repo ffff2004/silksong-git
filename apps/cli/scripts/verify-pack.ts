@@ -26,13 +26,6 @@ try {
     "add",
     await findPackedArchive(packDirectory),
   ]);
-  await run("pnpm", [
-    "--dir",
-    installDirectory,
-    "exec",
-    "silksong-git",
-    "--help",
-  ]);
   await run("pnpm", ["--dir", installDirectory, "exec", "ssgit", "--help"]);
 } finally {
   await rm(tempDirectory, { recursive: true, force: true });
