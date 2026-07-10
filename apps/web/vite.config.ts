@@ -30,6 +30,7 @@ export default defineConfig(({ mode }) => ({
   ],
   test: {
     environment: "jsdom",
+    setupFiles: "./src/test/setup-local-storage.ts",
   },
   build: {
     chunkSizeWarningLimit: 700,

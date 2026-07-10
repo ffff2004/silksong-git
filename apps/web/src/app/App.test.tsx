@@ -43,7 +43,7 @@ describe("Solid Web app routing", () => {
 
   afterEach(() => {
     cleanup();
-    localStorage.clear();
+    globalThis.localStorage.clear();
     globalThis.location.hash = "";
     vi.unstubAllGlobals();
   });
@@ -196,7 +196,9 @@ describe("Solid Web app routing", () => {
     expect(collapseButton.getAttribute("aria-label")).toBe("Collapse legend");
     fireEvent.click(collapseButton);
     expect(screen.queryByText("Upgrade of another tool")).toBeNull();
-    expect(localStorage.getItem("progressLegendCollapsed")).toBe("true");
+    expect(globalThis.localStorage.getItem("progressLegendCollapsed")).toBe(
+      "true",
+    );
 
     unmount();
     cleanup();

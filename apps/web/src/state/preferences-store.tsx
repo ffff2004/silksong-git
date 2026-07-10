@@ -34,10 +34,12 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }) {
 
   onMount(() => {
     setSelectedActsSignal(readStoredActs());
-    setShowOnlyMissing(localStorage.getItem("showOnlyMissing") === "true");
-    setShowSpoilers(localStorage.getItem("showSpoilers") === "true");
+    setShowOnlyMissing(
+      globalThis.localStorage.getItem("showOnlyMissing") === "true",
+    );
+    setShowSpoilers(globalThis.localStorage.getItem("showSpoilers") === "true");
     setProgressLegendCollapsed(
-      localStorage.getItem("progressLegendCollapsed") === "true",
+      globalThis.localStorage.getItem("progressLegendCollapsed") === "true",
     );
     hydrated = true;
   });
@@ -49,10 +51,16 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }) {
       return;
     }
 
-    localStorage.setItem("actsDropdown", JSON.stringify(selectedActs()));
-    localStorage.setItem("showOnlyMissing", showOnlyMissing().toString());
-    localStorage.setItem("showSpoilers", showSpoilers().toString());
-    localStorage.setItem(
+    globalThis.localStorage.setItem(
+      "actsDropdown",
+      JSON.stringify(selectedActs()),
+    );
+    globalThis.localStorage.setItem(
+      "showOnlyMissing",
+      showOnlyMissing().toString(),
+    );
+    globalThis.localStorage.setItem("showSpoilers", showSpoilers().toString());
+    globalThis.localStorage.setItem(
       "progressLegendCollapsed",
       progressLegendCollapsed().toString(),
     );
@@ -86,11 +94,11 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }) {
 }
 
 function readStoredBoolean(key: string): boolean {
-  return localStorage.getItem(key) === "true";
+  return globalThis.localStorage.getItem(key) === "true";
 }
 
 function readStoredActs(): readonly number[] {
-  const storedValue = localStorage.getItem("actsDropdown");
+  const storedValue = globalThis.localStorage.getItem("actsDropdown");
   if (storedValue === null) {
     return defaultActs;
   }
