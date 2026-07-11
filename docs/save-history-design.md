@@ -319,7 +319,7 @@ First-version Project Config fields:
 }
 ```
 
-`localApi.host` is persisted because it is a security-relevant binding constraint. The local API port is a runtime binding, not a Project Config field; it may be assigned dynamically or provided through a process-start override such as a CLI flag, and the running process should report the concrete endpoint it bound to. The port only applies when the Local History Watch Process starts its optional HTTP Adapter.
+`localApi.host` is persisted because it is a security-relevant binding constraint and is validated at HTTP startup as exactly `127.0.0.1`. The local API port is a runtime binding, not a Project Config field. HTTP defaults to port `0` so the operating system assigns an available port; `--port` may provide an explicit port from 1 through 65535. The running process reports the concrete endpoint it bound to. The port only applies when the Local History Watch Process starts its optional HTTP Adapter.
 
 ## Core Module Interface
 
@@ -408,11 +408,21 @@ rebuildSemanticReadModel(
 
 queryHistory(input: QueryHistoryInput): Promise<HistoryResult>;
 
+queryRawObservations(
+  input: QueryRawObservationsInput,
+): Promise<RawObservationHistoryResult>;
+
 diffCommits(input: DiffCommitsInput): Promise<DiffCommitsResult>;
 
 searchSemanticEvents(
   input: SearchSemanticEventsInput,
 ): Promise<SearchSemanticEventsResult>;
+
+getSaveState(input: GetSaveStateInput): Promise<GetSaveStateResult>;
+
+readEncodedSave(
+  input: ReadEncodedSaveInput,
+): Promise<ReadEncodedSaveResult>;
 
 restoreEncodedSave(
   input: RestoreEncodedSaveInput,
@@ -526,14 +536,25 @@ interface RebuildSemanticReadModelResult {
 interface QueryHistoryInput {
   repoPath: string;
   includeFiltered?: boolean;
-  includeRawObservations?: boolean;
   limit?: number;
   cursor?: string;
+  order?: "asc" | "desc";
 }
 
 interface HistoryResult {
   events: readonly HistoricalSemanticEvent[];
-  rawObservations?: readonly RawSaveObservation[];
+  nextCursor?: string;
+}
+
+interface QueryRawObservationsInput {
+  repoPath: string;
+  limit?: number;
+  cursor?: string;
+  order?: "asc" | "desc";
+}
+
+interface RawObservationHistoryResult {
+  observations: readonly RawSaveObservation[];
   nextCursor?: string;
 }
 
@@ -564,10 +585,44 @@ interface SearchSemanticEventsInput {
     text?: string;
   };
   includeFiltered?: boolean;
+  limit?: number;
+  cursor?: string;
+  order?: "asc" | "desc";
 }
 
 interface SearchSemanticEventsResult {
   events: readonly HistoricalSemanticEvent[];
+  nextCursor?: string;
+}
+
+type SaveStateSelector =
+  | { kind: "latest" }
+  | { kind: "commit"; commitRef: string };
+
+interface GetSaveStateInput {
+  repoPath: string;
+  selector: SaveStateSelector;
+}
+
+type GetSaveStateResult =
+  | {
+      status: "available";
+      observation: RawSaveObservation;
+      decodedSave: DecodedSave;
+      semanticSnapshot: SemanticSnapshot | null;
+    }
+  | { status: "empty" };
+
+interface ReadEncodedSaveInput {
+  repoPath: string;
+  commitRef: string;
+}
+
+interface ReadEncodedSaveResult {
+  commit: HistoryCommit;
+  encodedBytes: Uint8Array;
+  encodedSha256: string;
+  suggestedFileName: string;
 }
 
 type RestoreTarget =
@@ -580,6 +635,9 @@ type RestoreTarget =
       kind: "inPlace";
       confirmation: "restore-watched-save";
       backupDirectory?: string;
+      expectedCurrent?:
+        | { status: "present"; encodedSha256: string }
+        | { status: "missing" };
     };
 
 interface RestoreEncodedSaveInput {
@@ -594,17 +652,73 @@ interface RestoreEncodedSaveResult {
   writtenSha256: string;
   backupPath?: string;
 }
+
+interface StartLocalHistoryWatchProcessInput {
+  repoPath: string;
+  http?: {
+    port?: number;
+  };
+  // Existing watcher system-boundary test seams are omitted here.
+}
+
+interface LocalHistoryWatchProcess {
+  repoPath: string;
+  http?: {
+    endpoint: string;
+    token: string;
+  };
+  getWatcherStatus(): LocalHistoryWatcherStatus;
+  stop(): void | Promise<void>;
+}
+
+interface LocalHistoryWatcherStatus {
+  status: "running";
+  activity: "idle" | "pending" | "observing";
+  observationRevision: number;
+  startedAt: string;
+  repoPath: string;
+  watchedSavePath: string;
+  capturePolicy: ProjectConfig["capturePolicy"];
+  lastObservation?:
+    | {
+        cause: "startup" | "change" | "deferred";
+        completedAt: string;
+        status: "committed";
+        commit: HistoryCommit;
+        eventCount: number;
+        semanticStatus: "updated" | "notAvailable";
+      }
+    | {
+        cause: "startup" | "change" | "deferred";
+        completedAt: string;
+        status: "skipped";
+        reason: "unchanged" | "minimumCommitInterval";
+        nextAllowedAt?: string;
+      }
+    | {
+        cause: "startup" | "change" | "deferred";
+        completedAt: string;
+        status: "watcherError";
+        error: WatcherError;
+      };
+}
 ```
 
 Git, SQLite, file watching, config loading, and local HTTP are implementation details or internal Adapters behind this Interface.
 
-`queryHistory`, `diffCommits`, and `searchSemanticEvents` should return Semantic Events with their commit and Raw Save Observation metadata. CLI and Web callers should not need separate Git or SQLite lookups to explain where an event came from.
+`queryHistory`, `diffCommits`, and `searchSemanticEvents` should return Semantic Events with their commit and Raw Save Observation metadata. CLI and Web callers should not need separate Git or SQLite lookups to explain where an event came from. `queryRawObservations` is a separate paginated Interface because Raw Save Observations and Semantic Events are different ordered histories; one cursor must not ambiguously paginate both.
 
 Display Semantic Event Filters apply consistently to `queryHistory`, `diffCommits`, and `searchSemanticEvents`. Default calls return default-visible events; `includeFiltered: true` returns hidden events as well, with `visibility.filterReasons` explaining why they are hidden by default.
 
-The SQLite schema is not public. CLI and Web callers must use `queryHistory`, `diffCommits`, and `searchSemanticEvents`; they must not query tables directly. Git command details are not public either; restore and history lookup go through `packages/history`.
+The SQLite schema is not public. CLI and Web callers must use `queryHistory`, `queryRawObservations`, `diffCommits`, and `searchSemanticEvents`; they must not query tables directly. Git command details are not public either; save-state lookup, export, restore, and history lookup go through `packages/history`.
 
-`searchSemanticEvents` accepts structured query fields as its stable Interface. Free-text `text` search supports the CLI `--event` convenience, but Web and programmatic callers should prefer structured fields.
+`queryHistory`, `queryRawObservations`, and `searchSemanticEvents` support opaque cursor pagination and an explicit `asc` or `desc` order. Existing Interface and CLI behavior defaults to `asc`; the local HTTP Adapter requests `desc` by default for recent-first Web views. A cursor is valid only with the query, filters, and order that produced it. `searchSemanticEvents` accepts structured query fields as its stable Interface. Free-text `text` search supports the CLI `--event` convenience, but Web and programmatic callers should prefer structured fields.
+
+`getSaveState` first resolves `latest` or a caller-supplied ref to one immutable observation commit, then reads every artifact by that fixed commit. It never reads a moving `HEAD` repeatedly and never triggers an observation. An empty repository is a normal `empty` result. An unrecognized observation returns its Decoded Save with `semanticSnapshot: null`; a recognized observation whose read-model snapshot is unavailable reports `ReadModelUnavailableError` rather than silently remapping.
+
+`readEncodedSave` returns the exact committed `save.dat` bytes as `Uint8Array`; it does not write a Restore Target. Its suggested filename uses only a sanitized basename stem from Project Config `watchedSavePath`, the canonical short commit SHA, and a `.dat` suffix. The directory part of `watchedSavePath` and the caller's untrusted ref are never copied into the filename.
+
+HTTP in-place restore requires `expectedCurrent`, while the existing CLI in-place restore may omit it to preserve its current explicit-confirmation workflow. When present, history acquires `write.lock`, reads the actual Watched Save, and verifies that it is either missing or has the expected hash before backup or overwrite. A mismatch produces `RestoreConflictError` without creating a backup or writing the Watched Save.
 
 `packages/history` consumes `packages/core` only through its public package-root Interface:
 
@@ -655,15 +769,123 @@ All history writers must acquire one Save History Repository write lock before m
 
 `startLocalHistoryWatchProcess` should read Project Config once at startup and use that config snapshot for the running watcher. Config changes require restarting the watcher to take effect. One-shot Offline Commands continue to read Project Config when they run.
 
-The Local History Watch Process produces structured process events from `packages/history`; CLI output is only an Adapter over those events. The process event stream may include the complete `ObserveSaveResult`, while CLI JSON output should use compact stable summaries. Started events should include the repository path, Watched Save path, and Capture Policy snapshot used by the process.
+The Local History Watch Process produces structured process events from `packages/history`; CLI output is only an Adapter over those events. The process event stream may include the complete `ObserveSaveResult`, while CLI JSON output should use compact stable summaries. Started events include the repository path, Watched Save path, Capture Policy snapshot, and, when HTTP is enabled, the concrete endpoint and bearer token. The HTTP credentials appear only in this one started event.
 
 The process shuts down gracefully. Shutdown stops accepting new file events, cancels pending debounce/stability work when no observation has started, waits for any running observation to finish, releases `watch.lock`, and emits a stopped event. It does not hard-cancel an observation that may be mutating Git or SQLite.
 
-Local HTTP endpoints are thin Adapters over `packages/history`. They should call history functions and should not directly query SQLite or run Git operations. In the first version, `watch start` does not expose HTTP by default; `watch start --http` enables the HTTP Adapter inside the same Local History Watch Process. Enabling HTTP must not create a second history writer.
+Local HTTP endpoints are thin Adapters over `packages/history`. They call history functions and do not directly query SQLite or run Git operations. In the first version, `watch start` does not expose HTTP by default; `watch start --http` enables the HTTP Adapter inside the same Local History Watch Process. Enabling HTTP must not create a second history writer.
 
 The Web UI frontend is a client of these endpoints. Serving the frontend is not part of the single-writer invariant: implementation and debugging can use Vite, and a later release can add static hosting or a small frontend-serving process without changing the Local History Watch Process contract.
 
 CLI history/diff/search/restore commands can also run as Offline Commands that read the Save History Repository and Semantic Read Model directly through `packages/history`.
+
+## Local HTTP Adapter
+
+ADR-0018 defines the security and lifecycle boundary. The Adapter uses Hono, `@hono/node-server`, Zod, and `@hono/zod-validator` inside `packages/history`. Hono handles HTTP concerns only; route handlers call public history Interfaces. `packages/history` exposes the inferred Hono app type through a browser-safe type-only subpath so `apps/web` can use `hono/client` without importing the server app, Node modules, Git, SQLite, or watcher internals. Compile-time Hono RPC types do not replace runtime compatibility discovery.
+
+The server binds only `http://127.0.0.1`. Project Config `localApi.host` is validated at runtime and any other value fails atomic process startup. The default port is `0`; `--port` accepts an explicit integer from 1 through 65535. The port and credentials are never persisted. The first version does not support HTTPS, IPv6, LAN binding, a host CLI flag, or runtime token rotation.
+
+Each process start generates a new cryptographically secure random bearer token of at least 256 bits, encoded as unpadded base64url and held only in memory. All actual API requests, including reads and compatibility discovery, require strict `Authorization: Bearer <token>` authentication with constant-time comparison. The token is not accepted in a URL, cookie, or alternate authentication scheme. The CLI reports endpoint and token as separate fields exactly once; losing the token requires restarting the watch process.
+
+Standard CORS allows any origin without credentials. It permits only the required methods plus `Authorization` and `Content-Type` request headers, and exposes `Content-Disposition`, `ETag`, and `Retry-After`. Unauthenticated `OPTIONS /api/v1/*` is the only authentication exception and returns no repository state. Browser Local Network Access permission belongs to P6 Web connection behavior; the server does not return superseded Private Network Access headers.
+
+First-version routes are:
+
+| Method | Route                              | Public history behavior                                   |
+| ------ | ---------------------------------- | --------------------------------------------------------- |
+| GET    | `/api/v1/meta`                     | API compatibility and capability discovery                |
+| GET    | `/api/v1/watcher`                  | Current coarse watcher status                             |
+| GET    | `/api/v1/save?selector=latest`     | Latest committed Raw Save Observation state               |
+| GET    | `/api/v1/save?commit=<ref>`        | State at one observation commit                           |
+| GET    | `/api/v1/history`                  | Paginated Semantic Event history                          |
+| GET    | `/api/v1/observations`             | Paginated Raw Save Observation history                    |
+| GET    | `/api/v1/diff?from=<ref>&to=<ref>` | Semantic diff between two commits                         |
+| GET    | `/api/v1/search?...`               | Structured paginated Semantic Event search                |
+| POST   | `/api/v1/checkpoints`              | Manual checkpoint through `observeSave`                   |
+| GET    | `/api/v1/export?commit=<ref>`      | Exact committed Encoded Save bytes                        |
+| POST   | `/api/v1/restores/in-place`        | Confirmed preconditioned restore to the Watched Save only |
+
+Commit refs stay in query parameters rather than path segments because valid Git refs may contain `/`. History resolves every ref to one canonical immutable commit before reading multiple artifacts. Route handlers never concatenate untrusted refs into shell commands or filesystem paths.
+
+`/meta` returns this compatibility shape:
+
+```ts
+{
+  api: {
+    name: "silksong-git-local-history";
+    version: { major: 1; minor: 0 };
+  };
+  repoPath: string;
+  watchedSavePath: string;
+  capabilities: readonly (
+    | "watcherStatus"
+    | "saveState"
+    | "history"
+    | "rawObservations"
+    | "diff"
+    | "search"
+    | "checkpoint"
+    | "exportEncodedSave"
+    | "restoreInPlace"
+  )[];
+}
+```
+
+Clients require the same API major, a server minor at least as high as the client requires, and each capability used by an enabled feature. Unknown fields and capabilities are ignored. Capabilities describe implemented protocol support, not transient availability. The first version does not report a placeholder tool version, process instance id, or persistent repository UUID. API responses use `Cache-Control: no-store`.
+
+History, search, and Raw Observation queries default to `limit=100` in HTTP, accept 1 through 1000, and default to `order=desc`. Cursors are opaque and valid only with the same query, filters, and order. Search must include at least one actual structured or text query field. History returns only Semantic Events; Raw Observations use their own Interface, endpoint, and cursor.
+
+Checkpoint JSON is strict `{ message?, allowUnchanged? }`. A committed or skipped checkpoint returns `200`; decode failure returns `422 save_decode_failed`; read failure returns `503 watched_save_unavailable`; and a committed observation whose semantic update is unavailable remains a successful commit result. HTTP does not add a private mutation queue or automatic POST retry; it uses the existing repository write lock and returns `409 repository_busy` with `Retry-After` after the existing lock-acquisition window.
+
+In-place restore JSON is strict and includes:
+
+```ts
+{
+  commitRef: string;
+  confirmation: "restore-watched-save";
+  expectedCurrent:
+    | { status: "present"; encodedSha256: string }
+    | { status: "missing" };
+}
+```
+
+The 64-character lowercase SHA-256 precondition binds user confirmation to the Watched Save state the Web UI displayed. A mismatch returns `409 restore_conflict` before backup or write. HTTP does not expose restore-to-path. The first version does not implement `Idempotency-Key`; the restore precondition and unchanged-checkpoint behavior cover the normal duplicate-submission cases, and the Web client must not automatically retry POST requests.
+
+Export responds with the exact Git `save.dat` bytes, `application/octet-stream`, a strong ETag based on Encoded Save SHA-256, `Content-Length`, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`. `Content-Disposition` uses a sanitized `<watched-save-stem>.<canonical-short-sha>.dat` filename, with an ASCII fallback and encoded Unicode form when needed. It never includes the watched directory or caller-supplied ref.
+
+Watcher status is a current-state snapshot, not a lossless event stream. It reports `running`, activity as `idle`, `pending`, or `observing`, process paths and Capture Policy, an `observationRevision` incremented once for each completed observation, and only the latest compact observation summary. `pending` covers debounce, stability wait, and deferred work without exposing watcher internals. When revision changes, Web refreshes Save State and consumes persistent history with cursors; skipped observations and transient Watcher Errors are not a durable audit log.
+
+POST bodies require `application/json`, are limited to 16 KiB, and use strict Zod objects. Commit refs are limited to 1024 characters, messages and search strings to 1000, and cursors to 4096. Boolean query fields accept only `true` or `false`. Validation does not return raw Zod objects or unsafe values.
+
+Successful JSON responses directly use public history DTOs where applicable. Errors use both a coarse standard HTTP status and a stable `{ error: { code, message, details? } }` body:
+
+| HTTP | Error code                      | Meaning                                                        |
+| ---- | ------------------------------- | -------------------------------------------------------------- |
+| 400  | `invalid_request`               | Invalid validated input, confirmation, cursor, or option set   |
+| 401  | `unauthorized`                  | Missing, malformed, or incorrect bearer token                  |
+| 404  | `route_not_found`               | No matching API route                                          |
+| 404  | `commit_not_found`              | Ref cannot resolve to a commit                                 |
+| 404  | `observation_not_found`         | Commit exists but is not a Raw Save Observation                |
+| 405  | `method_not_allowed`            | Known route does not support the method                        |
+| 408  | `request_timeout`               | Request headers or body were not received in time              |
+| 409  | `repository_busy`               | Existing write-lock acquisition window expired                 |
+| 409  | `restore_conflict`              | Actual Watched Save does not match the confirmed precondition  |
+| 413  | `payload_too_large`             | Request body exceeds 16 KiB                                    |
+| 415  | `unsupported_media_type`        | POST body is not `application/json`                            |
+| 422  | `save_decode_failed`            | Manual checkpoint cannot decode the current Watched Save       |
+| 500  | `restore_configuration_invalid` | Project Config restore backup directory is invalid             |
+| 500  | `restore_backup_failed`         | Restore cannot create its required backup                      |
+| 500  | `restore_write_failed`          | Restore cannot write the Watched Save                          |
+| 500  | `restore_verification_failed`   | Restore write-back hash differs from the intended Encoded Save |
+| 500  | `internal_error`                | Unclassified server failure                                    |
+| 503  | `watched_save_unavailable`      | Manual checkpoint cannot read the Watched Save                 |
+| 503  | `read_model_unavailable`        | Semantic Read Model is missing, stale, or unreadable           |
+
+Responses never expose stack traces, Git stderr, credentials, Zod input values, or internal absolute paths. The server may add new error codes in a compatible minor version; clients degrade to the HTTP status and safe message for unknown codes.
+
+Known 4xx responses are returned only to the client. Known 5xx domain failures and unexpected handler failures emit a sanitized nonfatal `httpRequestError` process event containing only method, route path without query, status, code, and safe message. An unrecoverable listener failure is a fatal `httpServerFailure`; a legal but unavailable explicit port is a runtime start failure, while malformed port syntax is CLI usage failure.
+
+Shutdown stops new HTTP work and idle connections before waiting for handlers already inside public history Interfaces. Client disconnect does not cancel a mutation that may have changed Git, SQLite, or the Watched Save. HTTP and watcher work finish before `watch.lock` is released.
 
 ## CLI Command Set
 
@@ -729,7 +951,7 @@ Default command output is human-readable text. `--json` provides stable machine-
   also call parseDecodedSave and report whether the decoded shape is recognized
 ```
 
-`watch start` starts the long-running Local History Watch Process for one Save History Repository. By default it watches the Watched Save, commits stable Raw Save Observations according to Capture Policy, updates the Semantic Read Model, reports status in terminal output, and shuts down cleanly on process termination. The default human-readable runtime log is diagnostic output and should be written to stderr; it is not a byte-stable scripting contract. `--jsonl` writes one stable machine-readable status event per line to stdout. `--http` enables the local HTTP Adapter inside that same process so the Web UI can connect to history workflows. `--port <port>` chooses the runtime local API port when HTTP is enabled; if omitted, the process may choose an available port and must report the concrete endpoint. The HTTP host comes from Project Config `localApi.host`.
+`watch start` starts the long-running Local History Watch Process for one Save History Repository. By default it watches the Watched Save, commits stable Raw Save Observations according to Capture Policy, updates the Semantic Read Model, reports status in terminal output, and shuts down cleanly on process termination. The default human-readable runtime log is diagnostic output and should be written to stderr; it is not a byte-stable scripting contract. `--jsonl` writes one stable machine-readable status event per line to stdout. `--http` enables the local HTTP Adapter inside that same process so the Web UI can connect to history workflows. `--port <port>` chooses the runtime local API port when HTTP is enabled; if omitted, the process requests port `0` and reports the concrete bound endpoint. The HTTP host comes from Project Config `localApi.host` and must be `127.0.0.1`. Endpoint and token are separate fields in the one started event and are not repeated later.
 
 `watch start` supports:
 
@@ -747,7 +969,7 @@ Default command output is human-readable text. `--json` provides stable machine-
   optional runtime local API port; valid only when --http is used
 ```
 
-P5-T5 may register `--http` and `--port` as known flags but should fail clearly when either is used, because the HTTP Adapter is implemented by P5-T6. `--port` without HTTP is invalid. `--jsonl` belongs to P5-T5.
+P5-T5 may register `--http` and `--port` as known flags but should fail clearly when either is used, because the HTTP Adapter is implemented by P5-T7. `--port` without HTTP is invalid. `--jsonl` belongs to P5-T5.
 
 `repo init` supports:
 
@@ -1149,7 +1371,7 @@ Watcher
   watched path, last observation, errors, capture policy
 
 Restore/Export
-  explicit target restore and safe export flows
+  preconditioned in-place restore and safe browser download flows
 ```
 
 Static Web Mode exposes only Current Save behavior. Local History Web Mode exposes History, Diff, Search, Watcher, and Restore/Export.
@@ -1175,6 +1397,7 @@ The current accepted decisions are:
 - ADR-0015: Record version stamps for decoding and semantic mapping.
 - ADR-0016: Commit decoded observations even when the save schema is unrecognized.
 - ADR-0017: Start implementation with a core semantic tracer bullet.
+- ADR-0018: Serve a secure versioned local HTTP Adapter from the watch process.
 
 ## Open Design Questions
 
@@ -1182,9 +1405,8 @@ These are intentionally left for later design or implementation:
 
 - Exact TypeScript shapes for `SemanticSnapshot`, `SemanticEvent`, `MappingData`, and config.
 - Exact SQLite schema and migration strategy inside `packages/history`.
-- Exact local HTTP route names and payloads.
-- Exact local HTTP endpoint discovery, capability/version negotiation, and connection UX.
+- Exact Web UX for transferring the reported endpoint/token into a browser session.
 - Exact frontend serving strategy outside development.
-- Whether watcher status uses polling first or a later streaming mechanism such as SSE/WebSocket.
+- Whether a later version needs streaming watcher status or durable watcher diagnostics beyond first-version polling.
 - Exact text output formatting for CLI commands.
 - Whether and how to support multi-save workspaces after the first version.

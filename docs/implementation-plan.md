@@ -1037,7 +1037,10 @@ Depends on:
 Owned files or likely files:
 
 - `apps/cli/`
+- `apps/cli/tsup.config.ts`
+- `apps/cli/scripts/verify-pack.ts`
 - `packages/history/`
+- `packages/history/package.json`
 - local HTTP adapter tests
 
 Relevant docs and ADRs:
@@ -1046,21 +1049,112 @@ Relevant docs and ADRs:
 - [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-history-api.md)
 - [ADR-0010](adr/0010-first-version-cli-command-set.md)
 - [ADR-0013](adr/0013-history-module-interface-and-testing.md)
+- [ADR-0018](adr/0018-secure-versioned-local-http-adapter.md)
 
 Acceptance criteria:
 
-- `watch start --http` enables the local HTTP Adapter inside the same Local History Watch Process that owns watching, history writes, and read-model updates.
-- `watch start --port <port>` chooses the runtime port only when `--http` is enabled; the port is not written to Project Config.
-- The running process reports the concrete endpoint, including host and bound port.
-- HTTP endpoints are thin adapters over `packages/history` public Interfaces and do not directly query SQLite or run Git operations.
-- The adapter exposes the local history capabilities needed by Local History Web Mode, including watcher status, history, diff, search, checkpoint, restore/export, and compatibility/capability discovery.
-- Enabling HTTP does not create a second watcher or a second history writer.
+- `watch start --http` atomically enables a Hono + Zod local HTTP Adapter inside the same Local History Watch Process that owns watching, history writes, and read-model updates; enabling HTTP never creates a second watcher, writer, or mutation queue.
+- HTTP startup validates Project Config host as exactly `127.0.0.1`. `watch start --port <port>` accepts only 1 through 65535 and only with `--http`; without `--port`, the server requests port `0`. Host, port, and credentials are not written to Project Config.
+- The Local History Watch Process reports one structured `started` event only after watcher ownership, watch backend, and HTTP listener are ready. When HTTP is enabled, that event includes the concrete `http://127.0.0.1:<bound-port>` endpoint and a separate session token; later events and endpoints do not repeat the token.
+- Every process start generates a new cryptographically secure bearer token with at least 256 bits of entropy, encoded as unpadded base64url, stored only in memory, compared in constant time, and accepted only through a strict `Authorization: Bearer <token>` header.
+- Standard CORS allows any origin without credentials, handles unauthenticated `OPTIONS /api/v1/*` without exposing repository state, permits only required methods and request headers, and exposes `Content-Disposition`, `ETag`, and `Retry-After`. The Adapter does not implement superseded Private Network Access headers.
+- All actual `/api/v1` requests, including `meta`, require authentication. JSON POST bodies require `application/json`, use strict Zod objects, and are limited to 16 KiB. Query/body fields use the length, enum, boolean, and pagination limits in `docs/save-history-design.md`.
+- The Hono app type is exported through a browser-safe type-only `@silksong-git/history` subpath for later `hono/client` use. The subpath does not import Node, Git, SQLite, watcher, or server runtime code. Runtime API version/capability checks remain required.
+- HTTP endpoints are thin Adapters over `packages/history` public Interfaces and do not directly query SQLite, run Git operations, read watcher private fields, or classify errors by message text.
+- The history Interface adds `getSaveState`, `readEncodedSave`, and paginated `queryRawObservations`. `queryHistory` drops `includeRawObservations`; Raw Save Observations have a separate result and cursor. `queryHistory`, `queryRawObservations`, and `searchSemanticEvents` support opaque cursor pagination and `asc`/`desc` order; existing Interface/CLI defaults remain `asc`, while HTTP defaults to `desc`, `limit=100`, and a maximum of 1000.
+- `getSaveState` supports `latest` and arbitrary observation commit refs. It fixes one canonical immutable commit before reading multiple artifacts, returns `empty` for a valid repository without observations, returns `semanticSnapshot: null` for unrecognized schema, and reports unavailable recognized snapshots rather than silently remapping.
+- `readEncodedSave` returns exact committed bytes as `Uint8Array`, the canonical commit and hash, and a safe `<watched-save-stem>.<short-sha>.dat` filename derived from the Watched Save basename only.
+- The API exposes authenticated `meta`, watcher status, save state, Semantic Event history, Raw Save Observation history, diff, structured search, manual checkpoint, Encoded Save export, and in-place restore routes exactly as documented in `docs/save-history-design.md`.
+- `/meta` reports API name, major/minor version, repository and Watched Save display paths, and stable implementation capabilities. It does not report a placeholder tool version, process instance id, persistent repository UUID, credentials, or transient availability as capabilities.
+- Watcher status is polling-only and returns a coarse immutable snapshot with `activity`, `observationRevision`, and the latest compact observation summary. It does not return complete Semantic Events or promise lossless transient-event delivery; Web uses Save State and paginated history after a revision change.
+- Manual checkpoint maps committed and skipped results as successes, decode and Watched Save read failures to stable errors, and repository lock timeout to `repository_busy`. The Adapter does not automatically retry POST requests.
+- HTTP restore exposes only in-place restore, requires `confirmation: "restore-watched-save"`, and requires a discriminated current-save precondition. History checks the actual Watched Save under `write.lock` before backup or write and returns `restore_conflict` on missing/hash mismatch. Arbitrary server path restore is not exposed.
+- Export returns the exact committed `save.dat` body with the content, download, hash, cache, length, and sniffing headers documented in `docs/save-history-design.md`; caller refs and watched directory paths cannot enter the filename or headers.
+- Success responses reuse public history DTOs where applicable. Expected Adapter and history failures map to the documented stable HTTP status plus `{ error: { code, message, details? } }`; responses do not expose tokens, request bodies, stack traces, Git stderr, Zod values, or internal absolute paths.
+- Expected 4xx responses do not create process events. Known 5xx and unexpected request failures emit sanitized nonfatal `httpRequestError` events. Listener startup has a public classified start error; an unrecoverable listener runtime failure emits fatal reason `httpServerFailure`, gracefully stops the whole process, and releases `watch.lock`.
+- Graceful shutdown stops accepting HTTP work and idle connections, waits for handlers already inside public history Interfaces, never hard-cancels a mutation because the client disconnected, finishes watcher work, closes the listener, and releases `watch.lock`.
+- Hono, its Node Adapter and Zod validator are direct `packages/history` runtime dependencies and are included in the self-contained CLI bundle. Packed-CLI verification starts authenticated HTTP, calls `meta`, and shuts down cleanly.
+
+Public test seams:
+
+- History Interface with temporary directories, real Git, and real SQLite.
+- HTTP Request/Response contract through the Hono Fetch-compatible app, using real history behavior rather than mocks of internal collaborators.
+- `startLocalHistoryWatchProcess` with a real `127.0.0.1:0` listener and standard `fetch` for ownership and lifecycle behavior.
+- Built CLI process for flags, startup output, signals, and packed-artifact behavior.
+
+TDD Vertical Slices:
+
+- [ ] Search can paginate with the existing Semantic Event cursor model
+  - Public call: `searchSemanticEvents`.
+  - Assert: `limit`, opaque `cursor`, `nextCursor`, and stable order work through the public Interface; changing query/order requires restarting pagination.
+- [ ] Raw Save Observations have an independent paginated Interface
+  - Public call: `queryRawObservations`.
+  - Assert: observations paginate independently from Semantic Events in both orders; remove `queryHistory.includeRawObservations` and migrate existing behavior tests.
+- [ ] Latest Save State reports an empty repository
+  - Public call: `getSaveState({ selector: { kind: "latest" } })`.
+  - Assert: a valid initialized repository without observations returns `{ status: "empty" }`.
+- [ ] Save State returns one immutable observation commit
+  - Public call: `getSaveState` with latest and explicit commit selectors.
+  - Assert: observation, Decoded Save, and Semantic Snapshot all correspond to the same canonical commit, including when a moving ref advances during the composite read.
+- [ ] Unrecognized Save State remains inspectable
+  - Public call: `getSaveState` for an unrecognized observation.
+  - Assert: observation and Decoded Save are returned with `semanticSnapshot: null`; recognized state without an available read-model snapshot reports `ReadModelUnavailableError`.
+- [ ] Encoded Save export data is exact and safely named
+  - Public call: `readEncodedSave`.
+  - Assert: bytes equal committed `save.dat`, the hash and canonical commit are correct, and the suggested filename contains only a sanitized Watched Save basename stem and short SHA.
+- [ ] In-place restore rejects a stale current-save precondition
+  - Public call: `restoreEncodedSave`.
+  - Assert: present-hash and expected-missing mismatches produce `RestoreConflictError` before backup or write; a matching precondition preserves existing backup, write, and verification behavior.
+- [ ] Authenticated meta is the HTTP tracer bullet
+  - Public call: Hono app Request/Response seam.
+  - Assert: valid bearer authentication returns the versioned meta contract and capabilities; missing or wrong tokens return indistinguishable `401 unauthorized` responses.
+- [ ] Standard CORS supports authenticated browser requests
+  - Public call: Hono app Request/Response seam.
+  - Assert: OPTIONS is the only unauthenticated path, actual routes remain protected, credentials are disabled, and required request/response headers are allowed/exposed.
+- [ ] HTTP input and error contracts are bounded and stable
+  - Public call: Hono app Request/Response seam.
+  - Assert: representative strict-Zod, content type, body size, timeout, method, route, cursor, boolean, range, and field-length failures return the documented status/code without leaking unsafe details.
+- [ ] Save, history, observation, diff, and search GET routes use public Interfaces
+  - Public call: authenticated Hono HTTP requests against a real temporary repository.
+  - Assert: latest/commit Save State, recent-first paginated histories, diff, and structured search return the documented public results without direct storage assertions.
+- [ ] Checkpoint route preserves observation semantics
+  - Public call: `POST /api/v1/checkpoints`.
+  - Assert: committed, unchanged, allow-unchanged, decode failure, read failure, and busy results map to the documented HTTP behavior.
+- [ ] Export route returns exact bytes and safe headers
+  - Public call: `GET /api/v1/export?commit=<ref>`.
+  - Assert: body, content headers, ETag, safe basename/short-SHA filename, and authenticated CORS exposure are correct for friendly refs containing Git revision syntax.
+- [ ] Restore route requires confirmation and optimistic current-save state
+  - Public call: `POST /api/v1/restores/in-place`.
+  - Assert: strict discriminated input, successful backup/restore, stale-state conflict, repository busy, and restore failure mappings preserve the existing public history behavior.
+- [ ] Watcher polling exposes compact current state
+  - Public call: `GET /api/v1/watcher` through a running Local History Watch Process.
+  - Assert: activity is coarse, `observationRevision` increments once per completed observation, multiple observations between polls are detectable, and complete event arrays are not retransmitted.
+- [ ] Watch process atomically starts watcher and dynamic-port HTTP
+  - Public call: `startLocalHistoryWatchProcess({ http: {} })`, then standard `fetch`.
+  - Assert: one started event contains actual endpoint/token only after both components are ready, only one watcher owns the repository, and authenticated `meta` is reachable.
+- [ ] Explicit HTTP port and loopback validation fail safely
+  - Public call: `startLocalHistoryWatchProcess` and CLI process.
+  - Assert: malformed CLI ports are usage errors; legal occupied ports and invalid configured hosts are classified runtime start failures that clean up the backend and `watch.lock`.
+- [ ] HTTP runtime failure is process-fatal while request failure is not
+  - Public call: running Local History Watch Process.
+  - Assert: listener failure emits `httpServerFailure` and stops; a handler 5xx emits sanitized `httpRequestError` and the process remains usable.
+- [ ] Graceful stop drains active history work
+  - Public call: running Local History Watch Process with authenticated requests.
+  - Assert: new work and idle connections stop, an entered mutation finishes despite client disconnect or stop signal, watcher work finishes, and `watch.lock` is released.
+- [ ] CLI reports HTTP credentials exactly once
+  - Public call: built CLI in human and `--jsonl` modes.
+  - Assert: `--http`, dynamic and explicit ports, `--port` without HTTP, endpoint/token separation, one-time reporting, signal shutdown, and output failure behavior match the documented contract.
+- [ ] Packed CLI contains the complete HTTP runtime
+  - Public call: install the generated CLI tarball, initialize a temporary repository, start `watch --http`, authenticate `meta`, and stop.
+  - Assert: no undeclared Hono/Zod runtime dependency is missing and the installed artifact cleans up its watch process.
 
 Verification:
 
 - `pnpm format`: pending
 - `pnpm lint`: pending
-- Relevant test command: pending
+- `pnpm --filter @silksong-git/history test`: pending
+- `pnpm --filter @silksong-git/cli test`: pending
+- `pnpm verify`: pending
 
 ## P6 Web Integration
 
@@ -1205,11 +1299,17 @@ Relevant docs and ADRs:
 - [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-history-api.md)
 - [ADR-0009](adr/0009-one-web-ui-with-static-and-local-history-modes.md)
 - [ADR-0013](adr/0013-history-module-interface-and-testing.md)
+- [ADR-0018](adr/0018-secure-versioned-local-http-adapter.md)
 
 Acceptance criteria:
 
 - Local History Web Mode is enabled when the frontend connects to a compatible local HTTP endpoint.
+- The Web client uses the browser-safe Hono client and type-only app contract without importing history server runtime code. It authenticates with the bearer header, validates API major/minor and required capabilities at runtime, and degrades safely on unknown or malformed responses.
 - Local History Web Mode shows Current Save, History, Diff, Search, Watcher, and Restore/Export views.
+- Watcher status uses polling and `observationRevision`; revision changes refresh latest Save State and consume persistent Semantic Event/Raw Observation pages by cursor rather than treating watcher status as a lossless event stream.
+- History, search, and Raw Observation views use recent-first pagination. Current Save represents the latest committed Raw Save Observation, including explicit empty and unrecognized-schema states.
+- Browser export fetches authenticated bytes and uses the server-provided safe filename. Browser restore exposes only confirmed preconditioned in-place restore and does not automatically retry POST requests.
+- The connection UI distinguishes endpoint unavailability, authentication failure, protocol incompatibility, transient history availability, and browser Local Network Access denial. Real-browser smoke tests cover the secure-context permission flow where supported.
 - HTTP endpoints are provided by `watch start --http` and are adapters over `packages/history`.
 - Web code does not query SQLite or run Git operations directly.
 - Frontend serving stays decoupled from the Local History Watch Process; Vite is acceptable for implementation and debugging.
@@ -1242,12 +1342,14 @@ Relevant docs and ADRs:
 - [ADR-0008](adr/0008-one-local-process-owns-watching-and-local-history-api.md)
 - [ADR-0009](adr/0009-one-web-ui-with-static-and-local-history-modes.md)
 - [ADR-0010](adr/0010-first-version-cli-command-set.md)
+- [ADR-0018](adr/0018-secure-versioned-local-http-adapter.md)
 
 Acceptance criteria:
 
 - UI open behavior matches `docs/save-history-design.md`; that document remains the source for concrete command grammar and flags.
 - The command opens or serves the Web UI client without becoming a second history writer.
 - Local endpoint discovery or connection behavior is explicit and compatible with Local History Web Mode.
+- Endpoint and token remain separate values; credentials are not placed in a URL, persisted to Project Config, or exposed to frontend serving infrastructure. The exact browser handoff UX must preserve the one-process, per-start token model from ADR-0018.
 - The command does not make Web code call Git, SQLite, watcher, or history internals directly.
 
 Verification:
