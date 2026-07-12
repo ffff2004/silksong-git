@@ -111,7 +111,7 @@ Before commit, run the full repository verification:
 pnpm verify
 ```
 
-`pnpm verify` runs formatting, linting, tests, builds, and custom verifications. `pnpm format` runs ESLint fixes and Prettier. `pnpm lint` runs TypeScript, ESLint, JSON schema validation, stylelint, knip, Prettier checks, and custom repository checks.
+`pnpm verify` runs formatting, linting, tests, builds, and custom verifications.
 
 If only `*.md` changed, `pnpm verify` may be skipped; run at least `pnpm format`.
 
