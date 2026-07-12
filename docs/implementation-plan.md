@@ -1163,6 +1163,58 @@ Notes:
 - Added public history behavior for Save State, exact Encoded Save reads, independent Raw Save Observation pagination, ordered search/history cursors, and restore preconditions.
 - CLI bundles the complete HTTP runtime and reports endpoint/token only in the structured started event.
 
+### P5-T8 Generate The Local HTTP OpenAPI Contract
+
+Status: complete
+
+Depends on:
+
+- P5-T7
+
+Owned files or likely files:
+
+- `packages/history/src/http-contract.ts`
+- `packages/history/src/http-app.ts`
+- `packages/history/src/http-app.test.ts`
+- `packages/history/package.json`
+- generated Local HTTP OpenAPI documentation
+
+Relevant docs and ADRs:
+
+- `docs/save-history-design.md`
+- [ADR-0018](adr/0018-secure-versioned-local-http-adapter.md)
+
+Acceptance criteria:
+
+- OpenAPI-aware Zod route definitions are the runtime source for request validation and generated API documentation.
+- The generated OpenAPI 3.1 contract covers every first-version route, Bearer authentication, stable error responses, and the binary export response and headers.
+- Existing authentication, CORS, bounded input, error mapping, and public history behavior remain unchanged.
+- The browser-safe Hono client type remains available without importing Node, Git, SQLite, or watcher runtime modules.
+- A repository command generates an ignored OpenAPI JSON document on demand.
+
+Public test seams:
+
+- Generated OpenAPI document through the public history contract Interface.
+- HTTP Request/Response contract through the Hono Fetch-compatible app.
+
+TDD Vertical Slices:
+
+- [x] Generate an OpenAPI 3.1 document for the complete authenticated API contract.
+- [x] Drive existing request validation through OpenAPI route definitions without behavior changes.
+- [x] Generate the ignored OpenAPI JSON artifact on demand.
+
+Verification:
+
+- `pnpm verify`: passed
+
+Notes:
+
+- Replaced separate Hono request validators with OpenAPI-aware route definitions while preserving the existing authenticated Request/Response behavior.
+- Added DTO-aligned response schemas, stable error-code documentation, Bearer security metadata, and binary export response metadata.
+- Added `pnpm generate:openapi`; it produces the ignored `docs/generated/local-http-api.openapi.json` artifact on demand.
+- Route paths, advertised capabilities, and stable error codes are each declared once and reused by runtime behavior, TypeScript types, and OpenAPI generation.
+- `LocalHttpApp` is inferred from the real Hono route registration chain in `http-app.ts` and exposed through a type-only package-root export, removing the separately maintained client route schema without introducing a contract-to-app dependency.
+
 ## P6 Web Integration
 
 ### P6-T1 Route Current Save Flow Through Core

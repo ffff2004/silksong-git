@@ -15,15 +15,19 @@
   },
   "scripts": {
     "format": "tsx ../../scripts/format.ts packages/history",
+    "generate:openapi": "tsx src/scripts/generate-openapi.ts",
     "lint": "tsx ../../scripts/lint.ts packages/history",
     "test": "tsx --test --test-reporter=dot src/**/*.test.ts",
     "test:verbose": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.8",
-    "@hono/zod-validator": "^0.8.0",
+    "@hono/zod-openapi": "^1.4.0",
     "@silksong-git/core": "workspace:*",
     "hono": "^4.12.29",
     "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "prettier": "3.8.4"
   }
 }

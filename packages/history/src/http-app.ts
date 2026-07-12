@@ -1,13 +1,11 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
-import { zValidator } from "@hono/zod-validator";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import type { Context } from "hono";
-import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { timeout } from "hono/timeout";
-import { z } from "zod";
 
 import { readProjectConfig } from "./config.ts";
 import {
@@ -29,113 +27,13 @@ import {
   queryRawObservations,
   searchSemanticEvents,
 } from "./history-interface.ts";
+import type { LocalHttpErrorCode } from "./http-contract.ts";
+import { localHttpCapabilities, localHttpRoutes } from "./http-contract.ts";
 import { restoreEncodedSave } from "./restore.ts";
 import { getSaveState, readEncodedSave } from "./save-state.ts";
 import type { LocalHistoryWatcherStatus } from "./types.ts";
 
-const capabilities = [
-  "watcherStatus",
-  "saveState",
-  "history",
-  "rawObservations",
-  "diff",
-  "search",
-  "checkpoint",
-  "exportEncodedSave",
-  "restoreInPlace",
-] as const;
-const refSchema = z.string().min(1).max(1024);
-const cursorSchema = z.string().min(1).max(4096);
-const textSchema = z.string().min(1).max(1000);
-const booleanQuerySchema = z
-  .enum(["true", "false"])
-  .transform((value) => value === "true");
-const paginationSchema = {
-  limit: z.coerce.number().int().min(1).max(1000).default(100),
-  cursor: cursorSchema.optional(),
-  order: z.enum(["asc", "desc"]).default("desc"),
-} as const;
-const saveQuerySchema = z
-  .object({
-    selector: z.literal("latest").optional(),
-    commit: refSchema.optional(),
-  })
-  .strict()
-  .refine(
-    (query) => (query.selector === "latest") !== (query.commit !== undefined),
-  );
-const historyQuerySchema = z
-  .object({
-    ...paginationSchema,
-    includeFiltered: booleanQuerySchema.default(false),
-  })
-  .strict();
-const observationsQuerySchema = z.object(paginationSchema).strict();
-const diffQuerySchema = z
-  .object({
-    from: refSchema,
-    to: refSchema,
-    includeFiltered: booleanQuerySchema.default(false),
-  })
-  .strict();
-const searchQuerySchema = z
-  .object({
-    ...paginationSchema,
-    includeFiltered: booleanQuerySchema.default(false),
-    itemId: textSchema.optional(),
-    label: textSchema.optional(),
-    type: textSchema.optional(),
-    statusTo: z.enum(["accepted", "done", "missing", "unknown"]).optional(),
-    eventType: textSchema.optional(),
-    direction: z.enum(["neutral", "progression", "regression"]).optional(),
-    text: textSchema.optional(),
-  })
-  .strict()
-  .refine(hasSearchQuery);
-const checkpointBodySchema = z
-  .object({
-    message: textSchema.optional(),
-    allowUnchanged: z.boolean().optional(),
-  })
-  .strict();
-const exportQuerySchema = z.object({ commit: refSchema }).strict();
-const expectedCurrentSchema = z.discriminatedUnion("status", [
-  z
-    .object({
-      status: z.literal("present"),
-      encodedSha256: z.string().regex(/^[0-9a-f]{64}$/v),
-    })
-    .strict(),
-  z.object({ status: z.literal("missing") }).strict(),
-]);
-const restoreBodySchema = z
-  .object({
-    commitRef: refSchema,
-    confirmation: z.literal("restore-watched-save"),
-    expectedCurrent: expectedCurrentSchema,
-  })
-  .strict();
 const authorizationPattern = /^Bearer (?<token>[\w\-]+)$/v;
-
-function hasSearchQuery(query: {
-  readonly itemId?: string;
-  readonly label?: string;
-  readonly type?: string;
-  readonly statusTo?: string;
-  readonly eventType?: string;
-  readonly direction?: string;
-  readonly text?: string;
-}) {
-  return [
-    query.itemId,
-    query.label,
-    query.type,
-    query.statusTo,
-    query.eventType,
-    query.direction,
-    query.text,
-  ].some((value) => value !== undefined);
-}
 
 function validationHook(
   result: { readonly success: boolean },
@@ -159,12 +57,17 @@ interface HttpRequestErrorEvent {
   readonly method: string;
   readonly path: string;
   readonly status: number;
-  readonly code: string;
+  readonly code: LocalHttpErrorCode;
   readonly message: string;
 }
 
-export function createLocalHttpApp(input: CreateLocalHttpAppInput): Hono {
-  const app = new Hono();
+// The return type is intentionally inferred from the real Hono registration chain so LocalHttpApp
+// cannot drift from the routes served by this factory.
+// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
+  const app = new OpenAPIHono<Record<string, never>>({
+    defaultHook: validationHook,
+  });
 
   app.use(
     "/api/v1/*",
@@ -218,24 +121,27 @@ export function createLocalHttpApp(input: CreateLocalHttpAppInput): Hono {
     }),
   );
 
-  app.get("/api/v1/meta", async (c) => {
-    const config = await readProjectConfig(input.repoPath);
+  const routedApp = app
+    .openapi(localHttpRoutes.meta, async (c) => {
+      const config = await readProjectConfig(input.repoPath);
 
-    return c.json({
-      api: {
-        name: "silksong-git-local-history" as const,
-        version: { major: 1 as const, minor: 0 as const },
-      },
-      repoPath: input.repoPath,
-      watchedSavePath: config.watchedSavePath,
-      capabilities,
-    });
-  });
-  app.get("/api/v1/watcher", (c) => c.json(input.getWatcherStatus()));
-  app.get(
-    "/api/v1/save",
-    zValidator("query", saveQuerySchema, validationHook),
-    async (c) => {
+      return c.json(
+        {
+          api: {
+            name: "silksong-git-local-history" as const,
+            version: { major: 1 as const, minor: 0 as const },
+          },
+          repoPath: input.repoPath,
+          watchedSavePath: config.watchedSavePath,
+          capabilities: localHttpCapabilities,
+        },
+        200,
+      );
+    })
+    .openapi(localHttpRoutes.watcher, (c) =>
+      c.json(input.getWatcherStatus(), 200),
+    )
+    .openapi(localHttpRoutes.save, async (c) => {
       const query = c.req.valid("query");
 
       const result = await getSaveState({
@@ -246,36 +152,24 @@ export function createLocalHttpApp(input: CreateLocalHttpAppInput): Hono {
             : { kind: "commit", commitRef: query.commit },
       });
 
-      return c.json(result);
-    },
-  );
-  app.get(
-    "/api/v1/history",
-    zValidator("query", historyQuerySchema, validationHook),
-    async (c) => {
+      return c.json(result, 200);
+    })
+    .openapi(localHttpRoutes.history, async (c) => {
       const query = c.req.valid("query");
       const result = await queryHistory({ repoPath: input.repoPath, ...query });
 
-      return c.json(result);
-    },
-  );
-  app.get(
-    "/api/v1/observations",
-    zValidator("query", observationsQuerySchema, validationHook),
-    async (c) => {
+      return c.json(result, 200);
+    })
+    .openapi(localHttpRoutes.observations, async (c) => {
       const query = c.req.valid("query");
       const result = await queryRawObservations({
         repoPath: input.repoPath,
         ...query,
       });
 
-      return c.json(result);
-    },
-  );
-  app.get(
-    "/api/v1/diff",
-    zValidator("query", diffQuerySchema, validationHook),
-    async (c) => {
+      return c.json(result, 200);
+    })
+    .openapi(localHttpRoutes.diff, async (c) => {
       const query = c.req.valid("query");
 
       const result = await diffCommits({
@@ -285,13 +179,9 @@ export function createLocalHttpApp(input: CreateLocalHttpAppInput): Hono {
         includeFiltered: query.includeFiltered,
       });
 
-      return c.json(result);
-    },
-  );
-  app.get(
-    "/api/v1/search",
-    zValidator("query", searchQuerySchema, validationHook),
-    async (c) => {
+      return c.json(result, 200);
+    })
+    .openapi(localHttpRoutes.search, async (c) => {
       const { includeFiltered, limit, order, cursor, ...query } =
         c.req.valid("query");
 
@@ -304,13 +194,9 @@ export function createLocalHttpApp(input: CreateLocalHttpAppInput): Hono {
         order,
       });
 
-      return c.json(result);
-    },
-  );
-  app.post(
-    "/api/v1/checkpoints",
-    zValidator("json", checkpointBodySchema, validationHook),
-    async (c) => {
+      return c.json(result, 200);
+    })
+    .openapi(localHttpRoutes.checkpoints, async (c) => {
       const result = await observeSave({
         repoPath: input.repoPath,
         trigger: "manualCheckpoint",
@@ -318,29 +204,40 @@ export function createLocalHttpApp(input: CreateLocalHttpAppInput): Hono {
       });
 
       if (result.status === "watcherError") {
-        return result.error.reason === "decodeFailure"
-          ? errorResponse(
-              c,
-              422,
-              "save_decode_failed",
-              "The Watched Save could not be decoded.",
-            )
-          : requestFailureResponse(
-              input,
-              c,
-              503,
-              "watched_save_unavailable",
-              "The Watched Save is unavailable.",
-            );
+        if (result.error.reason === "decodeFailure") {
+          return c.json(
+            {
+              error: {
+                code: "save_decode_failed" as const,
+                message: "The Watched Save could not be decoded.",
+              },
+            },
+            422,
+          );
+        }
+
+        input.onRequestError?.({
+          method: c.req.method,
+          path: c.req.path,
+          status: 503,
+          code: "watched_save_unavailable",
+          message: "The Watched Save is unavailable.",
+        });
+
+        return c.json(
+          {
+            error: {
+              code: "watched_save_unavailable" as const,
+              message: "The Watched Save is unavailable.",
+            },
+          },
+          503,
+        );
       }
 
-      return c.json(result);
-    },
-  );
-  app.get(
-    "/api/v1/export",
-    zValidator("query", exportQuerySchema, validationHook),
-    async (c) => {
+      return c.json(result, 200);
+    })
+    .openapi(localHttpRoutes.export, async (c) => {
       const result = await readEncodedSave({
         repoPath: input.repoPath,
         commitRef: c.req.valid("query").commit,
@@ -360,12 +257,8 @@ export function createLocalHttpApp(input: CreateLocalHttpAppInput): Hono {
             "Content-Disposition,ETag,Retry-After",
         },
       });
-    },
-  );
-  app.post(
-    "/api/v1/restores/in-place",
-    zValidator("json", restoreBodySchema, validationHook),
-    async (c) => {
+    })
+    .openapi(localHttpRoutes.restoreInPlace, async (c) => {
       const request = c.req.valid("json");
 
       const result = await restoreEncodedSave({
@@ -378,33 +271,19 @@ export function createLocalHttpApp(input: CreateLocalHttpAppInput): Hono {
         },
       });
 
-      return c.json(result);
-    },
-  );
+      return c.json(result, 200);
+    });
 
-  const knownPaths = [
-    "/api/v1/meta",
-    "/api/v1/watcher",
-    "/api/v1/save",
-    "/api/v1/history",
-    "/api/v1/observations",
-    "/api/v1/diff",
-    "/api/v1/search",
-    "/api/v1/checkpoints",
-    "/api/v1/export",
-    "/api/v1/restores/in-place",
-  ];
-
-  for (const route of knownPaths) {
-    app.all(route, (c) =>
+  for (const route of Object.values(localHttpRoutes)) {
+    routedApp.all(route.path, (c) =>
       errorResponse(c, 405, "method_not_allowed", "Method not allowed."),
     );
   }
 
-  app.notFound((c) =>
+  routedApp.notFound((c) =>
     errorResponse(c, 404, "route_not_found", "Route not found."),
   );
-  app.onError((error, c) => {
+  routedApp.onError((error, c) => {
     const mapped = mapError(error);
 
     if (mapped.code === "repository_busy") {
@@ -422,8 +301,14 @@ export function createLocalHttpApp(input: CreateLocalHttpAppInput): Hono {
     return errorResponse(c, mapped.status, mapped.code, mapped.message);
   });
 
-  return app;
+  return routedApp;
 }
+
+export type LocalHttpApp = ReturnType<typeof buildLocalHttpApp>;
+
+export const createLocalHttpApp: (
+  input: CreateLocalHttpAppInput,
+) => LocalHttpApp = buildLocalHttpApp;
 
 async function requireJsonBody(c: Context, next: () => Promise<void>) {
   if (c.req.method !== "POST") {
@@ -454,24 +339,6 @@ async function requireJsonBody(c: Context, next: () => Promise<void>) {
   return undefined;
 }
 
-function requestFailureResponse(
-  input: CreateLocalHttpAppInput,
-  c: Context,
-  status: number,
-  code: string,
-  message: string,
-) {
-  input.onRequestError?.({
-    method: c.req.method,
-    path: c.req.path,
-    status,
-    code,
-    message,
-  });
-
-  return errorResponse(c, status, code, message);
-}
-
 function invalidRequest(c: Parameters<typeof errorResponse>[0]) {
   return errorResponse(c, 400, "invalid_request", "Invalid request.");
 }
@@ -479,7 +346,7 @@ function invalidRequest(c: Parameters<typeof errorResponse>[0]) {
 function errorResponse(
   c: { json: (body: object, status: number) => Response },
   status: number,
-  code: string,
+  code: LocalHttpErrorCode,
   message: string,
 ) {
   return c.json({ error: { code, message } }, status);
@@ -487,7 +354,7 @@ function errorResponse(
 
 function mapError(error: unknown): {
   readonly status: number;
-  readonly code: string;
+  readonly code: LocalHttpErrorCode;
   readonly message: string;
 } {
   if (error instanceof InvalidCommitRefError) {

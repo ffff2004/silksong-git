@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createLocalHttpApp, initSaveHistory, observeSave } from "./index.ts";
+import {
+  createLocalHttpApp,
+  createLocalHttpOpenApiDocument,
+  initSaveHistory,
+  observeSave,
+} from "./index.ts";
 
 const fixtureDirectory = path.join(
   import.meta.dirname,
@@ -23,6 +28,85 @@ const maskShardEncodedSavePath = path.join(
 async function readJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
+
+interface OpenApiDocumentProbe {
+  readonly openapi: string;
+  readonly security: ReadonlyArray<Record<string, readonly string[]>>;
+  readonly paths: Record<
+    string,
+    {
+      readonly get: {
+        readonly responses: Record<
+          string,
+          {
+            readonly content: Record<
+              string,
+              {
+                readonly schema: {
+                  readonly type?: string;
+                  readonly $ref?: string;
+                };
+              }
+            >;
+          }
+        >;
+      };
+    }
+  >;
+  readonly components: {
+    readonly securitySchemes: Record<string, unknown>;
+    readonly schemas: Record<string, OpenApiSchemaProbe>;
+  };
+}
+
+interface OpenApiSchemaProbe {
+  readonly enum?: readonly unknown[];
+  readonly properties?: Record<string, OpenApiSchemaProbe>;
+}
+
+test("OpenAPI describes the complete authenticated Local History API", () => {
+  const document =
+    createLocalHttpOpenApiDocument() as unknown as OpenApiDocumentProbe;
+
+  assert.equal(document.openapi, "3.1.0");
+  assert.deepEqual(Object.keys(document.paths).toSorted(), [
+    "/api/v1/checkpoints",
+    "/api/v1/diff",
+    "/api/v1/export",
+    "/api/v1/history",
+    "/api/v1/meta",
+    "/api/v1/observations",
+    "/api/v1/restores/in-place",
+    "/api/v1/save",
+    "/api/v1/search",
+    "/api/v1/watcher",
+  ]);
+  assert.deepEqual(document.components.securitySchemes["bearerAuth"], {
+    type: "http",
+    scheme: "bearer",
+  });
+  assert.deepEqual(document.security, [{ bearerAuth: [] }]);
+  assert.equal(
+    document.paths["/api/v1/meta"]?.get.responses["200"]?.content[
+      "application/json"
+    ]?.schema.$ref,
+    "#/components/schemas/LocalHttpMeta",
+  );
+  assert.ok(document.components.schemas["HistoricalSemanticEvent"]);
+  const errorObjectSchema =
+    document.components.schemas["LocalHttpError"]?.properties?.["error"];
+  const errorCodeSchema = errorObjectSchema?.properties?.["code"];
+
+  assert.ok(errorObjectSchema);
+  assert.ok(errorCodeSchema);
+  assert.equal(errorCodeSchema.enum?.includes("restore_conflict"), true);
+  assert.equal(
+    document.paths["/api/v1/export"]?.get.responses["200"]?.content[
+      "application/octet-stream"
+    ]?.schema.type,
+    "string",
+  );
+});
 
 test("authenticated meta reports the versioned Local History API contract", async (t) => {
   const tempDirectory = await mkdtemp(

@@ -23,6 +23,8 @@ export {
   searchSemanticEvents,
 } from "./history-interface.ts";
 export { createLocalHttpApp } from "./http-app.ts";
+export type { LocalHttpApp } from "./http-app.ts";
+export { createLocalHttpOpenApiDocument } from "./http-contract.ts";
 export { getSaveState, readEncodedSave } from "./save-state.ts";
 
 export {

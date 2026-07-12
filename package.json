@@ -22,6 +22,7 @@
     "dev-cli": "pnpm --filter @silksong-git/cli dev",
     "dev-web": "pnpm --filter @silksong-git/web dev",
     "format": "tsx ./scripts/format.ts",
+    "generate:openapi": "pnpm --filter @silksong-git/history generate:openapi",
     "lint": "tsx ./scripts/lint.ts",
     "pack-cli": "pnpm --filter @silksong-git/cli pack",
     "preview-cli": "pnpm --filter @silksong-git/cli preview",
