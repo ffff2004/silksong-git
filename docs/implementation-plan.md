@@ -1150,8 +1150,6 @@ TDD Vertical Slices:
 
 Verification:
 
-- `pnpm format`: passed
-- `pnpm lint`: passed
 - `pnpm --filter @silksong-git/history test`: passed
 - `pnpm --filter @silksong-git/cli test`: passed
 - `pnpm --filter @silksong-git/cli verify-pack`: passed; installed the generated tarball, started authenticated HTTP, called `meta`, and stopped cleanly.
@@ -1315,13 +1313,6 @@ Manual QA checklist:
 Verification:
 
 - `pnpm --filter @silksong-git/web test`: passed
-- `pnpm --filter @silksong-git/web build`: passed
-- `pnpm --filter @silksong-git/web format`: passed
-- `pnpm --filter @silksong-git/web lint`: passed
-- `pnpm format`: passed
-- `pnpm lint`: passed
-- `pnpm test`: passed
-- `pnpm build`: passed
 - `pnpm verify`: passed
 
 Notes:
@@ -1375,9 +1366,8 @@ Acceptance criteria:
 
 Verification:
 
-- `pnpm format`: pending
-- `pnpm lint`: pending
-- Web test/build command: pending
+- `pnpm --filter @silksong-git/web test`: pending
+- `pnpm verify`: pending
 - local Web UI smoke test: pending
 
 ### P6-T4 Add UI Open CLI Workflow
@@ -1413,6 +1403,5 @@ Acceptance criteria:
 
 Verification:
 
-- `pnpm format`: pending
-- `pnpm lint`: pending
+- `pnpm verify`: pending
 - Relevant test or smoke command: pending
