@@ -8,7 +8,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 - Current phase: P6 Web Integration
 - Next task: P6-T3 Add Local History Web Mode
-- Last updated: 2026-07-08
+- Last updated: 2026-07-12
 
 ## Phase Overview
 
@@ -18,7 +18,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 | P2 Workspace Skeleton                 | complete    | P1         | pnpm workspace exists while existing Web behavior remains unchanged.                                                     |
 | P3 Core Semantic Module               | complete    | P2         | `packages/core` exposes decode, parse, snapshot, and diff behavior through a small public Interface.                     |
 | P4 History Module                     | complete    | P3         | Raw observations, restore, and SQLite Semantic Read Model work through `packages/history`.                               |
-| P5 CLI                                | in progress | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                                              |
+| P5 CLI                                | complete    | P3, P4     | First object-grouped CLI command set works through core/history Interfaces.                                              |
 | P6 Web Integration                    | in progress | P3, P4     | Web UI uses core, keeps static mode working, and gains the Solid routing/state foundation needed for local history mode. |
 
 ## Task Rules
@@ -1028,7 +1028,7 @@ Notes:
 
 ### P5-T7 Add Optional HTTP Adapter To Watch Process
 
-Status: pending
+Status: complete
 
 Depends on:
 
@@ -1084,77 +1084,84 @@ Public test seams:
 
 TDD Vertical Slices:
 
-- [ ] Search can paginate with the existing Semantic Event cursor model
+- [x] Search can paginate with the existing Semantic Event cursor model
   - Public call: `searchSemanticEvents`.
   - Assert: `limit`, opaque `cursor`, `nextCursor`, and stable order work through the public Interface; changing query/order requires restarting pagination.
-- [ ] Raw Save Observations have an independent paginated Interface
+- [x] Raw Save Observations have an independent paginated Interface
   - Public call: `queryRawObservations`.
   - Assert: observations paginate independently from Semantic Events in both orders; remove `queryHistory.includeRawObservations` and migrate existing behavior tests.
-- [ ] Latest Save State reports an empty repository
+- [x] Latest Save State reports an empty repository
   - Public call: `getSaveState({ selector: { kind: "latest" } })`.
   - Assert: a valid initialized repository without observations returns `{ status: "empty" }`.
-- [ ] Save State returns one immutable observation commit
+- [x] Save State returns one immutable observation commit
   - Public call: `getSaveState` with latest and explicit commit selectors.
   - Assert: observation, Decoded Save, and Semantic Snapshot all correspond to the same canonical commit, including when a moving ref advances during the composite read.
-- [ ] Unrecognized Save State remains inspectable
+- [x] Unrecognized Save State remains inspectable
   - Public call: `getSaveState` for an unrecognized observation.
   - Assert: observation and Decoded Save are returned with `semanticSnapshot: null`; recognized state without an available read-model snapshot reports `ReadModelUnavailableError`.
-- [ ] Encoded Save export data is exact and safely named
+- [x] Encoded Save export data is exact and safely named
   - Public call: `readEncodedSave`.
   - Assert: bytes equal committed `save.dat`, the hash and canonical commit are correct, and the suggested filename contains only a sanitized Watched Save basename stem and short SHA.
-- [ ] In-place restore rejects a stale current-save precondition
+- [x] In-place restore rejects a stale current-save precondition
   - Public call: `restoreEncodedSave`.
   - Assert: present-hash and expected-missing mismatches produce `RestoreConflictError` before backup or write; a matching precondition preserves existing backup, write, and verification behavior.
-- [ ] Authenticated meta is the HTTP tracer bullet
+- [x] Authenticated meta is the HTTP tracer bullet
   - Public call: Hono app Request/Response seam.
   - Assert: valid bearer authentication returns the versioned meta contract and capabilities; missing or wrong tokens return indistinguishable `401 unauthorized` responses.
-- [ ] Standard CORS supports authenticated browser requests
+- [x] Standard CORS supports authenticated browser requests
   - Public call: Hono app Request/Response seam.
   - Assert: OPTIONS is the only unauthenticated path, actual routes remain protected, credentials are disabled, and required request/response headers are allowed/exposed.
-- [ ] HTTP input and error contracts are bounded and stable
+- [x] HTTP input and error contracts are bounded and stable
   - Public call: Hono app Request/Response seam.
   - Assert: representative strict-Zod, content type, body size, timeout, method, route, cursor, boolean, range, and field-length failures return the documented status/code without leaking unsafe details.
-- [ ] Save, history, observation, diff, and search GET routes use public Interfaces
+- [x] Save, history, observation, diff, and search GET routes use public Interfaces
   - Public call: authenticated Hono HTTP requests against a real temporary repository.
   - Assert: latest/commit Save State, recent-first paginated histories, diff, and structured search return the documented public results without direct storage assertions.
-- [ ] Checkpoint route preserves observation semantics
+- [x] Checkpoint route preserves observation semantics
   - Public call: `POST /api/v1/checkpoints`.
   - Assert: committed, unchanged, allow-unchanged, decode failure, read failure, and busy results map to the documented HTTP behavior.
-- [ ] Export route returns exact bytes and safe headers
+- [x] Export route returns exact bytes and safe headers
   - Public call: `GET /api/v1/export?commit=<ref>`.
   - Assert: body, content headers, ETag, safe basename/short-SHA filename, and authenticated CORS exposure are correct for friendly refs containing Git revision syntax.
-- [ ] Restore route requires confirmation and optimistic current-save state
+- [x] Restore route requires confirmation and optimistic current-save state
   - Public call: `POST /api/v1/restores/in-place`.
   - Assert: strict discriminated input, successful backup/restore, stale-state conflict, repository busy, and restore failure mappings preserve the existing public history behavior.
-- [ ] Watcher polling exposes compact current state
+- [x] Watcher polling exposes compact current state
   - Public call: `GET /api/v1/watcher` through a running Local History Watch Process.
   - Assert: activity is coarse, `observationRevision` increments once per completed observation, multiple observations between polls are detectable, and complete event arrays are not retransmitted.
-- [ ] Watch process atomically starts watcher and dynamic-port HTTP
+- [x] Watch process atomically starts watcher and dynamic-port HTTP
   - Public call: `startLocalHistoryWatchProcess({ http: {} })`, then standard `fetch`.
   - Assert: one started event contains actual endpoint/token only after both components are ready, only one watcher owns the repository, and authenticated `meta` is reachable.
-- [ ] Explicit HTTP port and loopback validation fail safely
+- [x] Explicit HTTP port and loopback validation fail safely
   - Public call: `startLocalHistoryWatchProcess` and CLI process.
   - Assert: malformed CLI ports are usage errors; legal occupied ports and invalid configured hosts are classified runtime start failures that clean up the backend and `watch.lock`.
-- [ ] HTTP runtime failure is process-fatal while request failure is not
+- [x] HTTP runtime failure is process-fatal while request failure is not
   - Public call: running Local History Watch Process.
   - Assert: listener failure emits `httpServerFailure` and stops; a handler 5xx emits sanitized `httpRequestError` and the process remains usable.
-- [ ] Graceful stop drains active history work
+- [x] Graceful stop drains active history work
   - Public call: running Local History Watch Process with authenticated requests.
   - Assert: new work and idle connections stop, an entered mutation finishes despite client disconnect or stop signal, watcher work finishes, and `watch.lock` is released.
-- [ ] CLI reports HTTP credentials exactly once
+- [x] CLI reports HTTP credentials exactly once
   - Public call: built CLI in human and `--jsonl` modes.
   - Assert: `--http`, dynamic and explicit ports, `--port` without HTTP, endpoint/token separation, one-time reporting, signal shutdown, and output failure behavior match the documented contract.
-- [ ] Packed CLI contains the complete HTTP runtime
+- [x] Packed CLI contains the complete HTTP runtime
   - Public call: install the generated CLI tarball, initialize a temporary repository, start `watch --http`, authenticate `meta`, and stop.
   - Assert: no undeclared Hono/Zod runtime dependency is missing and the installed artifact cleans up its watch process.
 
 Verification:
 
-- `pnpm format`: pending
-- `pnpm lint`: pending
-- `pnpm --filter @silksong-git/history test`: pending
-- `pnpm --filter @silksong-git/cli test`: pending
-- `pnpm verify`: pending
+- `pnpm format`: passed
+- `pnpm lint`: passed
+- `pnpm --filter @silksong-git/history test`: passed
+- `pnpm --filter @silksong-git/cli test`: passed
+- `pnpm --filter @silksong-git/cli verify-pack`: passed; installed the generated tarball, started authenticated HTTP, called `meta`, and stopped cleanly.
+- `pnpm verify`: passed
+
+Notes:
+
+- Added the Hono/Zod Request/Response Adapter, browser-safe HTTP contract types, and the authenticated dynamic-port listener owned by the Local History Watch Process.
+- Added public history behavior for Save State, exact Encoded Save reads, independent Raw Save Observation pagination, ordered search/history cursors, and restore preconditions.
+- CLI bundles the complete HTTP runtime and reports endpoint/token only in the structured started event.
 
 ## P6 Web Integration
 

@@ -23,9 +23,10 @@ interface EventRow {
 
 export interface QueryEventsOptions {
   readonly includeFiltered?: boolean;
-  readonly includeRawObservations?: boolean;
   readonly limit?: number;
   readonly cursor?: string;
+  readonly order?: "asc" | "desc";
+  readonly cursorContext?: string;
 }
 
 interface EventRowsPage {
@@ -42,6 +43,7 @@ interface SnapshotRow {
 
 interface ObservationRow {
   readonly observation_json: string;
+  readonly sequence: number;
 }
 
 type DisplaySemanticEventFilters = Awaited<
@@ -52,8 +54,16 @@ export function selectEventRows(
   db: DatabaseSync,
   options: QueryEventsOptions,
 ): EventRowsPage {
-  const cursor: ReadModelCursor = parseCursor(options.cursor);
+  const order = options.order ?? "asc";
+  const cursorContext = options.cursorContext ?? "history";
+  const cursor: ReadModelCursor = parseCursor(
+    options.cursor,
+    `${cursorContext}:${order}`,
+    order,
+  );
   const queryLimit = options.limit === undefined ? -1 : options.limit + 1;
+  const comparison = order === "asc" ? ">" : "<";
+  const direction = order === "asc" ? "asc" : "desc";
 
   const rows = db
     .prepare(
@@ -71,12 +81,12 @@ export function selectEventRows(
       left join observations as before_observations
         on before_observations.sequence = events.before_observation_sequence
       where
-        events.after_observation_sequence > ?
+        events.after_observation_sequence ${comparison} ?
         or (
           events.after_observation_sequence = ?
-          and events.event_index > ?
+          and events.event_index ${comparison} ?
         )
-      order by events.after_observation_sequence asc, events.event_index asc
+      order by events.after_observation_sequence ${direction}, events.event_index ${direction}
       limit ?
     `,
     )
@@ -97,10 +107,13 @@ export function selectEventRows(
   return {
     rows: pageRows,
     ...(lastRow !== undefined && {
-      nextCursor: createCursor({
-        afterObservationSequence: lastRow.after_observation_sequence,
-        eventIndex: lastRow.event_index,
-      }),
+      nextCursor: createCursor(
+        {
+          afterObservationSequence: lastRow.after_observation_sequence,
+          eventIndex: lastRow.event_index,
+        },
+        `${cursorContext}:${order}`,
+      ),
     }),
   };
 }
@@ -108,7 +121,8 @@ export function selectEventRows(
 export function selectSearchEventRows(
   db: DatabaseSync,
   query: SearchSemanticEventsInput["query"],
-): readonly EventRow[] {
+  options: QueryEventsOptions,
+): EventRowsPage {
   const conditions = ["? = ?"];
   const parameters: Array<number | string> = [1, 1];
 
@@ -147,7 +161,33 @@ export function selectSearchEventRows(
     parameters.push(`%${query.text.toLowerCase()}%`);
   }
 
-  return db
+  const order = options.order ?? "asc";
+  const cursorContext = JSON.stringify({
+    query,
+    includeFiltered: options.includeFiltered === true,
+  });
+  const cursor = parseCursor(
+    options.cursor,
+    `search:${cursorContext}:${order}`,
+    order,
+  );
+  const comparison = order === "asc" ? ">" : "<";
+  const direction = order === "asc" ? "asc" : "desc";
+  const queryLimit = options.limit === undefined ? -1 : options.limit + 1;
+  conditions.push(`(
+    events.after_observation_sequence ${comparison} ?
+    or (
+      events.after_observation_sequence = ?
+      and events.event_index ${comparison} ?
+    )
+  )`);
+  parameters.push(
+    cursor.afterObservationSequence,
+    cursor.afterObservationSequence,
+    cursor.eventIndex,
+  );
+
+  const rows = db
     .prepare(
       `
       select
@@ -163,31 +203,82 @@ export function selectSearchEventRows(
       left join observations as before_observations
         on before_observations.sequence = events.before_observation_sequence
       where ${conditions.join(" and ")}
-      order by events.after_observation_sequence asc, events.event_index asc
+      order by events.after_observation_sequence ${direction}, events.event_index ${direction}
+      limit ?
     `,
     )
-    .all(...parameters) as unknown as EventRow[];
+    .all(...parameters, queryLimit) as unknown as EventRow[];
+
+  if (options.limit === undefined || rows.length <= options.limit) {
+    return { rows };
+  }
+
+  const pageRows = rows.slice(0, options.limit);
+  const lastRow = pageRows.at(-1);
+
+  return {
+    rows: pageRows,
+    ...(lastRow !== undefined && {
+      nextCursor: createCursor(
+        {
+          afterObservationSequence: lastRow.after_observation_sequence,
+          eventIndex: lastRow.event_index,
+        },
+        `search:${cursorContext}:${order}`,
+      ),
+    }),
+  };
 }
 
 export function selectRawObservations(
   db: DatabaseSync,
-): readonly RawSaveObservation[] {
+  options: {
+    readonly limit?: number;
+    readonly cursor?: string;
+    readonly order?: "asc" | "desc";
+  } = {},
+): {
+  readonly observations: readonly RawSaveObservation[];
+  readonly nextCursor?: string;
+} {
+  const order = options.order ?? "asc";
+  const context = `observations:${order}`;
+  const cursor = parseCursor(options.cursor, context, order);
+  const comparison = order === "asc" ? ">" : "<";
+  const direction = order === "asc" ? "asc" : "desc";
+  const queryLimit = options.limit === undefined ? -1 : options.limit + 1;
   const rows = db
     .prepare(
       `
-      select observation_json
+      select sequence, observation_json
       from observations
-      where ? = ?
-      order by sequence asc
+      where sequence ${comparison} ?
+      order by sequence ${direction}
+      limit ?
     `,
     )
-    .all(1, 1) as unknown as ReadonlyArray<{
-    readonly observation_json: string;
-  }>;
+    .all(
+      cursor.afterObservationSequence,
+      queryLimit,
+    ) as unknown as ObservationRow[];
 
-  return rows.map(
-    (row) => JSON.parse(row.observation_json) as RawSaveObservation,
-  );
+  const pageRows =
+    options.limit === undefined ? rows : rows.slice(0, options.limit);
+  const lastRow = pageRows.at(-1);
+
+  return {
+    observations: pageRows.map(
+      (row) => JSON.parse(row.observation_json) as RawSaveObservation,
+    ),
+    ...(options.limit !== undefined
+      && rows.length > options.limit
+      && lastRow !== undefined && {
+        nextCursor: createCursor(
+          { afterObservationSequence: lastRow.sequence, eventIndex: -1 },
+          context,
+        ),
+      }),
+  };
 }
 
 export function selectMetadataValue(

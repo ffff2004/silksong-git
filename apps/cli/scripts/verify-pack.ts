@@ -27,8 +27,108 @@ try {
     await findPackedArchive(packDirectory),
   ]);
   await run("pnpm", ["--dir", installDirectory, "exec", "ssgit", "--help"]);
+  const historyRepo = path.join(tempDirectory, "history-repo");
+  const fixtureSave = path.join(
+    REPO_ROOT,
+    "packages/core/src/decode/fixtures/minimal-valid-save.dat",
+  );
+
+  await run("pnpm", [
+    "--dir",
+    installDirectory,
+    "exec",
+    "ssgit",
+    "repo",
+    "init",
+    "--save",
+    fixtureSave,
+    "--repo",
+    historyRepo,
+  ]);
+  await verifyPackedHttpRuntime({
+    cliPath: path.join(installDirectory, "node_modules/.bin/ssgit"),
+    historyRepo,
+  });
 } finally {
   await rm(tempDirectory, { recursive: true, force: true });
+}
+
+async function verifyPackedHttpRuntime(input: {
+  readonly cliPath: string;
+  readonly historyRepo: string;
+}) {
+  const child = spawn(
+    input.cliPath,
+    ["watch", "start", "--repo", input.historyRepo, "--http", "--jsonl"],
+    { stdio: ["ignore", "pipe", "inherit"], cwd: REPO_ROOT },
+  );
+
+  try {
+    await callPackedMeta(child);
+  } finally {
+    child.kill("SIGTERM");
+    await waitForChild(child);
+  }
+}
+
+async function callPackedMeta(child: ReturnType<typeof spawn>) {
+  const started = JSON.parse(await readLine(child)) as {
+    readonly http?: {
+      readonly endpoint?: unknown;
+      readonly token?: unknown;
+    };
+  };
+  const endpoint = String(started.http?.endpoint);
+  const token = String(started.http?.token);
+  const response = await fetch(`${endpoint}/api/v1/meta`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (response.status !== 200) {
+    throw new Error(`Packed HTTP meta returned ${response.status}`);
+  }
+}
+
+async function readLine(child: ReturnType<typeof spawn>): Promise<string> {
+  const { stdout } = child;
+
+  if (stdout === null) {
+    throw new Error("Packed CLI stdout is unavailable");
+  }
+
+  return await new Promise<string>((resolve, reject) => {
+    let buffer = "";
+
+    stdout.setEncoding("utf8");
+    stdout.on("data", (chunk: string) => {
+      buffer += chunk;
+      const newline = buffer.indexOf("\n");
+
+      if (newline !== -1) {
+        resolve(buffer.slice(0, newline));
+      }
+    });
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      reject(
+        new Error(
+          `Packed CLI exited before startup: ${signal ?? `code ${code ?? "unknown"}`}`,
+        ),
+      );
+    });
+  });
+}
+
+async function waitForChild(child: ReturnType<typeof spawn>) {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    child.once("exit", () => {
+      resolve();
+    });
+  });
 }
 
 async function findPackedArchive(packDirectory: string): Promise<string> {

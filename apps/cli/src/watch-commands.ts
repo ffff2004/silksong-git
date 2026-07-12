@@ -3,7 +3,11 @@ import type {
   LocalHistoryWatchProcessEvent,
   ObserveSaveResult,
 } from "@silksong-git/history";
-import { startLocalHistoryWatchProcess } from "@silksong-git/history";
+import {
+  LocalHistoryWatchProcessAlreadyRunningError,
+  LocalHttpServerStartError,
+  startLocalHistoryWatchProcess,
+} from "@silksong-git/history";
 import type { Command } from "commander";
 
 import type { CliRuntime } from "./cli-runtime.ts";
@@ -40,9 +44,12 @@ async function runWatchStartCommand(
   options: WatchStartCommandOptions,
   runtime: CliRuntime,
 ) {
-  if (rejectReservedHttpOptions(options, runtime)) {
+  const http = parseHttpOptions(options, runtime);
+
+  if (http === false) {
     return;
   }
+  const httpOptions: { readonly port?: number } | undefined = http;
 
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
@@ -80,7 +87,7 @@ async function runWatchStartCommand(
   process.once("SIGBREAK", stop);
 
   try {
-    await runStartedWatchProcess();
+    await runStartedWatchProcess().catch(handleWatchStartError);
   } finally {
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
@@ -88,9 +95,23 @@ async function runWatchStartCommand(
     output.dispose();
   }
 
+  function handleWatchStartError(error: unknown) {
+    if (
+      error instanceof LocalHttpServerStartError
+      || error instanceof LocalHistoryWatchProcessAlreadyRunningError
+    ) {
+      runtime.writeStderr(`error: ${error.message}\n`);
+      runtime.setExitCode(1);
+      return;
+    }
+
+    throw error;
+  }
+
   async function runStartedWatchProcess() {
     localHistoryProcess = await startLocalHistoryWatchProcess({
       repoPath,
+      ...(httpOptions !== undefined && { http: httpOptions }),
       onEvent: (event) => {
         if (!outputState.failed) {
           output.render(event);
@@ -137,20 +158,42 @@ async function runWatchStartCommand(
   }
 }
 
-function rejectReservedHttpOptions(
+function parseHttpOptions(
   options: WatchStartCommandOptions,
   runtime: CliRuntime,
-): boolean {
-  if (options.http !== true && options.port === undefined) {
+): false | { readonly port?: number } | undefined {
+  if (options.port !== undefined && options.http !== true) {
+    runtime.writeStderr("error: --port requires --http\n");
+    runtime.setExitCode(exitCodes.usage);
+
     return false;
   }
 
-  runtime.writeStderr(
-    "error: HTTP Adapter is implemented by P5-T6 and is not available in this command yet\n",
-  );
-  runtime.setExitCode(exitCodes.usage);
+  if (options.http !== true) {
+    return undefined;
+  }
 
-  return true;
+  if (options.port === undefined) {
+    return {};
+  }
+
+  if (!/^\d+$/v.test(options.port)) {
+    runtime.writeStderr("error: --port must be an integer from 1 to 65535\n");
+    runtime.setExitCode(exitCodes.usage);
+
+    return false;
+  }
+
+  const port = Number(options.port);
+
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    runtime.writeStderr("error: --port must be an integer from 1 to 65535\n");
+    runtime.setExitCode(exitCodes.usage);
+
+    return false;
+  }
+
+  return { port };
 }
 
 type WatchOutputTarget = "stdout" | "stderr";
@@ -230,6 +273,7 @@ function toJsonlWatchEvent(event: LocalHistoryWatchProcessEvent): unknown {
         repoPath: event.repoPath,
         watchedSavePath: event.watchedSavePath,
         capturePolicy: event.capturePolicy,
+        ...(event.http !== undefined && { http: event.http }),
       };
     }
 
@@ -248,6 +292,14 @@ function toJsonlWatchEvent(event: LocalHistoryWatchProcessEvent): unknown {
         repoPath: event.repoPath,
         reason: event.error.reason,
         message: event.error.message,
+      };
+    }
+
+    case "httpRequestError": {
+      return {
+        type: event.type,
+        repoPath: event.repoPath,
+        ...event.error,
       };
     }
 
@@ -290,7 +342,12 @@ function summarizeObservationResult(result: ObserveSaveResult) {
 function toHumanWatchEvent(event: LocalHistoryWatchProcessEvent): string {
   switch (event.type) {
     case "started": {
-      return `watch started\nrepo: ${event.repoPath}\nsave: ${event.watchedSavePath}\n`;
+      const http =
+        event.http === undefined
+          ? ""
+          : `http endpoint: ${event.http.endpoint}\nhttp token: ${event.http.token}\n`;
+
+      return `watch started\nrepo: ${event.repoPath}\nsave: ${event.watchedSavePath}\n${http}`;
     }
 
     case "observation": {
@@ -299,6 +356,10 @@ function toHumanWatchEvent(event: LocalHistoryWatchProcessEvent): string {
 
     case "fatalError": {
       return `watch fatal error: ${event.error.message}\n`;
+    }
+
+    case "httpRequestError": {
+      return `http request error: ${event.error.status} ${event.error.code} ${event.error.message}\n`;
     }
 
     case "stopping": {

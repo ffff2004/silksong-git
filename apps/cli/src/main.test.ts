@@ -166,14 +166,16 @@ test("repo init refuses a non-empty repository directory", async (t) => {
   assert.match(result.stderr, /repository path must be empty/v);
 });
 
-test("watch start reserves HTTP flags", async (t) => {
+test("watch start validates HTTP option combinations and port syntax", async (t) => {
   const { repoPath } = await createCliHistoryRepo(t);
-  const httpResult = await runCli([
+  const malformedResult = await runCli([
     "watch",
     "start",
     "--repo",
     repoPath,
     "--http",
+    "--port",
+    "nope",
   ]);
   const portResult = await runCli([
     "watch",
@@ -184,12 +186,12 @@ test("watch start reserves HTTP flags", async (t) => {
     "43117",
   ]);
 
-  assert.equal(httpResult.exitCode, 1);
-  assert.equal(httpResult.stdout, "");
-  assert.match(httpResult.stderr, /HTTP Adapter is implemented by P5-T6/v);
+  assert.equal(malformedResult.exitCode, 1);
+  assert.equal(malformedResult.stdout, "");
+  assert.match(malformedResult.stderr, /integer from 1 to 65535/v);
   assert.equal(portResult.exitCode, 1);
   assert.equal(portResult.stdout, "");
-  assert.match(portResult.stderr, /HTTP Adapter is implemented by P5-T6/v);
+  assert.match(portResult.stderr, /--port requires --http/v);
 });
 
 test("history checkpoint records a manual checkpoint with JSON output", async (t) => {

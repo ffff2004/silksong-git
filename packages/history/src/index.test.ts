@@ -3,11 +3,13 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   stat,
   writeFile,
 } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
@@ -15,12 +17,18 @@ import test from "node:test";
 
 import {
   diffCommits,
+  getSaveState,
   initSaveHistory,
   InvalidRestoreBackupDirectoryError,
   LocalHistoryWatchProcessAlreadyRunningError,
+  LocalHttpServerStartError,
   observeSave,
   queryHistory,
+  queryRawObservations,
+  readEncodedSave,
+  ReadModelUnavailableError,
   rebuildSemanticReadModel,
+  RestoreConflictError,
   restoreEncodedSave,
   RestoreTargetExistsError,
   searchSemanticEvents,
@@ -56,6 +64,10 @@ const maskShard2CollectedRosariesEncodedSavePath = path.join(
   fixtureDirectory,
   "mask-shard-2-collected-rosaries-save.dat",
 );
+
+async function readJson<T>(response: Response): Promise<T> {
+  return (await response.json()) as T;
+}
 
 async function createTempDirectory(t: TestContext): Promise<string> {
   const directory = await mkdtemp(
@@ -367,16 +379,13 @@ test("observeSave creates a queryable Semantic Read Model for a recognized obser
   assert.equal(result.semanticUpdate.status, "updated");
   assert.equal(result.semanticUpdate.eventCount, 0);
 
-  const history = await queryHistory({
-    repoPath: repo.repoPath,
-    includeRawObservations: true,
-  });
+  const history = await queryHistory({ repoPath: repo.repoPath });
+  const rawHistory = await queryRawObservations({ repoPath: repo.repoPath });
 
   assert.equal(history.events.length, 0);
-  assert.ok(history.rawObservations !== undefined);
-  assert.equal(history.rawObservations.length, 1);
+  assert.equal(rawHistory.observations.length, 1);
   assert.equal(
-    history.rawObservations[0]?.commit.ref,
+    rawHistory.observations[0]?.commit.ref,
     result.observation.commit.ref,
   );
 });
@@ -422,18 +431,19 @@ test("observeSave incremental Semantic Read Model matches a full rebuild", async
   const incrementalHistory = await queryHistory({
     repoPath,
     includeFiltered: true,
-    includeRawObservations: true,
   });
+  const incrementalRawHistory = await queryRawObservations({ repoPath });
 
   await rebuildSemanticReadModel({ repoPath });
 
   const rebuiltHistory = await queryHistory({
     repoPath,
     includeFiltered: true,
-    includeRawObservations: true,
   });
+  const rebuiltRawHistory = await queryRawObservations({ repoPath });
 
   assert.deepEqual(rebuiltHistory, incrementalHistory);
+  assert.deepEqual(rebuiltRawHistory, incrementalRawHistory);
 });
 
 test("observeSave records Unrecognized Schema Observations without interrupting recognized diffs", async (t) => {
@@ -461,10 +471,8 @@ test("observeSave records Unrecognized Schema Observations without interrupting 
   assert.equal(recognizedAfter.semanticUpdate.status, "updated");
   assert.equal(recognizedAfter.semanticUpdate.eventCount, 1);
 
-  const history = await queryHistory({
-    repoPath: repo.repoPath,
-    includeRawObservations: true,
-  });
+  const history = await queryHistory({ repoPath: repo.repoPath });
+  const rawHistory = await queryRawObservations({ repoPath: repo.repoPath });
 
   assert.equal(history.events.length, 1);
   const [event] = history.events;
@@ -476,9 +484,8 @@ test("observeSave records Unrecognized Schema Observations without interrupting 
     event.previousCommit.ref,
     recognizedBefore.observation.commit.ref,
   );
-  assert.ok(history.rawObservations !== undefined);
-  assert.equal(history.rawObservations.length, 3);
-  const [, rawUnrecognizedObservation] = history.rawObservations;
+  assert.equal(rawHistory.observations.length, 3);
+  const [, rawUnrecognizedObservation] = rawHistory.observations;
 
   assert.ok(rawUnrecognizedObservation !== undefined);
   assert.equal(
@@ -510,10 +517,8 @@ test("observeSave rebuilds a missing Semantic Read Model before appending", asyn
   assert.equal(afterResult.semanticUpdate.status, "updated");
   assert.equal(afterResult.semanticUpdate.eventCount, 1);
 
-  const history = await queryHistory({
-    repoPath: repo.repoPath,
-    includeRawObservations: true,
-  });
+  const history = await queryHistory({ repoPath: repo.repoPath });
+  const rawHistory = await queryRawObservations({ repoPath: repo.repoPath });
 
   assert.equal(history.events.length, 1);
   const [event] = history.events;
@@ -522,8 +527,7 @@ test("observeSave rebuilds a missing Semantic Read Model before appending", asyn
   assert.equal(event.commit.ref, afterResult.observation.commit.ref);
   assert.ok(event.previousCommit !== undefined);
   assert.equal(event.previousCommit.ref, beforeResult.observation.commit.ref);
-  assert.ok(history.rawObservations !== undefined);
-  assert.equal(history.rawObservations.length, 2);
+  assert.equal(rawHistory.observations.length, 2);
 });
 
 test("restoreEncodedSave writes the observed Encoded Save byte-for-byte", async (t) => {
@@ -564,6 +568,120 @@ test("restoreEncodedSave writes the observed Encoded Save byte-for-byte", async 
     await readFile(restorePath),
     await readFile(minimalEncodedSavePath),
   );
+});
+
+test("getSaveState returns empty before the first Raw Save Observation", async (t) => {
+  const repo = await createHistoryRepo(t);
+
+  assert.deepEqual(
+    await getSaveState({
+      repoPath: repo.repoPath,
+      selector: { kind: "latest" },
+    }),
+    { status: "empty" },
+  );
+});
+
+test("getSaveState reads latest and explicit immutable observation state", async (t) => {
+  const { observations, repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    maskShard2CollectedEncodedSavePath,
+  ]);
+  const [first, second] = observations;
+
+  assert.ok(first !== undefined);
+  assert.ok(second !== undefined);
+
+  const latest = await getSaveState({
+    repoPath,
+    selector: { kind: "latest" },
+  });
+  const explicit = await getSaveState({
+    repoPath,
+    selector: { kind: "commit", commitRef: first.observation.commit.ref },
+  });
+
+  assert.equal(latest.status, "available");
+  assert.equal(explicit.status, "available");
+  assert.equal(latest.observation.commit.ref, second.observation.commit.ref);
+  assert.equal(explicit.observation.commit.ref, first.observation.commit.ref);
+  assert.equal(
+    latest.semanticSnapshot?.items.find((item) => item.id === "mask-shard-2")
+      ?.status,
+    "done",
+  );
+  assert.equal(
+    explicit.semanticSnapshot?.items.find((item) => item.id === "mask-shard-2")
+      ?.status,
+    "missing",
+  );
+});
+
+test("getSaveState keeps unrecognized Decoded Save inspectable and reports missing recognized snapshots", async (t) => {
+  const unrecognizedRepo = await createHistoryRepo(
+    t,
+    unrecognizedEncodedSavePath,
+  );
+  const unrecognizedObservation = await observeSave({
+    repoPath: unrecognizedRepo.repoPath,
+  });
+
+  assert.equal(unrecognizedObservation.status, "committed");
+  const unrecognizedState = await getSaveState({
+    repoPath: unrecognizedRepo.repoPath,
+    selector: { kind: "latest" },
+  });
+
+  assert.equal(unrecognizedState.status, "available");
+  assert.equal(unrecognizedState.observation.schema.status, "unrecognized");
+  // The public state contract uses explicit null for an unrecognized schema.
+  // eslint-disable-next-line unicorn/no-null
+  assert.equal(unrecognizedState.semanticSnapshot, null);
+  assert.equal(typeof unrecognizedState.decodedSave, "object");
+
+  const recognizedRepo = await createHistoryRepo(t);
+  await observeSave({ repoPath: recognizedRepo.repoPath });
+  await rm(
+    path.join(recognizedRepo.repoPath, ".silksong-git/read-model.sqlite"),
+    { force: true },
+  );
+
+  await assert.rejects(
+    getSaveState({
+      repoPath: recognizedRepo.repoPath,
+      selector: { kind: "latest" },
+    }),
+    ReadModelUnavailableError,
+  );
+});
+
+test("readEncodedSave returns exact committed bytes with a safe suggested filename", async (t) => {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "存档 slot.dat");
+
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({ repoPath, watchedSavePath });
+  const result = await observeSave({ repoPath });
+
+  assert.equal(result.status, "committed");
+
+  const exported = await readEncodedSave({
+    repoPath,
+    commitRef: result.observation.commit.ref,
+  });
+
+  assert.deepEqual(
+    exported.encodedBytes,
+    await readFile(minimalEncodedSavePath),
+  );
+  assert.equal(exported.encodedSha256, result.observation.encodedSha256);
+  assert.equal(exported.commit.ref, result.observation.commit.ref);
+  assert.equal(
+    exported.suggestedFileName,
+    `存档-slot.${result.observation.commit.shortRef}.dat`,
+  );
+  assert.equal(exported.suggestedFileName.includes(tempDirectory), false);
 });
 
 test("observeSave skips an unchanged Encoded Save", async (t) => {
@@ -822,6 +940,110 @@ test("startLocalHistoryWatchProcess emits started and performs a startup observa
     "2026-06-30T12:00:00.000Z",
   );
   await process.stop();
+});
+
+test("startLocalHistoryWatchProcess atomically starts authenticated HTTP on a dynamic port", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watchEventSource = new TestWatchEventSource();
+  const events: LocalHistoryWatchProcessEvent[] = [];
+  const process = await startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    http: {},
+    watchEventSource,
+    onEvent: (event) => {
+      events.push(event);
+    },
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  assert.ok(process.http !== undefined);
+  assert.match(process.http.endpoint, /^http:\/\/127\.0\.0\.1:\d+$/v);
+  assert.match(process.http.token, /^[\w\-]{43}$/v);
+  const started = events.find((event) => event.type === "started");
+
+  assert.equal(started?.type, "started");
+  assert.deepEqual(started.http, process.http);
+
+  const response = await fetch(`${process.http.endpoint}/api/v1/meta`, {
+    headers: { Authorization: `Bearer ${process.http.token}` },
+  });
+
+  assert.equal(response.status, 200);
+  const metaBody = await readJson<{
+    api: { version: { major: number } };
+  }>(response);
+
+  assert.equal(metaBody.api.version.major, 1);
+
+  const watcherResponse = await fetch(
+    `${process.http.endpoint}/api/v1/watcher`,
+    { headers: { Authorization: `Bearer ${process.http.token}` } },
+  );
+  const watcherBody = await readJson<{
+    observationRevision: number;
+    activity: string;
+    lastObservation?: { status?: string };
+    events?: unknown;
+  }>(watcherResponse);
+
+  assert.equal(watcherBody.observationRevision, 1);
+  assert.equal(watcherBody.activity, "idle");
+  assert.equal(watcherBody.lastObservation?.status, "committed");
+  assert.equal("events" in watcherBody, false);
+
+  await process.stop();
+  await assert.rejects(fetch(`${process.http.endpoint}/api/v1/meta`));
+});
+
+test("HTTP startup rejects invalid loopback config and occupied ports without retaining watch ownership", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const configPath = path.join(repo.repoPath, ".silksong-git/config.json");
+  const validConfig = await readFile(configPath, "utf8");
+
+  await writeFile(configPath, validConfig.replace('"127.0.0.1"', '"0.0.0.0"'));
+  await assert.rejects(
+    startLocalHistoryWatchProcess({
+      repoPath: repo.repoPath,
+      http: {},
+      watchEventSource: new TestWatchEventSource(),
+    }),
+    LocalHttpServerStartError,
+  );
+
+  await writeFile(configPath, validConfig);
+  const occupiedServer = createServer();
+
+  await new Promise<void>((resolve) => {
+    occupiedServer.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(async () => {
+    await new Promise<void>((resolve) => {
+      occupiedServer.close(() => {
+        resolve();
+      });
+    });
+  });
+  const address = occupiedServer.address();
+
+  assert.ok(address !== null && typeof address !== "string");
+  await assert.rejects(
+    startLocalHistoryWatchProcess({
+      repoPath: repo.repoPath,
+      http: { port: address.port },
+      watchEventSource: new TestWatchEventSource(),
+    }),
+    LocalHttpServerStartError,
+  );
+
+  const nextProcess = await startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    watchEventSource: new TestWatchEventSource(),
+  });
+
+  await nextProcess.stop();
 });
 
 test("Local History Watch Process stops the watch subscription gracefully", async (t) => {
@@ -1409,6 +1631,39 @@ test("restoreEncodedSave creates a backup before in-place restore", async (t) =>
   );
 });
 
+test("restoreEncodedSave rejects a stale in-place precondition before backup or write", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath);
+  const observation = await observeSave({ repoPath: repo.repoPath });
+  const before = await readFile(repo.watchedSavePath);
+
+  assert.equal(observation.status, "committed");
+
+  await assert.rejects(
+    restoreEncodedSave({
+      repoPath: repo.repoPath,
+      commitRef: observation.observation.commit.ref,
+      target: {
+        kind: "inPlace",
+        confirmation: "restore-watched-save",
+        expectedCurrent: {
+          status: "present",
+          encodedSha256: "0".repeat(64),
+        },
+      },
+    }),
+    RestoreConflictError,
+  );
+
+  const after = await readFile(repo.watchedSavePath);
+  const entries = await readdir(repo.tempDirectory);
+
+  assert.deepEqual(after, before);
+  assert.deepEqual(
+    entries.filter((entry) => entry.includes("before-restore")),
+    [],
+  );
+});
+
 test("restoreEncodedSave restores in-place without backup when the watched save is missing", async (t) => {
   const repo = await createHistoryRepo(t, minimalEncodedSavePath);
   const observation = await observeSave({
@@ -1585,10 +1840,8 @@ test("rebuildSemanticReadModel preserves Unrecognized Schema Observations withou
   assert.ok(unrecognizedResult !== undefined);
 
   const rebuildResult = await rebuildSemanticReadModel({ repoPath });
-  const history = await queryHistory({
-    repoPath,
-    includeRawObservations: true,
-  });
+  const history = await queryHistory({ repoPath });
+  const rawHistory = await queryRawObservations({ repoPath });
 
   assert.equal(rebuildResult.observationCount, 2);
   assert.equal(rebuildResult.recognizedObservationCount, 1);
@@ -1596,10 +1849,9 @@ test("rebuildSemanticReadModel preserves Unrecognized Schema Observations withou
   assert.equal(rebuildResult.snapshotCount, 1);
   assert.equal(rebuildResult.eventCount, 0);
   assert.equal(history.events.length, 0);
-  assert.ok(history.rawObservations !== undefined);
-  assert.equal(history.rawObservations.length, 2);
+  assert.equal(rawHistory.observations.length, 2);
   const [recognizedObservation, unrecognizedObservation] =
-    history.rawObservations;
+    rawHistory.observations;
 
   assert.ok(recognizedObservation !== undefined);
   assert.ok(unrecognizedObservation !== undefined);
@@ -1611,7 +1863,7 @@ test("rebuildSemanticReadModel preserves Unrecognized Schema Observations withou
   );
 });
 
-test("queryHistory paginates events and returns raw observations only when requested", async (t) => {
+test("queryRawObservations paginates independently in both orders", async (t) => {
   const { observations, repoPath } = await observeFixtureSequence(t, [
     minimalEncodedSavePath,
     maskShard2CollectedEncodedSavePath,
@@ -1645,22 +1897,30 @@ test("queryHistory paginates events and returns raw observations only when reque
   assert.notEqual(secondPage.events[0]?.id, firstPage.events[0]?.id);
   assert.equal(secondPage.nextCursor, undefined);
 
-  const withRawObservations = await queryHistory({
+  const firstRawPage = await queryRawObservations({
     repoPath,
-    includeFiltered: true,
-    includeRawObservations: true,
     limit: 1,
+    order: "desc",
   });
 
-  assert.ok(withRawObservations.rawObservations !== undefined);
-  assert.equal(withRawObservations.rawObservations.length, 3);
+  assert.equal(firstRawPage.observations.length, 1);
   assert.equal(
-    withRawObservations.rawObservations[0]?.commit.ref,
-    firstObservation.observation.commit.ref,
-  );
-  assert.equal(
-    withRawObservations.rawObservations[2]?.commit.ref,
+    firstRawPage.observations[0]?.commit.ref,
     thirdObservation.observation.commit.ref,
+  );
+  assert.notEqual(firstRawPage.nextCursor, undefined);
+
+  const secondRawPage = await queryRawObservations({
+    repoPath,
+    limit: 2,
+    cursor: firstRawPage.nextCursor,
+    order: "desc",
+  });
+
+  assert.equal(secondRawPage.observations.length, 2);
+  assert.equal(
+    secondRawPage.observations[1]?.commit.ref,
+    firstObservation.observation.commit.ref,
   );
 });
 
@@ -1765,6 +2025,59 @@ test("searchSemanticEvents finds events by structured fields", async (t) => {
   assert.ok(summaryEvent !== undefined);
   assert.equal(summaryEvent.event.kind, "summaryMetric");
   assert.equal(summaryEvent.event.direction, "progression");
+});
+
+test("searchSemanticEvents paginates a stable descending query with an opaque cursor", async (t) => {
+  const { repoPath } = await observeFixtureSequence(t, [
+    minimalEncodedSavePath,
+    maskShard2CollectedEncodedSavePath,
+    maskShard2CollectedRosariesEncodedSavePath,
+  ]);
+
+  await rebuildSemanticReadModel({ repoPath });
+
+  const firstPage = await searchSemanticEvents({
+    repoPath,
+    query: {},
+    includeFiltered: true,
+    limit: 1,
+    order: "desc",
+  });
+
+  assert.equal(firstPage.events.length, 1);
+  assert.notEqual(firstPage.nextCursor, undefined);
+
+  const secondPage = await searchSemanticEvents({
+    repoPath,
+    query: {},
+    includeFiltered: true,
+    limit: 1,
+    cursor: firstPage.nextCursor,
+    order: "desc",
+  });
+
+  assert.equal(secondPage.events.length, 1);
+  assert.notEqual(secondPage.events[0]?.id, firstPage.events[0]?.id);
+  assert.equal(secondPage.nextCursor, undefined);
+  const [firstEvent] = firstPage.events;
+  const [secondEvent] = secondPage.events;
+
+  assert.ok(firstEvent !== undefined);
+  assert.ok(secondEvent !== undefined);
+  assert.ok(
+    firstEvent.observation.observedAt > secondEvent.observation.observedAt,
+  );
+
+  await assert.rejects(
+    searchSemanticEvents({
+      repoPath,
+      query: { text: "different" },
+      includeFiltered: true,
+      limit: 1,
+      cursor: firstPage.nextCursor,
+      order: "desc",
+    }),
+  );
 });
 
 test("searchSemanticEvents finds events by free text", async (t) => {

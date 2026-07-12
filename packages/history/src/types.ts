@@ -118,15 +118,58 @@ export interface RebuildSemanticReadModelResult {
 export interface QueryHistoryInput {
   readonly repoPath: string;
   readonly includeFiltered?: boolean;
-  readonly includeRawObservations?: boolean;
   readonly limit?: number;
   readonly cursor?: string;
+  readonly order?: HistoryOrder;
 }
 
 export interface HistoryResult {
   readonly events: readonly HistoricalSemanticEvent[];
-  readonly rawObservations?: readonly RawSaveObservation[];
   readonly nextCursor?: string;
+}
+
+type HistoryOrder = "asc" | "desc";
+
+export interface QueryRawObservationsInput {
+  readonly repoPath: string;
+  readonly limit?: number;
+  readonly cursor?: string;
+  readonly order?: HistoryOrder;
+}
+
+export interface RawObservationHistoryResult {
+  readonly observations: readonly RawSaveObservation[];
+  readonly nextCursor?: string;
+}
+
+type SaveStateSelector =
+  | { readonly kind: "latest" }
+  | { readonly kind: "commit"; readonly commitRef: string };
+
+export interface GetSaveStateInput {
+  readonly repoPath: string;
+  readonly selector: SaveStateSelector;
+}
+
+export type GetSaveStateResult =
+  | {
+      readonly status: "available";
+      readonly observation: RawSaveObservation;
+      readonly decodedSave: unknown;
+      readonly semanticSnapshot: SemanticSnapshot | null;
+    }
+  | { readonly status: "empty" };
+
+export interface ReadEncodedSaveInput {
+  readonly repoPath: string;
+  readonly commitRef: string;
+}
+
+export interface ReadEncodedSaveResult {
+  readonly commit: HistoryCommit;
+  readonly encodedBytes: Uint8Array;
+  readonly encodedSha256: string;
+  readonly suggestedFileName: string;
 }
 
 export interface DiffCommitsInput {
@@ -156,14 +199,21 @@ export interface SearchSemanticEventsInput {
     readonly text?: string;
   };
   readonly includeFiltered?: boolean;
+  readonly limit?: number;
+  readonly cursor?: string;
+  readonly order?: HistoryOrder;
 }
 
 export interface SearchSemanticEventsResult {
   readonly events: readonly HistoricalSemanticEvent[];
+  readonly nextCursor?: string;
 }
 
 export interface StartLocalHistoryWatchProcessInput {
   readonly repoPath: string;
+  readonly http?: {
+    readonly port?: number;
+  };
   readonly watchEventSource?: WatchEventSource;
   readonly watchScheduler?: WatchScheduler;
   readonly fileStabilityProbe?: FileStabilityProbe;
@@ -173,8 +223,47 @@ export interface StartLocalHistoryWatchProcessInput {
 
 export interface LocalHistoryWatchProcess {
   readonly repoPath: string;
+  readonly http?: {
+    readonly endpoint: string;
+    readonly token: string;
+  };
+  readonly getWatcherStatus: () => LocalHistoryWatcherStatus;
   stop: () => void | Promise<void>;
 }
+
+export interface LocalHistoryWatcherStatus {
+  readonly status: "running";
+  readonly activity: "idle" | "pending" | "observing";
+  readonly observationRevision: number;
+  readonly startedAt: string;
+  readonly repoPath: string;
+  readonly watchedSavePath: string;
+  readonly capturePolicy: ProjectConfig["capturePolicy"];
+  readonly lastObservation?: LocalHistoryWatcherObservationSummary;
+}
+
+type LocalHistoryWatcherObservationSummary =
+  | {
+      readonly cause: "startup" | "change" | "deferred";
+      readonly completedAt: string;
+      readonly status: "committed";
+      readonly commit: HistoryCommit;
+      readonly eventCount: number;
+      readonly semanticStatus: "updated" | "notAvailable";
+    }
+  | {
+      readonly cause: "startup" | "change" | "deferred";
+      readonly completedAt: string;
+      readonly status: "skipped";
+      readonly reason: "unchanged" | "minimumCommitInterval";
+      readonly nextAllowedAt?: string;
+    }
+  | {
+      readonly cause: "startup" | "change" | "deferred";
+      readonly completedAt: string;
+      readonly status: "watcherError";
+      readonly error: WatcherError;
+    };
 
 export type LocalHistoryWatchProcessEvent =
   | {
@@ -182,6 +271,21 @@ export type LocalHistoryWatchProcessEvent =
       readonly repoPath: string;
       readonly watchedSavePath: string;
       readonly capturePolicy: ProjectConfig["capturePolicy"];
+      readonly http?: {
+        readonly endpoint: string;
+        readonly token: string;
+      };
+    }
+  | {
+      readonly type: "httpRequestError";
+      readonly repoPath: string;
+      readonly error: {
+        readonly method: string;
+        readonly path: string;
+        readonly status: number;
+        readonly code: string;
+        readonly message: string;
+      };
     }
   | {
       readonly type: "observation";
@@ -205,7 +309,7 @@ export type LocalHistoryWatchProcessEvent =
 
 export interface LocalHistoryWatchProcessFatalError {
   readonly message: string;
-  readonly reason: "watchBackendFailure";
+  readonly reason: "httpServerFailure" | "watchBackendFailure";
 }
 
 export interface WatchEventSource {
@@ -280,6 +384,9 @@ export type RestoreTarget =
       readonly kind: "inPlace";
       readonly confirmation: "restore-watched-save";
       readonly backupDirectory?: string;
+      readonly expectedCurrent?:
+        | { readonly status: "present"; readonly encodedSha256: string }
+        | { readonly status: "missing" };
     };
 
 export interface RestoreEncodedSaveInput {

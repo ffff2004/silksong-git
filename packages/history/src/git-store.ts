@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 
-import { InvalidCommitRefError } from "./errors.ts";
+import { InvalidCommitRefError, ObservationNotFoundError } from "./errors.ts";
 import { defaultGitAttributesContent, getRepositoryLayout } from "./layout.ts";
 import type { HistoryCommit } from "./types.ts";
 
@@ -207,10 +207,22 @@ export async function readGitBlob(
       throw new InvalidCommitRefError(commitRef, { cause: error });
     }
 
+    if (error instanceof GitCommandError && isMissingGitBlobError(error)) {
+      throw new ObservationNotFoundError({ cause: error });
+    }
+
     throw error;
   }
 
   return output.stdout;
+}
+
+function isMissingGitBlobError(error: GitCommandError) {
+  return (
+    error.code === 128
+    && (error.stderr.includes("does not exist in")
+      || error.stderr.includes("exists on disk, but not in"))
+  );
 }
 
 function createGitEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

@@ -320,6 +320,68 @@ test(
   },
 );
 
+test(
+  "watch start --http reports usable credentials once and shuts down cleanly",
+  { skip: skipChildSigtermTestsOnWindows },
+  async (t) => {
+    const { repoPath } = await createCliHistoryRepo(t);
+    const cli = spawnBuiltCli([
+      "watch",
+      "start",
+      "--repo",
+      repoPath,
+      "--http",
+      "--jsonl",
+    ]);
+
+    t.after(() => {
+      cli.kill("SIGTERM");
+    });
+
+    const started = JSON.parse(
+      await withTimeout(
+        cli.readStdoutLine(),
+        5000,
+        "timed out waiting for HTTP watch started event",
+      ),
+    ) as {
+      readonly type?: unknown;
+      readonly http?: {
+        readonly endpoint?: unknown;
+        readonly token?: unknown;
+      };
+    };
+
+    assert.equal(started.type, "started");
+    assert.equal(typeof started.http?.endpoint, "string");
+    assert.equal(typeof started.http?.token, "string");
+    const endpoint = String(started.http?.endpoint);
+    const token = String(started.http?.token);
+    const meta = await fetch(`${endpoint}/api/v1/meta`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    assert.equal(meta.status, 200);
+
+    const observationLine = await withTimeout(
+      cli.readStdoutLine(),
+      5000,
+      "timed out waiting for HTTP watch observation event",
+    );
+
+    assert.equal(observationLine.includes(token), false);
+    cli.kill("SIGTERM");
+    const exit = await withTimeout(
+      cli.waitForExit(),
+      5000,
+      "timed out waiting for HTTP watch shutdown",
+    );
+
+    assert.equal(exit.code, 0);
+    assert.equal(cli.stdout.split(token).length - 1, 1);
+  },
+);
+
 test("watch start stops and exits with failure when JSONL output fails", async (t) => {
   const { watchedSavePath, repoPath } = await createCliHistoryRepo(t);
   const cli = spawnBuiltCli(["watch", "start", "--repo", repoPath, "--jsonl"]);

@@ -1,7 +1,7 @@
 import path from "node:path";
 
 export const encodedSaveArtifactPath = "save.dat";
-const decodedSaveArtifactPath = "decoded-save.json";
+export const decodedSaveArtifactPath = "decoded-save.json";
 const observationArtifactPath = "observation.json";
 const gitAttributesArtifactPath = ".gitattributes";
 

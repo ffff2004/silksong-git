@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./http-contract": {
+      "types": "./src/http-contract.ts",
+      "default": "./src/http-contract.ts"
     }
   },
   "scripts": {
@@ -16,6 +20,10 @@
     "test:verbose": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@silksong-git/core": "workspace:*"
+    "@hono/node-server": "^2.0.8",
+    "@hono/zod-validator": "^0.8.0",
+    "@silksong-git/core": "workspace:*",
+    "hono": "^4.12.29",
+    "zod": "4.4.3"
   }
 }

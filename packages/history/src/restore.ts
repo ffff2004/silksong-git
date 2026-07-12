@@ -5,6 +5,7 @@ import { readProjectConfig } from "./config.ts";
 import {
   InvalidRestoreBackupDirectoryError,
   RestoreBackupFailedError,
+  RestoreConflictError,
   RestoreTargetExistsError,
   RestoreWriteFailedError,
   RestoreWriteVerificationError,
@@ -66,6 +67,7 @@ async function restoreInPlace(
 ): Promise<RestoreEncodedSaveResult> {
   const config = await readProjectConfig(input.repoPath);
   const targetPath = config.watchedSavePath;
+  await assertExpectedCurrentSave(targetPath, input.target.expectedCurrent);
   const backupDirectory = await resolveBackupDirectory({
     configuredBackupDirectory:
       input.target.backupDirectory ?? config.restore.backupDirectory,
@@ -92,6 +94,37 @@ async function restoreInPlace(
     writtenSha256,
     backupPath,
   };
+}
+
+async function assertExpectedCurrentSave(
+  targetPath: string,
+  expected:
+    | { readonly status: "present"; readonly encodedSha256: string }
+    | { readonly status: "missing" }
+    | undefined,
+) {
+  if (expected === undefined) {
+    return;
+  }
+
+  let bytes: Buffer | undefined;
+
+  try {
+    bytes = await readFile(targetPath);
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw error;
+    }
+  }
+
+  const matches =
+    expected.status === "missing"
+      ? bytes === undefined
+      : bytes !== undefined && sha256Hex(bytes) === expected.encodedSha256;
+
+  if (!matches) {
+    throw new RestoreConflictError();
+  }
 }
 
 async function resolveBackupDirectory(input: {

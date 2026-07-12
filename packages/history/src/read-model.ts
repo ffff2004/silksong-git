@@ -1,3 +1,4 @@
+import type { SemanticSnapshot } from "@silksong-git/core";
 import {
   createSemanticSnapshot,
   diffSemanticSnapshots,
@@ -48,6 +49,8 @@ import type {
   HistoryResult,
   ObserveSaveResult,
   ProjectConfig,
+  QueryRawObservationsInput,
+  RawObservationHistoryResult,
   RawSaveObservation,
   RebuildSemanticReadModelResult,
   SearchSemanticEventsInput,
@@ -188,6 +191,17 @@ export async function queryReadModelHistory(
   );
 }
 
+export async function queryReadModelRawObservations(
+  repoPath: string,
+  options: QueryRawObservationsInput,
+): Promise<RawObservationHistoryResult> {
+  return await withReadModelAvailability(() => {
+    using db = openReadModel(repoPath);
+
+    return selectRawObservations(db, options);
+  });
+}
+
 export async function diffReadModelCommits(
   input: DiffCommitsInput,
 ): Promise<DiffCommitsResult> {
@@ -212,20 +226,17 @@ async function queryAvailableReadModelHistory(
   const config = await readProjectConfig(repoPath);
   const filters = config.displaySemanticEventFilters;
   using db = openReadModel(repoPath);
-  const page = selectEventRows(db, options);
+  const page = selectEventRows(db, {
+    ...options,
+    cursorContext: `history:${options.includeFiltered === true}`,
+  });
   const events = applyDisplayFilters(
     page.rows.map((row) => toHistoricalSemanticEvent(row, filters)),
     options.includeFiltered,
   );
-  const rawObservations =
-    options.includeRawObservations === true
-      ? selectRawObservations(db)
-      : undefined;
-
   return {
     events,
     ...(page.nextCursor !== undefined && { nextCursor: page.nextCursor }),
-    ...(rawObservations !== undefined && { rawObservations }),
   };
 }
 
@@ -268,19 +279,19 @@ async function searchAvailableReadModelEvents(
   const config = await readProjectConfig(repoPath);
   const filters = config.displaySemanticEventFilters;
   using db = openReadModel(repoPath);
+  const page = selectSearchEventRows(db, input.query, input);
 
   return {
     events: applyDisplayFilters(
-      selectSearchEventRows(db, input.query).map((row) =>
-        toHistoricalSemanticEvent(row, filters),
-      ),
+      page.rows.map((row) => toHistoricalSemanticEvent(row, filters)),
       input.includeFiltered,
     ),
+    ...(page.nextCursor !== undefined && { nextCursor: page.nextCursor }),
   };
 }
 
 async function withReadModelAvailability<T>(
-  readModelOperation: () => Promise<T>,
+  readModelOperation: () => T | Promise<T>,
 ): Promise<T> {
   try {
     return await readModelOperation();
@@ -289,7 +300,7 @@ async function withReadModelAvailability<T>(
   }
 }
 
-async function readRawSaveObservation(
+export async function readRawSaveObservation(
   repoPath: string,
   commitRef: string,
 ): Promise<RawSaveObservation> {
@@ -301,6 +312,17 @@ async function readRawSaveObservation(
     commit: await readHistoryCommit(repoPath, commitRef),
     ...metadata,
   };
+}
+
+export async function readSemanticSnapshot(
+  repoPath: string,
+  commitRef: string,
+): Promise<SemanticSnapshot> {
+  return await withReadModelAvailability(() => {
+    using db = openReadModel(repoPath);
+
+    return selectSnapshot(db, commitRef);
+  });
 }
 
 async function readGitTextBlob(

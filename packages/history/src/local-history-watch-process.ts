@@ -1,8 +1,13 @@
+import type { ServerType } from "@hono/node-server";
+import { serve } from "@hono/node-server";
+import { randomBytes } from "node:crypto";
 import { watch } from "node:fs";
 import { stat } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { readProjectConfig } from "./config.ts";
+import { LocalHttpServerStartError } from "./errors.ts";
+import { createLocalHttpApp } from "./http-app.ts";
 import { observeSaveUsingConfig } from "./observe-save.ts";
 import type {
   FileStabilityProbe,
@@ -34,14 +39,58 @@ export async function startLocalHistoryWatchProcess(
   });
   const watchEventSource = input.watchEventSource ?? nodeWatchEventSource;
   let subscription: WatchEventSubscription | undefined;
+  let httpServer: ServerType | undefined;
+  let http: LocalHistoryWatchProcess["http"];
   let changeLoop: Promise<void> | undefined;
   let deferredObservationTask: ScheduledWatchTask | undefined;
   const changeState = {
     dirty: false,
   };
   let stopped = false;
+  const startedAt = now.toISOString();
+  let activity: "idle" | "pending" | "observing" = "idle";
+  let observationRevision = 0;
+  let lastObservation: ReturnType<
+    LocalHistoryWatchProcess["getWatcherStatus"]
+  >["lastObservation"];
 
   try {
+    await startAndObserve();
+  } catch (error) {
+    await cleanUpFailedStart();
+
+    throw error;
+  }
+
+  async function startAndObserve() {
+    await startComponents();
+
+    emit({
+      type: "started",
+      repoPath: input.repoPath,
+      watchedSavePath: config.watchedSavePath,
+      capturePolicy: config.capturePolicy,
+      ...(http !== undefined && { http }),
+    });
+
+    await observeAndEmit("startup", now);
+  }
+
+  async function cleanUpFailedStart() {
+    deferredObservationTask?.cancel();
+
+    if (subscription !== undefined) {
+      await subscription.stop();
+    }
+
+    if (httpServer !== undefined) {
+      await closeHttpServer(httpServer);
+    }
+
+    await watchLock.release();
+  }
+
+  async function startComponents() {
     subscription = await watchEventSource.start({
       watchedSavePath: config.watchedSavePath,
       onChange: async () => {
@@ -52,28 +101,43 @@ export async function startLocalHistoryWatchProcess(
       },
     });
 
-    emit({
-      type: "started",
-      repoPath: input.repoPath,
-      watchedSavePath: config.watchedSavePath,
-      capturePolicy: config.capturePolicy,
-    });
+    if (input.http !== undefined) {
+      if (!isLoopbackHost(config.localApi.host)) {
+        throw new LocalHttpServerStartError();
+      }
 
-    await observeAndEmit("startup", now);
-  } catch (error) {
-    deferredObservationTask?.cancel();
+      // Buffer is required until this package's TypeScript lib includes the Uint8Array base64 API.
+      // eslint-disable-next-line unicorn/prefer-uint8array-base64
+      const token = randomBytes(32).toString("base64url");
+      const app = createLocalHttpApp({
+        repoPath: input.repoPath,
+        token,
+        getWatcherStatus: () => getWatcherStatus(),
+        onRequestError: (error) => {
+          emit({ type: "httpRequestError", repoPath: input.repoPath, error });
+        },
+      });
+      const startedServer = await startHttpServer(
+        app.fetch,
+        input.http.port ?? 0,
+      );
 
-    if (subscription !== undefined) {
-      await subscription.stop();
+      httpServer = startedServer.server;
+      if ("headersTimeout" in httpServer && "requestTimeout" in httpServer) {
+        httpServer.headersTimeout = 10_000;
+        httpServer.requestTimeout = 10_000;
+      }
+      http = { endpoint: startedServer.endpoint, token };
+      httpServer.on("error", () => {
+        handleFatalHttpServerError().catch(() => undefined);
+      });
     }
-
-    await watchLock.release();
-
-    throw error;
   }
 
   return {
     repoPath: input.repoPath,
+    ...(http !== undefined && { http }),
+    getWatcherStatus: () => getWatcherStatus(),
     async stop() {
       await stopProcess();
     },
@@ -96,6 +160,22 @@ export async function startLocalHistoryWatchProcess(
     await stopProcess();
   }
 
+  async function handleFatalHttpServerError() {
+    if (stopped) {
+      return;
+    }
+
+    emit({
+      type: "fatalError",
+      repoPath: input.repoPath,
+      error: {
+        message: "Local HTTP Adapter failed.",
+        reason: "httpServerFailure",
+      },
+    });
+    await stopProcess();
+  }
+
   async function stopProcess() {
     if (stopped) {
       return;
@@ -108,9 +188,15 @@ export async function startLocalHistoryWatchProcess(
     });
     deferredObservationTask?.cancel();
     deferredObservationTask = undefined;
+    if (httpServer !== undefined) {
+      await closeHttpServer(httpServer);
+      httpServer = undefined;
+    }
     if (subscription !== undefined) {
       await subscription.stop();
     }
+
+    await changeLoop;
 
     await watchLock.release();
     emit({
@@ -123,6 +209,7 @@ export async function startLocalHistoryWatchProcess(
     cause: "startup" | "change" | "deferred",
     observedAt: Date,
   ): Promise<ObserveSaveResult> {
+    activity = "observing";
     const result = await withHistoryWriteLock(
       input.repoPath,
       async () =>
@@ -134,12 +221,7 @@ export async function startLocalHistoryWatchProcess(
         }),
     );
 
-    emit({
-      type: "observation",
-      repoPath: input.repoPath,
-      cause,
-      result,
-    });
+    completeObservation(cause, result, observedAt);
 
     scheduleDeferredObservation(result);
 
@@ -166,6 +248,7 @@ export async function startLocalHistoryWatchProcess(
         }
       },
     );
+    activity = "pending";
   }
 
   async function handleChangeEvent() {
@@ -197,26 +280,134 @@ export async function startLocalHistoryWatchProcess(
   }
 
   async function observeStableFile(cause: "change" | "deferred") {
+    activity = "pending";
     try {
       await fileStabilityProbe.waitForStableFile(config.watchedSavePath);
     } catch (error) {
-      emit({
-        type: "observation",
-        repoPath: input.repoPath,
+      completeObservation(
         cause,
-        result: {
+        {
           status: "watcherError",
           error: {
             message: getErrorMessage(error),
             reason: "stabilityTimeout",
           },
         },
-      });
+        input.now?.() ?? new Date(),
+      );
       return;
     }
 
     await observeAndEmit(cause, input.now?.() ?? new Date());
   }
+
+  function completeObservation(
+    cause: "startup" | "change" | "deferred",
+    result: ObserveSaveResult,
+    completedAt: Date,
+  ) {
+    emit({
+      type: "observation",
+      repoPath: input.repoPath,
+      cause,
+      result,
+    });
+    observationRevision++;
+    lastObservation = summarizeObservation(cause, result, completedAt);
+    activity = "idle";
+  }
+
+  function getWatcherStatus() {
+    return {
+      status: "running" as const,
+      activity,
+      observationRevision,
+      startedAt,
+      repoPath: input.repoPath,
+      watchedSavePath: config.watchedSavePath,
+      capturePolicy: config.capturePolicy,
+      ...(lastObservation !== undefined && { lastObservation }),
+    };
+  }
+}
+
+async function startHttpServer(
+  fetch: Parameters<typeof serve>[0]["fetch"],
+  port: number,
+): Promise<{ readonly server: ServerType; readonly endpoint: string }> {
+  if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) {
+    throw new LocalHttpServerStartError();
+  }
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const server = serve({ fetch, port, hostname: "127.0.0.1" }, (info) => {
+        server.removeListener("error", reject);
+        resolve({
+          server,
+          endpoint: `http://127.0.0.1:${info.port}`,
+        });
+      });
+
+      server.once("error", reject);
+    });
+  } catch (error) {
+    throw new LocalHttpServerStartError({ cause: error });
+  }
+}
+
+function isLoopbackHost(host: unknown): host is "127.0.0.1" {
+  return host === "127.0.0.1";
+}
+
+async function closeHttpServer(server: ServerType) {
+  if (!server.listening) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error === undefined) {
+        resolve();
+      } else {
+        reject(error);
+      }
+    });
+  });
+}
+
+function summarizeObservation(
+  cause: "startup" | "change" | "deferred",
+  result: ObserveSaveResult,
+  completedAt: Date,
+) {
+  const common = { cause, completedAt: completedAt.toISOString() };
+
+  if (result.status === "committed") {
+    return {
+      ...common,
+      status: result.status,
+      commit: result.observation.commit,
+      eventCount:
+        result.semanticUpdate.status === "updated"
+          ? result.semanticUpdate.eventCount
+          : 0,
+      semanticStatus: result.semanticUpdate.status,
+    } as const;
+  }
+
+  if (result.status === "skipped") {
+    return {
+      ...common,
+      status: result.status,
+      reason: result.reason,
+      ...(result.reason === "minimumCommitInterval" && {
+        nextAllowedAt: result.nextAllowedAt,
+      }),
+    } as const;
+  }
+
+  return { ...common, status: result.status, error: result.error } as const;
 }
 
 const nodeWatchEventSource: WatchEventSource = {

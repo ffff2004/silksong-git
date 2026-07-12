@@ -1,33 +1,62 @@
+import { InvalidReadModelCursorError } from "../errors.ts";
+
 export interface ReadModelCursor {
   readonly afterObservationSequence: number;
   readonly eventIndex: number;
 }
 
-export function parseCursor(cursor: string | undefined): ReadModelCursor {
+interface EncodedReadModelCursor extends ReadModelCursor {
+  readonly version: number;
+  readonly context: string;
+}
+
+export function parseCursor(
+  cursor: string | undefined,
+  context: string,
+  order: "asc" | "desc",
+): ReadModelCursor {
   if (cursor === undefined) {
     return {
-      afterObservationSequence: 0,
-      eventIndex: -1,
+      afterObservationSequence:
+        order === "asc" ? Number.MIN_SAFE_INTEGER : Number.MAX_SAFE_INTEGER,
+      eventIndex:
+        order === "asc" ? Number.MIN_SAFE_INTEGER : Number.MAX_SAFE_INTEGER,
     };
   }
 
-  const [afterObservationSequence, eventIndex] = cursor.split(":").map(Number);
+  let parsed: EncodedReadModelCursor;
+
+  try {
+    // Buffer is required until this package's TypeScript lib includes the Uint8Array base64 API.
+    // eslint-disable-next-line unicorn/prefer-uint8array-base64
+    const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+
+    parsed = JSON.parse(decoded) as EncodedReadModelCursor;
+  } catch (error) {
+    throw new InvalidReadModelCursorError({ cause: error });
+  }
 
   if (
-    afterObservationSequence === undefined
-    || eventIndex === undefined
-    || Number.isNaN(afterObservationSequence)
-    || Number.isNaN(eventIndex)
+    parsed.version !== 1
+    || parsed.context !== context
+    || !Number.isSafeInteger(parsed.afterObservationSequence)
+    || !Number.isSafeInteger(parsed.eventIndex)
   ) {
-    throw new Error("Invalid history cursor.");
+    throw new InvalidReadModelCursorError();
   }
 
   return {
-    afterObservationSequence,
-    eventIndex,
+    afterObservationSequence: parsed.afterObservationSequence,
+    eventIndex: parsed.eventIndex,
   };
 }
 
-export function createCursor(cursor: ReadModelCursor): string {
-  return `${cursor.afterObservationSequence}:${cursor.eventIndex}`;
+export function createCursor(cursor: ReadModelCursor, context: string): string {
+  const encoded = Buffer.from(
+    JSON.stringify({ version: 1, context, ...cursor }),
+  );
+
+  // Buffer is required until this package's TypeScript lib includes the Uint8Array base64 API.
+  // eslint-disable-next-line unicorn/prefer-uint8array-base64
+  return encoded.toString("base64url");
 }

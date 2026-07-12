@@ -1,44 +1,40 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import {
-  createProjectConfig,
-  readProjectConfig,
-  serializeProjectConfig,
-} from "./config.ts";
+import { createProjectConfig, serializeProjectConfig } from "./config.ts";
 import { prepareManagedGitRepository, runGit } from "./git-store.ts";
 import {
   defaultGitAttributesContent,
   defaultGitignoreContent,
   getRepositoryLayout,
 } from "./layout.ts";
-import { observeSaveUsingConfig } from "./observe-save.ts";
-import {
-  diffReadModelCommits,
-  queryReadModelHistory,
-  rebuildReadModel,
-  searchReadModelEvents,
-} from "./read-model.ts";
+import { rebuildReadModel } from "./read-model.ts";
 import type {
-  DiffCommitsInput,
-  DiffCommitsResult,
-  HistoryResult,
   InitSaveHistoryInput,
   InitSaveHistoryResult,
-  ObserveSaveInput,
-  ObserveSaveResult,
-  QueryHistoryInput,
   RebuildSemanticReadModelInput,
   RebuildSemanticReadModelResult,
-  SearchSemanticEventsInput,
-  SearchSemanticEventsResult,
 } from "./types.ts";
 import { withHistoryWriteLock } from "./write-lock.ts";
 
 export {
+  diffCommits,
+  observeSave,
+  queryHistory,
+  queryRawObservations,
+  searchSemanticEvents,
+} from "./history-interface.ts";
+export { createLocalHttpApp } from "./http-app.ts";
+export { getSaveState, readEncodedSave } from "./save-state.ts";
+
+export {
   InvalidCommitRefError,
+  InvalidReadModelCursorError,
   InvalidRestoreBackupDirectoryError,
   LocalHistoryWatchProcessAlreadyRunningError,
+  LocalHttpServerStartError,
+  ObservationNotFoundError,
   ReadModelUnavailableError,
   RestoreBackupFailedError,
+  RestoreConflictError,
   RestoreTargetExistsError,
   RestoreWriteFailedError,
   RestoreWriteVerificationError,
@@ -51,11 +47,14 @@ export type {
   DiffCommitsInput,
   DiffCommitsResult,
   FileStabilityProbe,
+  GetSaveStateInput,
+  GetSaveStateResult,
   HistoricalSemanticEvent,
   HistoryCommit,
   HistoryResult,
   InitSaveHistoryInput,
   InitSaveHistoryResult,
+  LocalHistoryWatcherStatus,
   LocalHistoryWatchProcess,
   LocalHistoryWatchProcessEvent,
   LocalHistoryWatchProcessFatalError,
@@ -65,7 +64,11 @@ export type {
   ProjectConfig,
   ProjectConfigOverrides,
   QueryHistoryInput,
+  QueryRawObservationsInput,
+  RawObservationHistoryResult,
   RawSaveObservation,
+  ReadEncodedSaveInput,
+  ReadEncodedSaveResult,
   RebuildSemanticReadModelInput,
   RebuildSemanticReadModelResult,
   RestoreEncodedSaveInput,
@@ -106,16 +109,6 @@ export async function initSaveHistory(
   };
 }
 
-export async function observeSave(
-  input: ObserveSaveInput,
-): Promise<ObserveSaveResult> {
-  return await withHistoryWriteLock(input.repoPath, async () => {
-    const config = await readProjectConfig(input.repoPath);
-
-    return await observeSaveUsingConfig({ ...input, config });
-  });
-}
-
 export async function rebuildSemanticReadModel(
   input: RebuildSemanticReadModelInput,
 ): Promise<RebuildSemanticReadModelResult> {
@@ -123,22 +116,4 @@ export async function rebuildSemanticReadModel(
     input.repoPath,
     async () => await rebuildReadModel(input.repoPath),
   );
-}
-
-export async function queryHistory(
-  input: QueryHistoryInput,
-): Promise<HistoryResult> {
-  return await queryReadModelHistory(input.repoPath, input);
-}
-
-export async function diffCommits(
-  input: DiffCommitsInput,
-): Promise<DiffCommitsResult> {
-  return await diffReadModelCommits(input);
-}
-
-export async function searchSemanticEvents(
-  input: SearchSemanticEventsInput,
-): Promise<SearchSemanticEventsResult> {
-  return await searchReadModelEvents(input.repoPath, input);
 }
