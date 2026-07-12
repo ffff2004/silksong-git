@@ -1340,6 +1340,7 @@ Depends on:
 Owned files or likely files:
 
 - `apps/web/`
+- `packages/history/` public DTOs and local HTTP API 1.1 contract
 - local HTTP client adapter
 - local endpoint connection and capability handling
 - local history UI views
@@ -1353,12 +1354,16 @@ Relevant docs and ADRs:
 
 Acceptance criteria:
 
-- Local History Web Mode is enabled when the frontend connects to a compatible local HTTP endpoint.
-- The Web client uses the browser-safe Hono client and type-only app contract without importing history server runtime code. It authenticates with the bearer header, validates API major/minor and required capabilities at runtime, and degrades safely on unknown or malformed responses.
-- Local History Web Mode shows Current Save, History, Diff, Search, Watcher, and Restore/Export views.
-- Watcher status uses polling and `observationRevision`; revision changes refresh latest Save State and consume persistent Semantic Event/Raw Observation pages by cursor rather than treating watcher status as a lossless event stream.
-- History, search, and Raw Observation views use recent-first pagination. Current Save represents the latest committed Raw Save Observation, including explicit empty and unrecognized-schema states.
-- Browser export fetches authenticated bytes and uses the server-provided safe filename. Browser restore exposes only confirmed preconditioned in-place restore and does not automatically retry POST requests.
+- Local History Web Mode is enabled by a successful authenticated compatibility handshake from the Topbar connection dialog; there is no separate backend view. Static and Local modes have one active save-state source, credentials remain in page memory, successful connection clears uploaded Static Save state, and disconnect returns to an empty Static `#/progress`.
+- The Web client uses the browser-safe Hono client and type-only app contract without importing history server runtime code. It requires local HTTP API 1.1 and the complete documented capability set, ignores unknown additions, rejects malformed required data, and distinguishes authentication or protocol failure from transient endpoint errors without silently discarding already loaded Local state.
+- Local History Web Mode preserves the existing Progress, Map, and Raw Save Data views. They use latest Save State by default and share an immutable canonical `commit` URL selection when opened from History. Switching among them preserves selection; a second-row Topbar banner contains Back to Latest and reports newer latest state without replacing the historical selection. Unrecognized observations keep Decoded Save inspectable while semantic views show explicit unavailable states.
+- History combines an Events view and an Observations view. Events group Semantic Events by commit; the same list UI calls History with no submitted fields and Search with submitted text/event-kind/target-status/direction fields. Submitted filters, selected view, and pending compare source are URL state; opaque cursor state is not. Both views use recent-first Load More pagination and merge groups across pages.
+- History and Search events include their after-Snapshot `SaveSummaryMetrics`; Raw Observation history returns entries pairing an unchanged `RawSaveObservation` with `SaveSummaryMetrics | null`. Commit headers show Completion, Play Time, Rosaries, and Shell Shards without per-commit Save State requests. Filtered events use server-provided visibility and filter reasons.
+- Export and Restore are History commit actions rather than independent views. Browser export fetches authenticated Encoded Save bytes and uses the server-provided safe filename. Restore is explicitly confirmed, never automatically retried, normally uses the latest committed observation hash as `expectedCurrent`, and reports unsynchronized Watched Save state as a conflict rather than offering a force override. An explicit missing-file flow uses the server-verified `missing` precondition and warns that no original-file backup exists.
+- Diff remains a separate View with canonical from/to refs in the URL and History actions for selecting them. Semantic Diff uses a Progress-style rendering Module with explicit Snapshot/comparison input, defaults to changed items, optionally shows unchanged items, emphasizes returned Semantic Events, and does not mutate the Save Store. A lazy Monaco view compares the two Decoded Save JSON values; it remains available for Unrecognized Schema Observations.
+- Watcher status uses visible-page polling and `observationRevision`; revision changes refresh moving latest Save State and merge persistent Semantic Event/Raw Observation pages without disrupting History scroll position. Watcher is not treated as a lossless event stream. Manual Checkpoint belongs to the Watcher view and mutation requests are never automatically retried.
+- Local-only URLs remain intact behind a connection-required state after reload or direct navigation. Reconnection resumes the target route, while a normal connection from Static Mode opens latest Progress. Authentication or malformed-protocol failures pause polling and preserve loaded data as stale until reconnect or explicit disconnect.
+- New Local History styles use CSS Modules and preserve the existing visual language. The existing Normal and Steel Soul ModeBanner animations are removed; the new interactive historical banner is stable and occupies a second Topbar row only for historical selection.
 - The connection UI distinguishes endpoint unavailability, authentication failure, protocol incompatibility, transient history availability, and browser Local Network Access denial. Real-browser smoke tests cover the secure-context permission flow where supported.
 - HTTP endpoints are provided by `watch start --http` and are adapters over `packages/history`.
 - Web code does not query SQLite or run Git operations directly.

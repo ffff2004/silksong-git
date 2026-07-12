@@ -511,6 +511,7 @@ interface HistoricalSemanticEvent {
   commit: HistoryCommit;
   previousCommit?: HistoryCommit;
   observation: RawSaveObservation;
+  snapshotSummary: SaveSummaryMetrics;
   event: SemanticEvent;
   visibility: {
     defaultVisible: boolean;
@@ -550,8 +551,13 @@ interface QueryRawObservationsInput {
   order?: "asc" | "desc";
 }
 
+interface RawObservationHistoryEntry {
+  observation: RawSaveObservation;
+  snapshotSummary: SaveSummaryMetrics | null;
+}
+
 interface RawObservationHistoryResult {
-  observations: readonly RawSaveObservation[];
+  entries: readonly RawObservationHistoryEntry[];
   nextCursor?: string;
 }
 
@@ -703,7 +709,7 @@ interface LocalHistoryWatcherStatus {
 
 Git, SQLite, file watching, config loading, and local HTTP are implementation details or internal Adapters behind this Interface.
 
-`queryHistory`, `diffCommits`, and `searchSemanticEvents` should return Semantic Events with their commit and Raw Save Observation metadata. CLI and Web callers should not need separate Git or SQLite lookups to explain where an event came from. `queryRawObservations` is a separate paginated Interface because Raw Save Observations and Semantic Events are different ordered histories; one cursor must not ambiguously paginate both.
+`queryHistory`, `diffCommits`, and `searchSemanticEvents` should return Semantic Events with their commit, Raw Save Observation metadata, and the after-Snapshot `SaveSummaryMetrics`. CLI and Web callers should not need separate Git or SQLite lookups to explain where an event came from or issue one Save State request per displayed commit. `queryRawObservations` returns entries that pair each unchanged `RawSaveObservation` with its `SaveSummaryMetrics`, or `null` for an Unrecognized Schema Observation. It remains a separate paginated Interface because Raw Save Observations and Semantic Events are different ordered histories; one cursor must not ambiguously paginate both.
 
 Display Semantic Event Filters apply consistently to `queryHistory`, `diffCommits`, and `searchSemanticEvents`. Default calls return default-visible events; `includeFiltered: true` returns hidden events as well, with `visibility.filterReasons` explaining why they are hidden by default.
 
@@ -716,6 +722,8 @@ The SQLite schema is not public. CLI and Web callers must use `queryHistory`, `q
 `readEncodedSave` returns the exact committed `save.dat` bytes as `Uint8Array`; it does not write a Restore Target. Its suggested filename uses only a sanitized basename stem from Project Config `watchedSavePath`, the canonical short commit SHA, and a `.dat` suffix. The directory part of `watchedSavePath` and the caller's untrusted ref are never copied into the filename.
 
 HTTP in-place restore requires `expectedCurrent`, while the existing CLI in-place restore may omit it to preserve its current explicit-confirmation workflow. When present, history acquires `write.lock`, reads the actual Watched Save, and verifies that it is either missing or has the expected hash before backup or overwrite. A mismatch produces `RestoreConflictError` without creating a backup or writing the Watched Save.
+
+Local History Web Mode normally obtains the `present` precondition from the latest committed Raw Save Observation, not from the selected restore source and not from a fresh uncommitted file read. This intentionally requires the watcher, latest Save State, and Watched Save bytes to be synchronized before rollback, preventing an uncaptured game write from being overwritten. The Web client does not add a current-file preflight endpoint or force override. It may send the existing `missing` precondition only after the user explicitly states that the Watched Save is missing; the server remains the authority that verifies absence.
 
 `packages/history` consumes `packages/core` only through its public package-root Interface:
 
@@ -810,7 +818,7 @@ Commit refs stay in query parameters rather than path segments because valid Git
 {
   api: {
     name: "silksong-git-local-history";
-    version: { major: 1; minor: 0 };
+    version: { major: 1; minor: 1 };
   };
   repoPath: string;
   watchedSavePath: string;
@@ -828,7 +836,7 @@ Commit refs stay in query parameters rather than path segments because valid Git
 }
 ```
 
-Clients require the same API major, a server minor at least as high as the client requires, and each capability used by an enabled feature. Unknown fields and capabilities are ignored. Capabilities describe implemented protocol support, not transient availability. The first version does not report a placeholder tool version, process instance id, or persistent repository UUID. API responses use `Cache-Control: no-store`.
+Clients require the same API major, a server minor at least as high as the client requires, and the complete documented capability set. The first Web client does not implement partial-feature degradation because its local server ships from the same project. Unknown additional fields and capabilities are ignored. Capabilities describe implemented protocol support, not transient availability. API 1.1 requires History and Search events to include their after-Snapshot Summary, and Raw Observation history entries to include `SaveSummaryMetrics | null`. The first version does not report a placeholder tool version, process instance id, or persistent repository UUID. API responses use `Cache-Control: no-store`.
 
 History, search, and Raw Observation queries default to `limit=100` in HTTP, accept 1 through 1000, and default to `order=desc`. Cursors are opaque and valid only with the same query, filters, and order. Search must include at least one actual structured or text query field. History returns only Semantic Events; Raw Observations use their own Interface, endpoint, and cursor.
 
@@ -846,7 +854,7 @@ In-place restore JSON is strict and includes:
 }
 ```
 
-The 64-character lowercase SHA-256 precondition binds user confirmation to the Watched Save state the Web UI displayed. A mismatch returns `409 restore_conflict` before backup or write. HTTP does not expose restore-to-path. The first version does not implement `Idempotency-Key`; the restore precondition and unchanged-checkpoint behavior cover the normal duplicate-submission cases, and the Web client must not automatically retry POST requests.
+The 64-character lowercase SHA-256 precondition normally comes from the latest committed Raw Save Observation, binding user confirmation to a watcher-synchronized state rather than allowing an uncaptured current file to be overwritten. A mismatch returns `409 restore_conflict` before backup or write. An explicit missing-file flow sends `{ status: "missing" }`; it succeeds only when the server verifies that the Watched Save is absent and consequently produces no original-file backup. HTTP does not expose restore-to-path or a force override. The first version does not implement `Idempotency-Key`; the restore precondition and unchanged-checkpoint behavior cover the normal duplicate-submission cases, and the Web client must not automatically retry POST requests.
 
 Export responds with the exact Git `save.dat` bytes, `application/octet-stream`, a strong ETag based on Encoded Save SHA-256, `Content-Length`, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`. `Content-Disposition` uses a sanitized `<watched-save-stem>.<canonical-short-sha>.dat` filename, with an ASCII fallback and encoded Unicode form when needed. It never includes the watched directory or caller-supplied ref.
 
@@ -1337,41 +1345,56 @@ One Web UI runs in two modes:
 ```txt
 Static Web Mode
   browser-only
-  user uploads save.dat or raw JSON
-  shows Current Save views
+  user uploads an Encoded Save or Decoded Save JSON
+  shows Progress, Map, and Raw Save Data
   no Git, SQLite, filesystem, or local API
 
 Local History Web Mode
   enabled by connecting to a compatible local HTTP endpoint
   uses local HTTP Adapter over packages/history
-  shows Current Save plus history workflows
+  defaults Progress, Map, and Raw Save Data to latest Save State
+  can fix those views to one historical observation commit
+  adds History, Diff, and Watcher workflows
 ```
 
-The Web UI's mode is determined by endpoint availability and compatibility, not by the mechanism that serves the frontend. During implementation and debugging the frontend can run through Vite; future releases may serve it statically or through a small frontend-serving process.
+The Web UI's mode is determined by a successful authenticated compatibility handshake, not by the mechanism that serves the frontend. During implementation and debugging the frontend can run through Vite; future releases may serve it statically or through a small frontend-serving process. Static and Local modes do not retain competing save states: successful connection clears the uploaded Static Save, and disconnect returns to an empty Static Web Mode. Manual connection uses a Topbar dialog, not a separate backend view. Endpoint and token live only in page memory and never in browser storage or the URL.
 
 First-version views:
 
 ```txt
-(Current Save ...)
-  existing tracker/progress/raw/map functionality
+Progress / Map / Raw Save Data
+  existing tracker functionality
+  latest by default in Local History Web Mode
+  canonical commit selected through a shared commit URL query
+  historical Topbar banner with Back to Latest
 
 History
-  Semantic Event timeline and Raw Save Observations
+  Events and Observations views with recent-first Load More pagination
+  Events grouped by commit and expanded by default
+  unfiltered History and submitted structured Search share one list UI
+  search fields and pending compare source are represented in the URL
+  commit headers show Completion, Play Time, Rosaries, and Shell Shards
+  commit actions include Progress selection, Export, Restore, and Compare
 
 Diff
-  choose two commits and view item-level Semantic Events
-
-Search
-  structured search over events and commits
+  from/to canonical refs represented in the URL
+  Progress-style Semantic Diff defaults to changes and can show unchanged items
+  lazy Monaco comparison of the two Decoded Save JSON values
 
 Watcher
-  watched path, last observation, errors, capture policy
-
-Restore/Export
-  preconditioned in-place restore and safe browser download flows
+  watched path, activity, last observation, errors, and capture policy
+  Manual Checkpoint action
 ```
 
-Static Web Mode exposes only Current Save behavior. Local History Web Mode exposes History, Diff, Search, Watcher, and Restore/Export.
+History search uses `/history` when no fields are submitted and `/search` when at least one field is present; merging the UI does not merge the two history Module Interfaces. The first search form exposes free text, event kind, target status, direction, and `includeFiltered`. Filtered events retain server-provided visibility reasons. Submitted filters are represented in the URL, while opaque cursors remain runtime state. Load More appends older results and merges commit groups that cross cursor pages.
+
+Selecting any History commit, including the commit that happens to be latest at selection time, fixes Progress, Map, and Raw Save Data to its canonical ref. Watcher polling refreshes a moving latest selection but never replaces a historical selection. A stable second-row Topbar banner shows the selected ref and time, reports when a newer latest exists, and contains Back to Latest. The existing save-mode banner and the historical banner use the established visual language without infinite blinking animation.
+
+History embeds Export and Restore rather than adding separate views. Export downloads authenticated Encoded Save bytes with the server-provided safe filename and does not change route or selection. Restore opens a non-retrying confirmation flow, uses latest observation state as its normal precondition, and reports watcher desynchronization as a conflict. The explicit missing-file path is separate and warns that no original-file backup exists. Restore success does not navigate automatically; watcher observation and user navigation remain explicit.
+
+Semantic Diff renders through a Progress-style Module that accepts explicit Snapshot and comparison data instead of mutating the application Save Store. It uses the `to` Snapshot for the main item appearance, highlights events returned by `diffCommits`, defaults to changed items, and offers Show unchanged. It does not duplicate the changes in a second linear event list. If either Snapshot is unavailable because its observation schema is unrecognized, Semantic Diff reports that state and selects the still-available Decoded Save JSON diff.
+
+Local History credentials and connection state remain in memory across hash-route navigation but are lost on reload. A Local History URL opened without a connection is preserved behind a connection-required state so reconnection can resume it. The Sidebar shows History, Diff, and Watcher only while connected. Watcher polling runs while the page is visible, reacts only to revision changes, and merges new persistent results without disrupting History scroll position. Authentication or protocol failure pauses automatic requests and preserves loaded data as stale until reconnect or explicit disconnect.
 
 ## Accepted ADRs
 
