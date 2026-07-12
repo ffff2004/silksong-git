@@ -1054,7 +1054,7 @@ Relevant docs and ADRs:
 Acceptance criteria:
 
 - `watch start --http` atomically enables a Hono + Zod local HTTP Adapter inside the same Local History Watch Process that owns watching, history writes, and read-model updates; enabling HTTP never creates a second watcher, writer, or mutation queue.
-- HTTP startup validates Project Config host as exactly `127.0.0.1`. `watch start --port <port>` accepts only 1 through 65535 and only with `--http`; without `--port`, the server requests port `0`. Host, port, and credentials are not written to Project Config.
+- HTTP startup binds only to the fixed loopback host `127.0.0.1`. `watch start --port <port>` accepts only 1 through 65535 and only with `--http`; without `--port`, the server requests port `0`. The host, port, and credentials are not written to Project Config.
 - The Local History Watch Process reports one structured `started` event only after watcher ownership, watch backend, and HTTP listener are ready. When HTTP is enabled, that event includes the concrete `http://127.0.0.1:<bound-port>` endpoint and a separate session token; later events and endpoints do not repeat the token.
 - Every process start generates a new cryptographically secure bearer token with at least 256 bits of entropy, encoded as unpadded base64url, stored only in memory, compared in constant time, and accepted only through a strict `Authorization: Bearer <token>` header.
 - Standard CORS allows any origin without credentials, handles unauthenticated `OPTIONS /api/v1/*` without exposing repository state, permits only required methods and request headers, and exposes `Content-Disposition`, `ETag`, and `Retry-After`. The Adapter does not implement superseded Private Network Access headers.

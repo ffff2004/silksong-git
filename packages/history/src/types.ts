@@ -22,9 +22,6 @@ export interface ProjectConfig {
   readonly restore: {
     readonly backupDirectory?: string;
   };
-  readonly localApi: {
-    readonly host: "127.0.0.1";
-  };
 }
 
 export interface ProjectConfigOverrides {
@@ -33,7 +30,6 @@ export interface ProjectConfigOverrides {
     ProjectConfig["displaySemanticEventFilters"]
   >;
   readonly restore?: ProjectConfig["restore"];
-  readonly localApi?: Partial<ProjectConfig["localApi"]>;
 }
 
 export interface InitSaveHistoryInput {

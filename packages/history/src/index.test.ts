@@ -302,17 +302,10 @@ function createSequencedFileStabilityProbe(): SequencedFileStabilityProbe {
 test("initSaveHistory creates a Save History Repository project config", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
-  const configWithRuntimePort = {
-    localApi: {
-      host: "127.0.0.1",
-      port: 43_117,
-    },
-  } as unknown as ProjectConfigOverrides;
 
   const result = await initSaveHistory({
     repoPath,
     watchedSavePath: minimalEncodedSavePath,
-    config: configWithRuntimePort,
   });
 
   assert.equal(result.repoPath, repoPath);
@@ -324,12 +317,11 @@ test("initSaveHistory creates a Save History Repository project config", async (
   const configJson = await readFile(result.configPath, "utf8");
   const config = JSON.parse(configJson) as {
     watchedSavePath?: unknown;
-    localApi?: { host?: unknown; port?: unknown };
+    localApi?: unknown;
   };
 
   assert.equal(config.watchedSavePath, minimalEncodedSavePath);
-  assert.equal(config.localApi?.host, "127.0.0.1");
-  assert.equal("port" in (config.localApi ?? {}), false);
+  assert.equal("localApi" in config, false);
 });
 
 test("observeSave commits a recognized Raw Save Observation", async (t) => {
@@ -998,22 +990,25 @@ test("startLocalHistoryWatchProcess atomically starts authenticated HTTP on a dy
   await assert.rejects(fetch(`${process.http.endpoint}/api/v1/meta`));
 });
 
-test("HTTP startup rejects invalid loopback config and occupied ports without retaining watch ownership", async (t) => {
+test("HTTP startup uses fixed loopback binding and rejects occupied ports", async (t) => {
   const repo = await createHistoryRepo(t);
   const configPath = path.join(repo.repoPath, ".silksong-git/config.json");
   const validConfig = await readFile(configPath, "utf8");
 
-  await writeFile(configPath, validConfig.replace('"127.0.0.1"', '"0.0.0.0"'));
-  await assert.rejects(
-    startLocalHistoryWatchProcess({
-      repoPath: repo.repoPath,
-      http: {},
-      watchEventSource: new TestWatchEventSource(),
-    }),
-    LocalHttpServerStartError,
+  const legacyConfig = JSON.parse(validConfig) as Record<string, unknown>;
+  legacyConfig["localApi"] = { host: "0.0.0.0" };
+  await writeFile(configPath, `${JSON.stringify(legacyConfig)}\n`);
+  const legacyConfigProcess = await startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    http: {},
+    watchEventSource: new TestWatchEventSource(),
+  });
+  assert.match(
+    legacyConfigProcess.http?.endpoint ?? "",
+    /^http:\/\/127\.0\.0\.1:\d+$/v,
   );
+  await legacyConfigProcess.stop();
 
-  await writeFile(configPath, validConfig);
   const occupiedServer = createServer();
 
   await new Promise<void>((resolve) => {

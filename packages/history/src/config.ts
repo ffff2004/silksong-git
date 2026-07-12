@@ -25,9 +25,6 @@ export function createProjectConfig(
     restore: {
       ...overrides.restore,
     },
-    localApi: {
-      host: overrides.localApi?.host ?? "127.0.0.1",
-    },
   };
 }
 

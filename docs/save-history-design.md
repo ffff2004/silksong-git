@@ -313,13 +313,10 @@ First-version Project Config fields:
   restore: {
     backupDirectory?: string;
   };
-  localApi: {
-    host: "127.0.0.1";
-  };
 }
 ```
 
-`localApi.host` is persisted because it is a security-relevant binding constraint and is validated at HTTP startup as exactly `127.0.0.1`. The local API port is a runtime binding, not a Project Config field. HTTP defaults to port `0` so the operating system assigns an available port; `--port` may provide an explicit port from 1 through 65535. The running process reports the concrete endpoint it bound to. The port only applies when the Local History Watch Process starts its optional HTTP Adapter.
+The local HTTP host is fixed to `127.0.0.1` as a security boundary and is not a Project Config field. The local API port is a runtime binding. HTTP defaults to port `0` so the operating system assigns an available port; `--port` may provide an explicit port from 1 through 65535. The running process reports the concrete endpoint it bound to. The port only applies when the Local History Watch Process starts its optional HTTP Adapter.
 
 ## Core Module Interface
 
@@ -783,7 +780,7 @@ CLI history/diff/search/restore commands can also run as Offline Commands that r
 
 ADR-0018 defines the security and lifecycle boundary. The Adapter uses Hono, `@hono/node-server`, Zod, and `@hono/zod-openapi` inside `packages/history`. Hono handles HTTP concerns only; route handlers call public history Interfaces. OpenAPI-aware route definitions drive strict runtime request validation and generate the ignored, on-demand `docs/generated/local-http-api.openapi.json` artifact through `pnpm generate:openapi`; response schemas are checked against public history DTOs. The generated document is not an additional watch-process endpoint. `packages/history` exposes the inferred Hono app type through a browser-safe type-only subpath so `apps/web` can use `hono/client` without importing the server app, Node modules, Git, SQLite, or watcher internals. Compile-time Hono RPC types and OpenAPI documentation do not replace runtime compatibility discovery.
 
-The server binds only `http://127.0.0.1`. Project Config `localApi.host` is validated at runtime and any other value fails atomic process startup. The default port is `0`; `--port` accepts an explicit integer from 1 through 65535. The port and credentials are never persisted. The first version does not support HTTPS, IPv6, LAN binding, a host CLI flag, or runtime token rotation.
+The server binds only `http://127.0.0.1`; the host is fixed in the HTTP Adapter and is not configurable. The default port is `0`; `--port` accepts an explicit integer from 1 through 65535. The port and credentials are never persisted. The first version does not support HTTPS, IPv6, LAN binding, a host CLI flag, or runtime token rotation.
 
 Each process start generates a new cryptographically secure random bearer token of at least 256 bits, encoded as unpadded base64url and held only in memory. All actual API requests, including reads and compatibility discovery, require strict `Authorization: Bearer <token>` authentication with constant-time comparison. The token is not accepted in a URL, cookie, or alternate authentication scheme. The CLI reports endpoint and token as separate fields exactly once; losing the token requires restarting the watch process.
 
@@ -951,7 +948,7 @@ Default command output is human-readable text. `--json` provides stable machine-
   also call parseDecodedSave and report whether the decoded shape is recognized
 ```
 
-`watch start` starts the long-running Local History Watch Process for one Save History Repository. By default it watches the Watched Save, commits stable Raw Save Observations according to Capture Policy, updates the Semantic Read Model, reports status in terminal output, and shuts down cleanly on process termination. The default human-readable runtime log is diagnostic output and should be written to stderr; it is not a byte-stable scripting contract. `--jsonl` writes one stable machine-readable status event per line to stdout. `--http` enables the local HTTP Adapter inside that same process so the Web UI can connect to history workflows. `--port <port>` chooses the runtime local API port when HTTP is enabled; if omitted, the process requests port `0` and reports the concrete bound endpoint. The HTTP host comes from Project Config `localApi.host` and must be `127.0.0.1`. Endpoint and token are separate fields in the one started event and are not repeated later.
+`watch start` starts the long-running Local History Watch Process for one Save History Repository. By default it watches the Watched Save, commits stable Raw Save Observations according to Capture Policy, updates the Semantic Read Model, reports status in terminal output, and shuts down cleanly on process termination. The default human-readable runtime log is diagnostic output and should be written to stderr; it is not a byte-stable scripting contract. `--jsonl` writes one stable machine-readable status event per line to stdout. `--http` enables the local HTTP Adapter inside that same process so the Web UI can connect to history workflows. `--port <port>` chooses the runtime local API port when HTTP is enabled; if omitted, the process requests port `0` and reports the concrete bound endpoint. The HTTP host is fixed to `127.0.0.1`. Endpoint and token are separate fields in the one started event and are not repeated later.
 
 `watch start` supports:
 

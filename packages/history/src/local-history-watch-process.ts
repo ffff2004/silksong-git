@@ -102,10 +102,6 @@ export async function startLocalHistoryWatchProcess(
     });
 
     if (input.http !== undefined) {
-      if (!isLoopbackHost(config.localApi.host)) {
-        throw new LocalHttpServerStartError();
-      }
-
       // Buffer is required until this package's TypeScript lib includes the Uint8Array base64 API.
       // eslint-disable-next-line unicorn/prefer-uint8array-base64
       const token = randomBytes(32).toString("base64url");
@@ -354,10 +350,6 @@ async function startHttpServer(
   } catch (error) {
     throw new LocalHttpServerStartError({ cause: error });
   }
-}
-
-function isLoopbackHost(host: unknown): host is "127.0.0.1" {
-  return host === "127.0.0.1";
 }
 
 async function closeHttpServer(server: ServerType) {
