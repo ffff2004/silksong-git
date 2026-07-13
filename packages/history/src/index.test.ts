@@ -375,11 +375,16 @@ test("observeSave creates a queryable Semantic Read Model for a recognized obser
   const rawHistory = await queryRawObservations({ repoPath: repo.repoPath });
 
   assert.equal(history.events.length, 0);
-  assert.equal(rawHistory.observations.length, 1);
-  assert.equal(
-    rawHistory.observations[0]?.commit.ref,
-    result.observation.commit.ref,
-  );
+  assert.equal(rawHistory.entries.length, 1);
+  const [entry] = rawHistory.entries;
+
+  assert.ok(entry !== undefined);
+  assert.equal(entry.observation.commit.ref, result.observation.commit.ref);
+  assert.ok(entry.snapshotSummary !== null);
+  assert.equal(entry.snapshotSummary.completionPercentage, 39);
+  assert.equal(entry.snapshotSummary.playTime, 87_137.12);
+  assert.equal(entry.snapshotSummary.rosaries, 731);
+  assert.equal(entry.snapshotSummary.shellShards, 76);
 });
 
 test("observeSave incrementally records Semantic Events for recognized observations", async (t) => {
@@ -476,15 +481,18 @@ test("observeSave records Unrecognized Schema Observations without interrupting 
     event.previousCommit.ref,
     recognizedBefore.observation.commit.ref,
   );
-  assert.equal(rawHistory.observations.length, 3);
-  const [, rawUnrecognizedObservation] = rawHistory.observations;
+  assert.equal(rawHistory.entries.length, 3);
+  const [, rawUnrecognizedEntry] = rawHistory.entries;
 
-  assert.ok(rawUnrecognizedObservation !== undefined);
+  assert.ok(rawUnrecognizedEntry !== undefined);
   assert.equal(
-    rawUnrecognizedObservation.commit.ref,
+    rawUnrecognizedEntry.observation.commit.ref,
     unrecognized.observation.commit.ref,
   );
-  assert.equal(rawUnrecognizedObservation.schema.status, "unrecognized");
+  assert.equal(rawUnrecognizedEntry.observation.schema.status, "unrecognized");
+  // The public contract uses explicit null for observations without a Semantic Snapshot.
+  // eslint-disable-next-line unicorn/no-null
+  assert.equal(rawUnrecognizedEntry.snapshotSummary, null);
 });
 
 test("observeSave rebuilds a missing Semantic Read Model before appending", async (t) => {
@@ -519,7 +527,7 @@ test("observeSave rebuilds a missing Semantic Read Model before appending", asyn
   assert.equal(event.commit.ref, afterResult.observation.commit.ref);
   assert.ok(event.previousCommit !== undefined);
   assert.equal(event.previousCommit.ref, beforeResult.observation.commit.ref);
-  assert.equal(rawHistory.observations.length, 2);
+  assert.equal(rawHistory.entries.length, 2);
 });
 
 test("restoreEncodedSave writes the observed Encoded Save byte-for-byte", async (t) => {
@@ -1818,6 +1826,10 @@ test("rebuildSemanticReadModel rebuilds recognized Semantic Events for queryHist
   assert.equal(historicalEvent.event.eventType, "itemStatusChanged");
   assert.equal(historicalEvent.event.item.id, "mask-shard-2");
   assert.equal(historicalEvent.event.after.status, "done");
+  assert.equal(historicalEvent.snapshotSummary.completionPercentage, 39);
+  assert.equal(historicalEvent.snapshotSummary.playTime, 87_137.12);
+  assert.equal(historicalEvent.snapshotSummary.rosaries, 731);
+  assert.equal(historicalEvent.snapshotSummary.shellShards, 76);
   assert.deepEqual(historicalEvent.visibility, {
     defaultVisible: true,
     filterReasons: [],
@@ -1844,16 +1856,15 @@ test("rebuildSemanticReadModel preserves Unrecognized Schema Observations withou
   assert.equal(rebuildResult.snapshotCount, 1);
   assert.equal(rebuildResult.eventCount, 0);
   assert.equal(history.events.length, 0);
-  assert.equal(rawHistory.observations.length, 2);
-  const [recognizedObservation, unrecognizedObservation] =
-    rawHistory.observations;
+  assert.equal(rawHistory.entries.length, 2);
+  const [recognizedEntry, unrecognizedEntry] = rawHistory.entries;
 
-  assert.ok(recognizedObservation !== undefined);
-  assert.ok(unrecognizedObservation !== undefined);
-  assert.equal(recognizedObservation.schema.status, "recognized");
-  assert.equal(unrecognizedObservation.schema.status, "unrecognized");
+  assert.ok(recognizedEntry !== undefined);
+  assert.ok(unrecognizedEntry !== undefined);
+  assert.equal(recognizedEntry.observation.schema.status, "recognized");
+  assert.equal(unrecognizedEntry.observation.schema.status, "unrecognized");
   assert.equal(
-    unrecognizedObservation.commit.ref,
+    unrecognizedEntry.observation.commit.ref,
     unrecognizedResult.observation.commit.ref,
   );
 });
@@ -1898,9 +1909,9 @@ test("queryRawObservations paginates independently in both orders", async (t) =>
     order: "desc",
   });
 
-  assert.equal(firstRawPage.observations.length, 1);
+  assert.equal(firstRawPage.entries.length, 1);
   assert.equal(
-    firstRawPage.observations[0]?.commit.ref,
+    firstRawPage.entries[0]?.observation.commit.ref,
     thirdObservation.observation.commit.ref,
   );
   assert.notEqual(firstRawPage.nextCursor, undefined);
@@ -1912,9 +1923,9 @@ test("queryRawObservations paginates independently in both orders", async (t) =>
     order: "desc",
   });
 
-  assert.equal(secondRawPage.observations.length, 2);
+  assert.equal(secondRawPage.entries.length, 2);
   assert.equal(
-    secondRawPage.observations[1]?.commit.ref,
+    secondRawPage.entries[1]?.observation.commit.ref,
     firstObservation.observation.commit.ref,
   );
 });
@@ -1946,6 +1957,7 @@ test("diffCommits returns Semantic Snapshots and Historical Semantic Events", as
   assert.ok(event !== undefined);
   assert.equal(event.commit.ref, afterResult.observation.commit.ref);
   assert.equal(event.previousCommit?.ref, beforeResult.observation.commit.ref);
+  assert.deepEqual(event.snapshotSummary, diff.after.summary);
   assert.equal(event.event.kind, "item");
 });
 
@@ -2014,6 +2026,7 @@ test("searchSemanticEvents finds events by structured fields", async (t) => {
 
   assert.ok(itemEvent !== undefined);
   assert.equal(itemEvent.event.kind, "item");
+  assert.equal(itemEvent.snapshotSummary.rosaries, 731);
   assert.equal(summarySearch.events.length, 1);
   const [summaryEvent] = summarySearch.events;
 

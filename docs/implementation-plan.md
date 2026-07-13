@@ -8,7 +8,7 @@ For architecture and rationale, read `docs/save-history-design.md`, `CONTEXT.md`
 
 - Current phase: P6 Web Integration
 - Next task: P6-T3 Add Local History Web Mode
-- Last updated: 2026-07-12
+- Last updated: 2026-07-14
 
 ## Phase Overview
 
@@ -1329,7 +1329,7 @@ Notes:
 
 ### P6-T3 Add Local History Web Mode
 
-Status: pending
+Status: in progress
 
 Depends on:
 
@@ -1371,9 +1371,15 @@ Acceptance criteria:
 
 Verification:
 
-- `pnpm --filter @silksong-git/web test`: pending
-- `pnpm verify`: pending
+- `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO slice
+- `pnpm --filter @silksong-git/web test`: passed through `pnpm verify`; Local History Web Mode coverage remains pending
+- `pnpm verify`: passed for the local HTTP API 1.1 DTO slice; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
+
+Notes:
+
+- Completed the `packages/history` API 1.1 prerequisite: History, Search, Diff, and incremental events include after-Snapshot summary metrics; Raw Observation history returns summary-bearing entries with explicit `null` for Unrecognized Schema Observations.
+- The local HTTP meta, runtime schemas, and generated OpenAPI contract now describe API 1.1. Local History Web Mode implementation in `apps/web` remains part of this in-progress task.
 
 ### P6-T4 Add UI Open CLI Workflow
 

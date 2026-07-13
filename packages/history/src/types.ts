@@ -1,5 +1,6 @@
 import type {
   DecodedSaveVersion,
+  SaveSummaryMetrics,
   SemanticEvent,
   SemanticEventDirection,
   SemanticSnapshot,
@@ -92,6 +93,7 @@ export interface HistoricalSemanticEvent {
   readonly commit: HistoryCommit;
   readonly previousCommit?: HistoryCommit;
   readonly observation: RawSaveObservation;
+  readonly snapshotSummary: SaveSummaryMetrics;
   readonly event: SemanticEvent;
   readonly visibility: {
     readonly defaultVisible: boolean;
@@ -134,8 +136,13 @@ export interface QueryRawObservationsInput {
 }
 
 export interface RawObservationHistoryResult {
-  readonly observations: readonly RawSaveObservation[];
+  readonly entries: readonly RawObservationHistoryEntry[];
   readonly nextCursor?: string;
+}
+
+export interface RawObservationHistoryEntry {
+  readonly observation: RawSaveObservation;
+  readonly snapshotSummary: SaveSummaryMetrics | null;
 }
 
 type SaveStateSelector =

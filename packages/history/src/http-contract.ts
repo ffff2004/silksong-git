@@ -9,6 +9,7 @@ import type {
   HistoryResult,
   LocalHistoryWatcherStatus,
   ObserveSaveResult,
+  RawObservationHistoryEntry,
   RawObservationHistoryResult,
   RawSaveObservation,
   RestoreEncodedSaveResult,
@@ -18,7 +19,7 @@ import type {
 export interface LocalHttpMeta {
   readonly api: {
     readonly name: "silksong-git-local-history";
-    readonly version: { readonly major: 1; readonly minor: 0 };
+    readonly version: { readonly major: 1; readonly minor: 1 };
   };
   readonly repoPath: string;
   readonly watchedSavePath: string;
@@ -306,6 +307,7 @@ const historicalSemanticEventSchema: z.ZodType<HistoricalSemanticEvent> = z
     commit: historyCommitSchema,
     previousCommit: historyCommitSchema.optional(),
     observation: rawSaveObservationSchema,
+    snapshotSummary: saveSummarySchema,
     event: semanticEventSchema,
     visibility: eventVisibilitySchema,
   })
@@ -316,10 +318,17 @@ const historyResultSchema: z.ZodType<HistoryResult> = z
     nextCursor: z.string().optional(),
   })
   .openapi("HistoryResult");
+const rawObservationHistoryEntrySchema: z.ZodType<RawObservationHistoryEntry> =
+  z
+    .object({
+      observation: rawSaveObservationSchema,
+      snapshotSummary: saveSummarySchema.nullable(),
+    })
+    .openapi("RawObservationHistoryEntry");
 const rawObservationHistoryResultSchema: z.ZodType<RawObservationHistoryResult> =
   z
     .object({
-      observations: z.array(rawSaveObservationSchema).readonly(),
+      entries: z.array(rawObservationHistoryEntrySchema).readonly(),
       nextCursor: z.string().optional(),
     })
     .openapi("RawObservationHistoryResult");
@@ -444,7 +453,7 @@ const restoreResultSchema: z.ZodType<RestoreEncodedSaveResult> = z
     backupPath: z.string().optional(),
   })
   .openapi("RestoreEncodedSaveResult");
-const apiVersionSchema = z.object({ major: z.literal(1), minor: z.literal(0) });
+const apiVersionSchema = z.object({ major: z.literal(1), minor: z.literal(1) });
 const apiIdentitySchema = z.object({
   name: z.literal("silksong-git-local-history"),
   version: apiVersionSchema,

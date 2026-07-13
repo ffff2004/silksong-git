@@ -92,7 +92,16 @@ test("OpenAPI describes the complete authenticated Local History API", () => {
     ]?.schema.$ref,
     "#/components/schemas/LocalHttpMeta",
   );
-  assert.ok(document.components.schemas["HistoricalSemanticEvent"]);
+  const historicalEventSchema =
+    document.components.schemas["HistoricalSemanticEvent"];
+  const rawObservationEntrySchema =
+    document.components.schemas["RawObservationHistoryEntry"];
+  const rawObservationResultSchema =
+    document.components.schemas["RawObservationHistoryResult"];
+
+  assert.ok(historicalEventSchema?.properties?.["snapshotSummary"]);
+  assert.ok(rawObservationEntrySchema?.properties?.["snapshotSummary"]);
+  assert.ok(rawObservationResultSchema?.properties?.["entries"]);
   const errorObjectSchema =
     document.components.schemas["LocalHttpError"]?.properties?.["error"];
   const errorCodeSchema = errorObjectSchema?.properties?.["code"];
@@ -155,7 +164,7 @@ test("authenticated meta reports the versioned Local History API contract", asyn
   assert.deepEqual(await response.json(), {
     api: {
       name: "silksong-git-local-history",
-      version: { major: 1, minor: 0 },
+      version: { major: 1, minor: 1 },
     },
     repoPath,
     watchedSavePath,
@@ -281,25 +290,41 @@ test("save and history GET routes expose public history behavior recent-first", 
   const saveBody = await readJson<{ observation: { commit: { ref: string } } }>(
     save,
   );
-  const historyBody = await readJson<{ events: readonly unknown[] }>(history);
+  const historyBody = await readJson<{
+    events: ReadonlyArray<{ snapshotSummary: { rosaries?: number } }>;
+  }>(history);
   const observationBody = await readJson<{
-    observations: ReadonlyArray<{ commit: { ref: string } }>;
+    entries: ReadonlyArray<{
+      observation: { commit: { ref: string } };
+      snapshotSummary: { rosaries?: number } | null;
+    }>;
   }>(observations);
-  const diffBody = await readJson<{ events: readonly unknown[] }>(diff);
-  const searchBody = await readJson<{ events: readonly unknown[] }>(search);
+  const diffBody = await readJson<{
+    events: ReadonlyArray<{ snapshotSummary: { rosaries?: number } }>;
+  }>(diff);
+  const searchBody = await readJson<{
+    events: ReadonlyArray<{ snapshotSummary: { rosaries?: number } }>;
+  }>(search);
 
   assert.equal(saveBody.observation.commit.ref, after.observation.commit.ref);
   assert.equal(history.status, 200);
   assert.equal(historyBody.events.length, 1);
+  assert.equal(historyBody.events[0]?.snapshotSummary.rosaries, 731);
   assert.equal(observations.status, 200);
   assert.equal(
-    observationBody.observations[0]?.commit.ref,
+    observationBody.entries[0]?.observation.commit.ref,
     after.observation.commit.ref,
   );
+  const [observationEntry] = observationBody.entries;
+
+  assert.ok(observationEntry.snapshotSummary !== null);
+  assert.equal(observationEntry.snapshotSummary.rosaries, 731);
   assert.equal(diff.status, 200);
   assert.equal(diffBody.events.length, 1);
+  assert.equal(diffBody.events[0]?.snapshotSummary.rosaries, 731);
   assert.equal(search.status, 200);
   assert.equal(searchBody.events.length, 1);
+  assert.equal(searchBody.events[0]?.snapshotSummary.rosaries, 731);
 });
 
 test("checkpoint validates bounded strict JSON and preserves observation semantics", async (t) => {

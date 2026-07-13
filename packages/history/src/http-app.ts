@@ -129,7 +129,7 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
         {
           api: {
             name: "silksong-git-local-history" as const,
-            version: { major: 1 as const, minor: 0 as const },
+            version: { major: 1 as const, minor: 1 as const },
           },
           repoPath: input.repoPath,
           watchedSavePath: config.watchedSavePath,

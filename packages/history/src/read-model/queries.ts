@@ -19,6 +19,7 @@ interface EventRow {
   readonly event_index: number;
   readonly observation_json: string;
   readonly previous_observation_json: string | null;
+  readonly snapshot_json: string;
 }
 
 export interface QueryEventsOptions {
@@ -44,6 +45,7 @@ interface SnapshotRow {
 interface ObservationRow {
   readonly observation_json: string;
   readonly sequence: number;
+  readonly snapshot_json: string | null;
 }
 
 type DisplaySemanticEventFilters = Awaited<
@@ -74,12 +76,15 @@ export function selectEventRows(
         events.after_observation_sequence,
         events.event_index,
         after_observations.observation_json as observation_json,
-        before_observations.observation_json as previous_observation_json
+        before_observations.observation_json as previous_observation_json,
+        after_snapshots.snapshot_json as snapshot_json
       from events
       join observations as after_observations
         on after_observations.sequence = events.after_observation_sequence
       left join observations as before_observations
         on before_observations.sequence = events.before_observation_sequence
+      join snapshots as after_snapshots
+        on after_snapshots.snapshot_id = events.after_snapshot_id
       where
         events.after_observation_sequence ${comparison} ?
         or (
@@ -196,12 +201,15 @@ export function selectSearchEventRows(
         events.after_observation_sequence,
         events.event_index,
         after_observations.observation_json as observation_json,
-        before_observations.observation_json as previous_observation_json
+        before_observations.observation_json as previous_observation_json,
+        after_snapshots.snapshot_json as snapshot_json
       from events
       join observations as after_observations
         on after_observations.sequence = events.after_observation_sequence
       left join observations as before_observations
         on before_observations.sequence = events.before_observation_sequence
+      join snapshots as after_snapshots
+        on after_snapshots.snapshot_id = events.after_snapshot_id
       where ${conditions.join(" and ")}
       order by events.after_observation_sequence ${direction}, events.event_index ${direction}
       limit ?
@@ -238,7 +246,10 @@ export function selectRawObservations(
     readonly order?: "asc" | "desc";
   } = {},
 ): {
-  readonly observations: readonly RawSaveObservation[];
+  readonly entries: ReadonlyArray<{
+    readonly observation: RawSaveObservation;
+    readonly snapshotSummary: SemanticSnapshot["summary"] | null;
+  }>;
   readonly nextCursor?: string;
 } {
   const order = options.order ?? "asc";
@@ -250,10 +261,15 @@ export function selectRawObservations(
   const rows = db
     .prepare(
       `
-      select sequence, observation_json
+      select
+        observations.sequence,
+        observations.observation_json,
+        snapshots.snapshot_json
       from observations
-      where sequence ${comparison} ?
-      order by sequence ${direction}
+      left join snapshots
+        on snapshots.observation_sequence = observations.sequence
+      where observations.sequence ${comparison} ?
+      order by observations.sequence ${direction}
       limit ?
     `,
     )
@@ -267,9 +283,15 @@ export function selectRawObservations(
   const lastRow = pageRows.at(-1);
 
   return {
-    observations: pageRows.map(
-      (row) => JSON.parse(row.observation_json) as RawSaveObservation,
-    ),
+    entries: pageRows.map((row) => ({
+      observation: JSON.parse(row.observation_json) as RawSaveObservation,
+      snapshotSummary:
+        row.snapshot_json === null
+          ? // The public contract distinguishes an unrecognized schema from an omitted field.
+            // eslint-disable-next-line unicorn/no-null
+            null
+          : (JSON.parse(row.snapshot_json) as SemanticSnapshot).summary,
+    })),
     ...(options.limit !== undefined
       && rows.length > options.limit
       && lastRow !== undefined && {
@@ -395,6 +417,7 @@ export function toHistoricalSemanticEvent(
       ? undefined
       : (JSON.parse(row.previous_observation_json) as RawSaveObservation);
   const event = JSON.parse(row.event_json) as SemanticEvent;
+  const snapshot = JSON.parse(row.snapshot_json) as SemanticSnapshot;
   const visibility = getEventVisibility(event, filters);
 
   return {
@@ -402,6 +425,7 @@ export function toHistoricalSemanticEvent(
     commit: observation.commit,
     previousCommit: previousObservation?.commit,
     observation,
+    snapshotSummary: snapshot.summary,
     event,
     visibility,
   };

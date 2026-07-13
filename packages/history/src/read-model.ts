@@ -257,6 +257,7 @@ async function diffAvailableReadModelCommits(
       commit: to,
       previousCommit: from,
       observation,
+      snapshotSummary: after.summary,
       event,
       visibility: getEventVisibility(event, filters),
     })),
@@ -428,6 +429,7 @@ function appendObservationInTransaction(
         commit: observation.commit,
         previousCommit: previousObservation?.commit,
         observation,
+        snapshotSummary: snapshot.summary,
         event: storedEvent,
         visibility: getEventVisibility(
           storedEvent,

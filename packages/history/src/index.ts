@@ -67,6 +67,7 @@ export type {
   ProjectConfigOverrides,
   QueryHistoryInput,
   QueryRawObservationsInput,
+  RawObservationHistoryEntry,
   RawObservationHistoryResult,
   RawSaveObservation,
   ReadEncodedSaveInput,
