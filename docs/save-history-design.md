@@ -445,7 +445,7 @@ interface ObserveSaveInput {
   observedAt?: Date;
   trigger?: "watcher" | "manualCheckpoint";
   message?: string;
-  force?: boolean;
+  allowUnchanged?: boolean;
 }
 
 type ObserveSaveResult =
@@ -456,8 +456,14 @@ type ObserveSaveResult =
     }
   | {
       status: "skipped";
-      reason: "unchanged" | "minimumCommitInterval";
+      reason: "unchanged";
       encodedSha256: string;
+    }
+  | {
+      status: "skipped";
+      reason: "minimumCommitInterval";
+      encodedSha256: string;
+      nextAllowedAt: string;
     }
   | {
       status: "watcherError";

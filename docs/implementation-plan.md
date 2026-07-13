@@ -497,12 +497,12 @@ TDD Vertical Slices:
   - Public call: observe one recognized Encoded Save and one unrecognized-schema Encoded Save, then `rebuildSemanticReadModel({ repoPath })` and `queryHistory({ repoPath, includeRawObservations: true })`.
   - Assert: rebuild counts recognized and unrecognized observations separately; the unrecognized observation is returned as raw observation metadata but produces no Semantic Snapshot or Semantic Event.
   - Fixture: `packages/core/src/decode/fixtures/unrecognized-schema-save.dat` plus a recognized encoded save fixture.
-  - Other information: covers ADR-0016 behavior during rebuild, not only during live observation.
+  - Other information: covers ADR-0016 behavior during rebuild, not only during live observation. This records the Interface at P4-T2 completion; P5-T7 later replaced combined raw-observation results with independent `queryRawObservations` pagination.
 - [x] Query history supports raw observations and pagination
   - Public call: create at least three recognized observations, rebuild, then call `queryHistory({ repoPath, includeRawObservations: true, limit })` followed by the returned cursor.
   - Assert: event pages are stable and non-overlapping; `rawObservations` is present only when requested; every returned event still includes its Raw Save Observation metadata.
   - Fixture: generated committed encoded save sequence with multiple semantic transitions.
-  - Other information: cursor format remains opaque to callers.
+  - Other information: cursor format remains opaque to callers. This records the Interface at P4-T2 completion; P5-T7 superseded it with separate `queryHistory` and `queryRawObservations` results and cursors.
 - [x] Diff commits returns Semantic Snapshots and Historical Semantic Events
   - Public call: observe two recognized saves, rebuild, then `diffCommits({ repoPath, fromRef, toRef })`.
   - Assert: result includes the resolved `from` and `to` commits, `before` and `after` Semantic Snapshots, and the Semantic Events between those two commits with commit and observation metadata.
