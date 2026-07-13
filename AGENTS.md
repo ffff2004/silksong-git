@@ -95,13 +95,11 @@ When both an ADR and a commit body are needed, the ADR records the durable decis
 
 ## Validation
 
-During implementation, prefer the narrowest relevant package command for fast behavioral feedback:
+During implementation, prefer the narrowest relevant package test for fast behavioral feedback:
 
 ```sh
 pnpm --filter <changed-package> test
 ```
-
-Run multiple validation commands serially, not in parallel.
 
 Expand to dependent packages or full `pnpm test` when a change affects shared Interfaces, cross-package behavior, root tooling, fixtures, or integration paths.
 
@@ -111,7 +109,7 @@ Before commit, run the full repository verification:
 pnpm verify
 ```
 
-`pnpm verify` runs formatting, linting, tests, builds, and custom verifications.
+`pnpm verify` runs formatting, linting, tests, builds, and custom verifications. It takes more than 90 seconds.
 
 If only `*.md` changed, `pnpm verify` may be skipped; run at least `pnpm format`.
 
