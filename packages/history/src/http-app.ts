@@ -28,7 +28,12 @@ import {
   searchSemanticEvents,
 } from "./history-interface.ts";
 import type { LocalHttpErrorCode } from "./http-contract.ts";
-import { localHttpCapabilities, localHttpRoutes } from "./http-contract.ts";
+import {
+  localHttpApiName,
+  localHttpApiVersion,
+  localHttpCapabilities,
+  localHttpRoutes,
+} from "./http-contract.ts";
 import { restoreEncodedSave } from "./restore.ts";
 import { getSaveState, readEncodedSave } from "./save-state.ts";
 import type { LocalHistoryWatcherStatus } from "./types.ts";
@@ -128,8 +133,8 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
       return c.json(
         {
           api: {
-            name: "silksong-git-local-history" as const,
-            version: { major: 1 as const, minor: 1 as const },
+            name: localHttpApiName,
+            version: localHttpApiVersion,
           },
           repoPath: input.repoPath,
           watchedSavePath: config.watchedSavePath,

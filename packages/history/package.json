@@ -11,6 +11,10 @@
     "./http-contract": {
       "types": "./src/http-contract.ts",
       "default": "./src/http-contract.ts"
+    },
+    "./http-wire": {
+      "types": "./src/http-wire.ts",
+      "default": "./src/http-wire.ts"
     }
   },
   "scripts": {

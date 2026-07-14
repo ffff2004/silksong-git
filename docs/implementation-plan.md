@@ -1372,15 +1372,19 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO slice
-- `pnpm --filter @silksong-git/web test`: passed for the explicit `ProgressSnapshotView` rendering seam; remaining Local History Web Mode coverage is pending
-- `pnpm verify`: passed for the local HTTP API 1.1 DTO slice; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test`: passed for the explicit `ProgressSnapshotView` rendering seam and the first `LocalHistoryClient` metadata/compatibility seam; remaining Local History Web Mode coverage is pending
+- `pnpm verify`: passed after the LocalHistoryClient metadata/compatibility slice; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
 
 - Completed the `packages/history` API 1.1 prerequisite: History, Search, Diff, and incremental events include after-Snapshot summary metrics; Raw Observation history returns summary-bearing entries with explicit `null` for Unrecognized Schema Observations.
 - The local HTTP meta, runtime schemas, and generated OpenAPI contract now describe API 1.1. Local History Web Mode implementation in `apps/web` remains part of this in-progress task.
-- Extracted `ProgressSnapshotView` with an explicit Semantic Snapshot input. The existing `ProgressView` delegates to it, while Progress sections, items, and TOC read from its private rendering context instead of the application Save Store, establishing the reuse seam required by Semantic Diff.
+
+TDD vertical slices:
+
+- [x] `ProgressSnapshotView` accepts an explicit Semantic Snapshot; `ProgressView` delegates to it, and Progress sections, items, and TOC render through its private context rather than the application Save Store.
+- [x] `LocalHistoryClient` reads authenticated `/api/v1/meta` responses through the browser-safe wire schemas, accepts unknown capabilities, validates compatibility, and classifies authentication failures without automatic retry.
 
 ### P6-T4 Add UI Open CLI Workflow
 

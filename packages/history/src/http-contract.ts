@@ -1,6 +1,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { SemanticEvent, SemanticSnapshot } from "@silksong-git/core";
 
+import { localHttpErrorSchema, localHttpMetaSchema } from "./http-wire.ts";
 import type {
   DiffCommitsResult,
   GetSaveStateResult,
@@ -16,53 +17,20 @@ import type {
   SearchSemanticEventsResult,
 } from "./types.ts";
 
-export interface LocalHttpMeta {
-  readonly api: {
-    readonly name: "silksong-git-local-history";
-    readonly version: { readonly major: 1; readonly minor: 1 };
-  };
-  readonly repoPath: string;
-  readonly watchedSavePath: string;
-  readonly capabilities: readonly LocalHttpCapability[];
-}
-
-export const localHttpCapabilities = [
-  "watcherStatus",
-  "saveState",
-  "history",
-  "rawObservations",
-  "diff",
-  "search",
-  "checkpoint",
-  "exportEncodedSave",
-  "restoreInPlace",
-] as const;
-
-export type LocalHttpCapability = (typeof localHttpCapabilities)[number];
-
-export const localHttpErrorCodes = [
-  "invalid_request",
-  "unauthorized",
-  "route_not_found",
-  "commit_not_found",
-  "observation_not_found",
-  "method_not_allowed",
-  "request_timeout",
-  "repository_busy",
-  "restore_conflict",
-  "payload_too_large",
-  "unsupported_media_type",
-  "save_decode_failed",
-  "restore_configuration_invalid",
-  "restore_backup_failed",
-  "restore_write_failed",
-  "restore_verification_failed",
-  "internal_error",
-  "watched_save_unavailable",
-  "read_model_unavailable",
-] as const;
-
-export type LocalHttpErrorCode = (typeof localHttpErrorCodes)[number];
+export {
+  localHttpApiName,
+  localHttpApiVersion,
+  localHttpCapabilities,
+  localHttpErrorCodes,
+  localHttpErrorSchema,
+  localHttpMetaSchema,
+} from "./http-wire.ts";
+export type {
+  LocalHttpCapability,
+  LocalHttpError,
+  LocalHttpErrorCode,
+  LocalHttpMeta,
+} from "./http-wire.ts";
 
 export const refSchema = z.string().min(1).max(1024);
 export const cursorSchema = z.string().min(1).max(4096);
@@ -453,29 +421,8 @@ const restoreResultSchema: z.ZodType<RestoreEncodedSaveResult> = z
     backupPath: z.string().optional(),
   })
   .openapi("RestoreEncodedSaveResult");
-const apiVersionSchema = z.object({ major: z.literal(1), minor: z.literal(1) });
-const apiIdentitySchema = z.object({
-  name: z.literal("silksong-git-local-history"),
-  version: apiVersionSchema,
-});
-const capabilitySchema = z.enum(localHttpCapabilities);
-const capabilitiesSchema = z.array(capabilitySchema).readonly();
-const metaSchema: z.ZodType<LocalHttpMeta> = z
-  .object({
-    api: apiIdentitySchema,
-    repoPath: z.string(),
-    watchedSavePath: z.string(),
-    capabilities: capabilitiesSchema,
-  })
-  .openapi("LocalHttpMeta");
-const errorSchema = z
-  .object({
-    error: z.object({
-      code: z.enum(localHttpErrorCodes),
-      message: z.string(),
-    }),
-  })
-  .openapi("LocalHttpError");
+const metaSchema = localHttpMetaSchema.openapi("LocalHttpMeta");
+const errorSchema = localHttpErrorSchema.openapi("LocalHttpError");
 function jsonSuccess(schema: z.ZodType) {
   return {
     description: "Successful response.",

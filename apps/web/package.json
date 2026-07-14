@@ -13,6 +13,7 @@
   "dependencies": {
     "@monaco-editor/loader": "1.7.0",
     "@silksong-git/core": "workspace:*",
+    "@silksong-git/history": "workspace:*",
     "@solidjs/router": "^0.16.1",
     "complete-common": "2.29.0",
     "monaco-editor": "0.55.1",
