@@ -46,12 +46,10 @@ describe("LocalHistoryClient", () => {
       repoPath: "/tmp/history-repo",
       watchedSavePath: "/tmp/user1.dat",
     });
-    expect(requests).toEqual([
-      {
-        headers: { Authorization: "Bearer session-token" },
-        url: "http://127.0.0.1:4312/api/v1/meta",
-      },
-    ]);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url).toBe("http://127.0.0.1:4312/api/v1/meta");
+    const headers = new Headers(requests[0]?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer session-token");
   });
 
   it("accepts a compatible metadata response with additional capabilities", () => {

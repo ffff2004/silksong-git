@@ -660,3 +660,13 @@ export const {
 
 export type LocalHttpMeta = z.infer<typeof localHttpMetaSchema>;
 export type LocalHttpError = z.infer<typeof localHttpErrorSchema>;
+export type LocalHttpSaveState = z.infer<typeof saveStateResultSchema>;
+export type LocalHttpHistoryResult = z.infer<typeof historyResultSchema>;
+export type LocalHttpObservationHistoryResult = z.infer<
+  typeof rawObservationHistoryResultSchema
+>;
+export type LocalHttpDiffResult = z.infer<typeof diffCommitsResultSchema>;
+export type LocalHttpSearchResult = z.infer<typeof searchResultSchema>;
+export type LocalHttpWatcherStatus = z.infer<typeof watcherStatusSchema>;
+export type LocalHttpCheckpointResult = z.infer<typeof observeSaveResultSchema>;
+export type LocalHttpRestoreResult = z.infer<typeof restoreResultSchema>;

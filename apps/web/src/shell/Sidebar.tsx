@@ -1,9 +1,12 @@
 import { A, useLocation } from "@solidjs/router";
+import { Show } from "solid-js";
 
 import { assetUrl } from "../app/asset-url.ts";
+import { useLocalHistoryStore } from "../state/local-history-store.tsx";
 
 export function Sidebar() {
   const location = useLocation();
+  const localHistory = useLocalHistoryStore();
   const isActive = (path: string) => location.pathname === path;
 
   return (
@@ -64,6 +67,29 @@ export function Sidebar() {
         >
           Raw Save Data
         </A>
+        <Show when={localHistory.connection().kind === "connected"}>
+          <A
+            href="/history"
+            class="sidebar-item"
+            classList={{ "is-active": isActive("/history") }}
+          >
+            History
+          </A>
+          <A
+            href="/diff"
+            class="sidebar-item"
+            classList={{ "is-active": isActive("/diff") }}
+          >
+            Compare
+          </A>
+          <A
+            href="/watcher"
+            class="sidebar-item"
+            classList={{ "is-active": isActive("/watcher") }}
+          >
+            Watcher
+          </A>
+        </Show>
       </div>
     </aside>
   );

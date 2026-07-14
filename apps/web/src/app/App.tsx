@@ -1,8 +1,12 @@
 import { HashRouter, Route } from "@solidjs/router";
 
+import { DiffRoute } from "../features/history/DiffView.tsx";
+import { HistoryRoute } from "../features/history/HistoryView.tsx";
+import { CurrentSaveRoute } from "../features/local-history/LocalRoute.tsx";
 import { MapView } from "../features/map/MapView.tsx";
 import { ProgressView } from "../features/progress/ProgressView.tsx";
 import { RawSaveView } from "../features/raw-save/RawSaveView.tsx";
+import { WatcherRoute } from "../features/watcher/WatcherView.tsx";
 import { LocalHistoryProvider } from "../state/local-history-store.tsx";
 import { PreferencesProvider } from "../state/preferences-store.tsx";
 import { SaveProvider } from "../state/save-store.tsx";
@@ -16,10 +20,41 @@ export function App() {
         <SaveProvider>
           <LocalHistoryProvider>
             <HashRouter root={AppShell}>
-              <Route path="/" component={ProgressView} />
-              <Route path="/progress" component={ProgressView} />
-              <Route path="/map" component={MapView} />
-              <Route path="/raw-save" component={RawSaveView} />
+              <Route
+                path="/"
+                component={() => (
+                  <CurrentSaveRoute>
+                    <ProgressView />
+                  </CurrentSaveRoute>
+                )}
+              />
+              <Route
+                path="/progress"
+                component={() => (
+                  <CurrentSaveRoute>
+                    <ProgressView />
+                  </CurrentSaveRoute>
+                )}
+              />
+              <Route
+                path="/map"
+                component={() => (
+                  <CurrentSaveRoute>
+                    <MapView />
+                  </CurrentSaveRoute>
+                )}
+              />
+              <Route
+                path="/raw-save"
+                component={() => (
+                  <CurrentSaveRoute>
+                    <RawSaveView />
+                  </CurrentSaveRoute>
+                )}
+              />
+              <Route path="/history" component={HistoryRoute} />
+              <Route path="/diff" component={DiffRoute} />
+              <Route path="/watcher" component={WatcherRoute} />
               <Route path="*404" component={ProgressView} />
             </HashRouter>
           </LocalHistoryProvider>

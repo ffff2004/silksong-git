@@ -19,6 +19,41 @@ const intersectionState: {
   callback: undefined,
 };
 
+const localHistoryMeta = {
+  api: {
+    name: "silksong-git-local-history",
+    version: { major: 1, minor: 1 },
+  },
+  repoPath: "/tmp/history-repo",
+  watchedSavePath: "/tmp/user1.dat",
+  capabilities: [
+    "watcherStatus",
+    "saveState",
+    "history",
+    "rawObservations",
+    "diff",
+    "search",
+    "checkpoint",
+    "exportEncodedSave",
+    "restoreInPlace",
+  ],
+};
+
+const latestObservation = {
+  commit: {
+    ref: "abcdef1234567890",
+    shortRef: "abcdef1",
+    committedAt: "2026-07-14T00:00:00.000Z",
+  },
+  observedAt: "2026-07-14T00:00:00.000Z",
+  trigger: "watcher",
+  sourcePath: "/tmp/user1.dat",
+  encodedSha256: "a".repeat(64),
+  decodedSha256: "b".repeat(64),
+  decoderVersion: "test",
+  schema: { status: "recognized", saveSchemaVersion: "1" },
+};
+
 class MockIntersectionObserver {
   readonly disconnect = vi.fn();
   readonly observe = vi.fn();
@@ -57,30 +92,45 @@ describe("Solid Web app routing", () => {
     ).toBe("#/progress");
   });
 
+  it("keeps Local-only URLs behind a connection-required state", async () => {
+    globalThis.location.hash = "#/history";
+    render(() => <App />);
+
+    expect(
+      await screen.findByTestId("local-connection-required"),
+    ).toBeDefined();
+    expect(screen.getByText("Local History connection required")).toBeDefined();
+  });
+
   it("connects Local History and clears the uploaded Static Save", async () => {
+    let requestCount = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        Response.json({
-          api: {
-            name: "silksong-git-local-history",
-            version: { major: 1, minor: 1 },
-          },
-          repoPath: "/tmp/history-repo",
-          watchedSavePath: "/tmp/user1.dat",
-          capabilities: [
-            "watcherStatus",
-            "saveState",
-            "history",
-            "rawObservations",
-            "diff",
-            "search",
-            "checkpoint",
-            "exportEncodedSave",
-            "restoreInPlace",
-          ],
-        }),
-      ),
+      vi.fn(async () => {
+        requestCount++;
+        if (requestCount === 2) {
+          return Response.json({
+            status: "available",
+            observation: latestObservation,
+            decodedSave: { playerData: { geo: 1234 } },
+            semanticSnapshot: {
+              items: [],
+              summary: {
+                completionPercentage: 81,
+                playTime: 9876,
+                rosaries: 1234,
+                shellShards: 88,
+              },
+              version: {
+                saveSchemaVersion: "1",
+                semanticCoreVersion: "test",
+              },
+            },
+          });
+        }
+
+        return Response.json(localHistoryMeta);
+      }),
     );
 
     render(() => <App />);
@@ -109,8 +159,58 @@ describe("Solid Web app routing", () => {
     expect(
       document.querySelector('[data-testid="progress-view"]'),
     ).not.toBeNull();
+    await waitFor(() => {
+      expect(document.querySelector("#completionValue")?.textContent).toBe(
+        "81%",
+      );
+    });
+    expect(document.querySelector("#playtimeValue")?.textContent).toBe(
+      "2h 44m",
+    );
+    expect(document.querySelector("#rosariesValue")?.textContent).toBe("1234");
+    expect(document.querySelector("#shardsValue")?.textContent).toBe("88");
     expect(document.querySelector("#upload-save")).toBeNull();
     expect(document.querySelector("#clearDataBtn")).toBeNull();
+  });
+
+  it("uses History for the empty search and Search API for submitted text", async () => {
+    globalThis.location.hash = "#/history";
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        urls.push(url);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        return Response.json({ events: [] });
+      }),
+    );
+
+    render(() => <App />);
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+    fireEvent.input(getRequiredElement("#local-history-token"), {
+      target: { value: "session-token" },
+    });
+    fireEvent.click(getRequiredElement("#local-history-connect"));
+    expect(await screen.findByTestId("history-view")).toBeDefined();
+    await waitFor(() => {
+      expect(urls.some((url) => url.includes("/api/v1/history"))).toBe(true);
+    });
+
+    fireEvent.input(getRequiredElement("#history-search-text"), {
+      target: { value: "Bell Beast" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() => {
+      expect(
+        urls.some((url) => url.includes("/api/v1/search?text=Bell+Beast")),
+      ).toBe(true);
+    });
   });
 
   it("loads decoded JSON through Static Web Mode and renders summary metrics", async () => {
@@ -418,6 +518,16 @@ function getRequiredElement(selector: string): HTMLElement {
   }
 
   return element;
+}
+
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.href;
+  }
+  return input.url;
 }
 
 function getCssRuleBody(selector: string): string {

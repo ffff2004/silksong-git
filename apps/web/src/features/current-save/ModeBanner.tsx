@@ -2,6 +2,7 @@ import { Show } from "solid-js";
 
 import { assetUrl } from "../../app/asset-url.ts";
 import { useSaveStore } from "../../state/save-store.tsx";
+import styles from "../local-history/SaveBanner.module.css";
 
 export function ModeBanner() {
   const saveStore = useSaveStore();
@@ -10,6 +11,7 @@ export function ModeBanner() {
   return (
     <div
       id="modeBanner"
+      class={styles["mode-banner"]}
       classList={{ hidden: !saveStore.hasSave(), steel: isSteelSoul() }}
     >
       <Show when={saveStore.hasSave()}>

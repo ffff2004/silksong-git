@@ -2,6 +2,7 @@ import type {
   SemanticSnapshot,
   SemanticSnapshotItem,
 } from "@silksong-git/core";
+import type { LocalHttpSaveState } from "@silksong-git/history/http-wire";
 import type { JSX } from "solid-js";
 import { createContext, createMemo, createSignal, useContext } from "solid-js";
 
@@ -13,11 +14,22 @@ interface SaveStore {
   readonly hasSave: () => boolean;
   readonly isLoading: () => boolean;
   readonly loadFile: (file: File | undefined) => Promise<LoadFileResult>;
+  readonly loadLocalState: (
+    state: LocalHttpSaveState,
+    source?: Extract<DisplayedSaveSource, { readonly kind: "localCommit" }>,
+  ) => void;
   readonly mode: () => SaveMode;
   readonly semanticItem: (itemId: string) => SemanticSnapshotItem | undefined;
   readonly snapshot: () => SemanticSnapshot | undefined;
+  readonly source: () => DisplayedSaveSource;
   readonly clear: () => void;
 }
+
+export type DisplayedSaveSource =
+  | { readonly kind: "empty" }
+  | { readonly kind: "static" }
+  | { readonly kind: "localLatest" }
+  | { readonly commit: string; readonly kind: "localCommit" };
 
 type LoadFileResult =
   | { readonly ok: true }
@@ -33,6 +45,9 @@ export function SaveProvider(props: { readonly children: JSX.Element }) {
   >(new Map());
   const [mode, setMode] = createSignal<SaveMode>("normal");
   const [isLoading, setIsLoading] = createSignal(false);
+  const [source, setSource] = createSignal<DisplayedSaveSource>({
+    kind: "empty",
+  });
   const hasSave = createMemo(() => decodedSave() !== undefined);
 
   const store: SaveStore = {
@@ -51,6 +66,7 @@ export function SaveProvider(props: { readonly children: JSX.Element }) {
         setSnapshot(loadedSave.snapshot);
         setSemanticItemsById(loadedSave.semanticItemsById);
         setMode(loadedSave.mode);
+        setSource({ kind: "static" });
 
         return { ok: true };
       } catch (error) {
@@ -60,20 +76,47 @@ export function SaveProvider(props: { readonly children: JSX.Element }) {
         setIsLoading(false);
       }
     },
+    loadLocalState(state, localSource) {
+      if (state.status === "empty") {
+        store.clear();
+        setSource(localSource ?? { kind: "localLatest" });
+        return;
+      }
+
+      setDecodedSave(state.decodedSave);
+      setSnapshot(state.semanticSnapshot ?? undefined);
+      setSemanticItemsById(
+        new Map(
+          (state.semanticSnapshot?.items ?? []).map((item) => [item.id, item]),
+        ),
+      );
+      setMode(
+        isSteelSoulMode(state.semanticSnapshot?.summary.permadeathMode)
+          ? "steel"
+          : "normal",
+      );
+      setSource(localSource ?? { kind: "localLatest" });
+    },
     mode,
     semanticItem: (itemId) => semanticItemsById().get(itemId),
     snapshot,
+    source,
     clear() {
       setDecodedSave(undefined);
       setSnapshot(undefined);
       setSemanticItemsById(new Map());
       setMode("normal");
+      setSource({ kind: "empty" });
     },
   };
 
   return (
     <SaveContext.Provider value={store}>{props.children}</SaveContext.Provider>
   );
+}
+
+function isSteelSoulMode(permadeathMode: unknown): boolean {
+  return [1, 2, 3, "Dead", "On"].includes(permadeathMode as never);
 }
 
 export function useSaveStore(): SaveStore {

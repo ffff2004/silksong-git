@@ -1388,6 +1388,9 @@ TDD vertical slices:
 - [x] All Local History endpoint request/response schemas live in the browser-safe `http-wire` module; `http-contract` only decorates those schemas for OpenAPI route registration.
 - [x] `LocalHistoryProvider` establishes an in-memory authenticated compatibility session through the Topbar connection dialog; a successful connection clears Static Save state and returns to latest Progress.
 - [x] Connected Local History mode hides the Static Save upload/reset controls while preserving them for disconnected Static Web Mode.
+- [x] Connected Local History loads and renders the latest Save State through `LocalHistoryClient`, `LocalHistoryRuntime`, and the explicit SaveStore Local source seam.
+- [x] Local-only History, Diff, and Watcher routes preserve direct URLs behind a connection-required state; selected commit URLs load through the same Current Save routes and expose a stable Back to Latest banner.
+- [x] History Events and Observations views use one search form, selecting `/history` with no submitted fields and `/search` for submitted text while retaining a Local-only connection boundary.
 
 ### P6-T4 Add UI Open CLI Workflow
 
