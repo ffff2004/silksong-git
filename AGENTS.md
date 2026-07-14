@@ -103,6 +103,8 @@ pnpm --filter <changed-package> test
 
 Expand to dependent packages or full `pnpm test` when a change affects shared Interfaces, cross-package behavior, root tooling, fixtures, or integration paths.
 
+Do not run `pnpm --filter <changed-package> format/lint`, since `pnpm verify` covers formatting and cross-package linting.
+
 Before commit, run the full repository verification:
 
 ```sh
