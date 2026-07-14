@@ -219,6 +219,102 @@ describe("Solid Web app routing", () => {
     });
   });
 
+  it("loads older History Events and merges commit groups across cursor pages", async () => {
+    globalThis.location.hash = "#/history";
+    const snapshot = createWireSemanticSnapshot();
+    const [firstItem, secondItem, thirdItem] = snapshot.items;
+    if (
+      firstItem === undefined
+      || secondItem === undefined
+      || thirdItem === undefined
+    ) {
+      throw new Error("Expected at least three Semantic Snapshot items.");
+    }
+
+    const newestCommit = {
+      committedAt: "2026-07-14T00:00:00.000Z",
+      ref: "newest-commit",
+      shortRef: "newest",
+    };
+    const olderCommit = {
+      committedAt: "2026-07-13T00:00:00.000Z",
+      ref: "older-commit",
+      shortRef: "older",
+    };
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        urls.push(url);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/history?cursor=older-events")) {
+          return Response.json({
+            events: [
+              createHistoricalItemEvent(
+                "event-2",
+                newestCommit,
+                firstItem,
+                snapshot.summary,
+                snapshot.version,
+              ),
+              createHistoricalItemEvent(
+                "event-3",
+                olderCommit,
+                thirdItem,
+                snapshot.summary,
+                snapshot.version,
+              ),
+            ],
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [
+              createHistoricalItemEvent(
+                "event-1",
+                newestCommit,
+                secondItem,
+                snapshot.summary,
+                snapshot.version,
+              ),
+            ],
+            nextCursor: "older-events",
+          });
+        }
+        return Response.json({ events: [] });
+      }),
+    );
+
+    render(() => <App />);
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+    fireEvent.input(getRequiredElement("#local-history-token"), {
+      target: { value: "session-token" },
+    });
+    fireEvent.click(getRequiredElement("#local-history-connect"));
+
+    expect(await screen.findByText(secondItem.label)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Load More" }));
+
+    await waitFor(() => {
+      expect(urls.some((url) => url.includes("cursor=older-events"))).toBe(
+        true,
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId("history-commit-card")).toHaveLength(2);
+    });
+    expect(screen.getByText(firstItem.label)).toBeDefined();
+    expect(screen.getByText(secondItem.label)).toBeDefined();
+    expect(screen.getByText(thirdItem.label)).toBeDefined();
+    expect(globalThis.location.hash).not.toContain("cursor=");
+  });
+
   it("renders Semantic Diff changes through the Progress view seam", async () => {
     globalThis.location.hash = "#/diff?from=before&to=after";
     const before = createWireSemanticSnapshot();
@@ -660,6 +756,41 @@ function getProgressCard(label: string): HTMLElement | undefined {
 function createWireSemanticSnapshot() {
   const mapping = getBuiltinMappingData();
   return createSemanticSnapshot(parseDecodedSave(decodedSave), mapping);
+}
+
+function createHistoricalItemEvent(
+  id: string,
+  commit: typeof latestObservation.commit,
+  item: ReturnType<typeof createWireSemanticSnapshot>["items"][number],
+  snapshotSummary: ReturnType<typeof createWireSemanticSnapshot>["summary"],
+  snapshotVersion: ReturnType<typeof createWireSemanticSnapshot>["version"],
+) {
+  return {
+    commit,
+    event: {
+      after: { status: item.status, value: item.value },
+      before: { status: "missing", value: false },
+      direction: "progression",
+      eventType: "itemStatusChanged",
+      isRegression: false,
+      item: {
+        id: item.id,
+        label: item.label,
+        sectionId: item.sectionId,
+        type: item.type,
+      },
+      kind: "item",
+      sourceReferences: item.sourceReferences,
+      version: {
+        after: snapshotVersion,
+        before: snapshotVersion,
+      },
+    },
+    id,
+    observation: { ...latestObservation, commit },
+    snapshotSummary,
+    visibility: { defaultVisible: true, filterReasons: [] },
+  };
 }
 
 function getButtonByText(label: string): HTMLButtonElement | undefined {

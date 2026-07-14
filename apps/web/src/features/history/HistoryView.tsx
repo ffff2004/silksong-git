@@ -40,7 +40,12 @@ function HistoryView() {
     setError(error_ instanceof Error ? error_.message : "History unavailable.");
   }
 
-  async function loadEvents() {
+  async function loadEvents(
+    input: {
+      readonly append?: boolean;
+      readonly cursor?: string;
+    } = {},
+  ) {
     const connection = localHistory.connection();
     if (connection.kind !== "connected") {
       return;
@@ -52,9 +57,20 @@ function HistoryView() {
       const query = text().trim();
       const result =
         query === ""
-          ? await connection.session.client.getHistory()
-          : await connection.session.client.search({ text: query });
-      setHistory(result);
+          ? await connection.session.client.getHistory({ cursor: input.cursor })
+          : await connection.session.client.search({
+              text: query,
+              cursor: input.cursor,
+            });
+      const current = history();
+      setHistory(
+        input.append === true && current !== undefined
+          ? {
+              events: [...current.events, ...result.events],
+              nextCursor: result.nextCursor,
+            }
+          : result,
+      );
     } catch (error_) {
       setError(
         error_ instanceof Error ? error_.message : "History unavailable.",
@@ -157,7 +173,7 @@ function HistoryView() {
       <Show when={isLoading()}>
         <p>Loading history…</p>
       </Show>
-      <Show when={!isLoading() && view() === "events"}>
+      <Show when={view() === "events"}>
         <div data-testid="history-events">
           <Show
             when={history()?.events.length}
@@ -180,6 +196,20 @@ function HistoryView() {
             </For>
           </Show>
         </div>
+      </Show>
+      <Show when={view() === "events" && history()?.nextCursor !== undefined}>
+        <button
+          class="btn-reset"
+          type="button"
+          disabled={isLoading()}
+          onClick={() => {
+            loadEvents({ append: true, cursor: history()?.nextCursor }).catch(
+              handleUnexpectedLoadError,
+            );
+          }}
+        >
+          Load More
+        </button>
       </Show>
       <Show when={!isLoading() && view() === "observations"}>
         <div data-testid="history-observations">
