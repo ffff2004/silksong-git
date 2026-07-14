@@ -315,6 +315,88 @@ describe("Solid Web app routing", () => {
     expect(globalThis.location.hash).not.toContain("cursor=");
   });
 
+  it("paginates Raw Save Observations with an independent cursor", async () => {
+    globalThis.location.hash = "#/history";
+    const snapshot = createWireSemanticSnapshot();
+    const newestCommit = {
+      committedAt: "2026-07-14T00:00:00.000Z",
+      ref: "newest-observation-commit",
+      shortRef: "newest-observation",
+    };
+    const olderCommit = {
+      committedAt: "2026-07-13T00:00:00.000Z",
+      ref: "older-observation-commit",
+      shortRef: "older-observation",
+    };
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        urls.push(url);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [],
+            nextCursor: "event-only-cursor",
+          });
+        }
+        if (url.includes("/api/v1/observations?cursor=older-observations")) {
+          return Response.json({
+            entries: [
+              {
+                observation: { ...latestObservation, commit: olderCommit },
+                snapshotSummary: snapshot.summary,
+              },
+            ],
+          });
+        }
+        if (url.includes("/api/v1/observations")) {
+          return Response.json({
+            entries: [
+              {
+                observation: { ...latestObservation, commit: newestCommit },
+                snapshotSummary: snapshot.summary,
+              },
+            ],
+            nextCursor: "older-observations",
+          });
+        }
+        return Response.json({ events: [] });
+      }),
+    );
+
+    render(() => <App />);
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+    fireEvent.input(getRequiredElement("#local-history-token"), {
+      target: { value: "session-token" },
+    });
+    fireEvent.click(getRequiredElement("#local-history-connect"));
+    expect(await screen.findByTestId("history-view")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Observations" }));
+    expect(await screen.findByText("newest-observation")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Load More" }));
+
+    expect(await screen.findByText("older-observation")).toBeDefined();
+    expect(urls.some((url) => url.includes("cursor=older-observations"))).toBe(
+      true,
+    );
+    expect(
+      urls.some(
+        (url) =>
+          url.includes("/api/v1/observations")
+          && url.includes("cursor=event-only-cursor"),
+      ),
+    ).toBe(false);
+    expect(globalThis.location.hash).not.toContain("cursor=");
+  });
+
   it("renders Semantic Diff changes through the Progress view seam", async () => {
     globalThis.location.hash = "#/diff?from=before&to=after";
     const before = createWireSemanticSnapshot();

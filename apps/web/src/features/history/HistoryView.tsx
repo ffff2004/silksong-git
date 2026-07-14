@@ -80,7 +80,12 @@ function HistoryView() {
     }
   }
 
-  async function loadObservations() {
+  async function loadObservations(
+    input: {
+      readonly append?: boolean;
+      readonly cursor?: string;
+    } = {},
+  ) {
     const connection = localHistory.connection();
     if (connection.kind !== "connected") {
       return;
@@ -89,7 +94,18 @@ function HistoryView() {
     setIsLoading(true);
     setError(undefined);
     try {
-      setObservations(await connection.session.client.getObservations());
+      const result = await connection.session.client.getObservations({
+        cursor: input.cursor,
+      });
+      const current = observations();
+      setObservations(
+        input.append === true && current !== undefined
+          ? {
+              entries: [...current.entries, ...result.entries],
+              nextCursor: result.nextCursor,
+            }
+          : result,
+      );
     } catch (error_) {
       setError(
         error_ instanceof Error ? error_.message : "History unavailable.",
@@ -211,7 +227,7 @@ function HistoryView() {
           Load More
         </button>
       </Show>
-      <Show when={!isLoading() && view() === "observations"}>
+      <Show when={view() === "observations"}>
         <div data-testid="history-observations">
           <Show
             when={observations()?.entries.length}
@@ -232,6 +248,25 @@ function HistoryView() {
             </For>
           </Show>
         </div>
+      </Show>
+      <Show
+        when={
+          view() === "observations" && observations()?.nextCursor !== undefined
+        }
+      >
+        <button
+          class="btn-reset"
+          type="button"
+          disabled={isLoading()}
+          onClick={() => {
+            loadObservations({
+              append: true,
+              cursor: observations()?.nextCursor,
+            }).catch(handleUnexpectedLoadError);
+          }}
+        >
+          Load More
+        </button>
       </Show>
       <Show when={restoreCommit()}>
         {(commit) => (
