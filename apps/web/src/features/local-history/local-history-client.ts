@@ -9,7 +9,7 @@ import {
   localHttpMetaSchema,
 } from "@silksong-git/history/http-wire";
 
-type LocalHistoryClientErrorKind =
+export type LocalHistoryClientErrorKind =
   | "api"
   | "incompatible"
   | "protocol"

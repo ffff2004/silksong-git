@@ -57,6 +57,60 @@ describe("Solid Web app routing", () => {
     ).toBe("#/progress");
   });
 
+  it("connects Local History and clears the uploaded Static Save", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          api: {
+            name: "silksong-git-local-history",
+            version: { major: 1, minor: 1 },
+          },
+          repoPath: "/tmp/history-repo",
+          watchedSavePath: "/tmp/user1.dat",
+          capabilities: [
+            "watcherStatus",
+            "saveState",
+            "history",
+            "rawObservations",
+            "diff",
+            "search",
+            "checkpoint",
+            "exportEncodedSave",
+            "restoreInPlace",
+          ],
+        }),
+      ),
+    );
+
+    render(() => <App />);
+    await uploadDecodedSave();
+    expect(document.querySelector("#modeBanner")?.textContent).toContain(
+      "NORMAL SAVE LOADED",
+    );
+
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+    fireEvent.input(getRequiredElement("#local-history-endpoint"), {
+      target: { value: "http://127.0.0.1:4312" },
+    });
+    fireEvent.input(getRequiredElement("#local-history-token"), {
+      target: { value: "session-token" },
+    });
+    fireEvent.click(getRequiredElement("#local-history-connect"));
+
+    await waitFor(() => {
+      expect(
+        document.querySelector("#disconnect-local-history"),
+      ).not.toBeNull();
+    });
+    expect(document.querySelector("#modeBanner")?.textContent).not.toContain(
+      "NORMAL SAVE LOADED",
+    );
+    expect(
+      document.querySelector('[data-testid="progress-view"]'),
+    ).not.toBeNull();
+  });
+
   it("loads decoded JSON through Static Web Mode and renders summary metrics", async () => {
     render(() => <App />);
 
@@ -82,7 +136,7 @@ describe("Solid Web app routing", () => {
     );
     expect(document.querySelector("#rosariesValue")?.textContent).toBe("800");
     expect(document.querySelector("#shardsValue")?.textContent).toBe("76");
-  }, 20_000);
+  });
 
   it("applies Static Web Mode preference filters to progress rendering", async () => {
     const { container } = render(() => <App />);
@@ -109,7 +163,7 @@ describe("Solid Web app routing", () => {
 
     fireEvent.click(getRequiredElement("#show-only-missing"));
     expect(container.querySelector(".boss.done")).toBeNull();
-  }, 20_000);
+  });
 
   it("reveals undiscovered progress items when Show spoilers is enabled", () => {
     render(() => <App />);
@@ -235,7 +289,7 @@ describe("Solid Web app routing", () => {
     expect(await screen.findByTestId("map-view")).toBeDefined();
     expect(document.querySelector("#worldMap")).not.toBeNull();
     expect(document.querySelectorAll(".map-pin").length).toBeGreaterThan(0);
-  }, 20_000);
+  });
 
   it("shows progress item map locations in the shared interactive map canvas", () => {
     render(() => <App />);
@@ -341,6 +395,18 @@ function getRequiredFileInput(): HTMLInputElement {
   }
 
   return fileInput;
+}
+
+async function uploadDecodedSave() {
+  fireEvent.click(getRequiredElement("#upload-save"));
+  const fileInput = getRequiredFileInput();
+  const file = new File([JSON.stringify(decodedSave)], "save.json", {
+    type: "application/json",
+  });
+  fireEvent.change(fileInput, { target: { files: [file] } });
+  await waitFor(() => {
+    expect(document.querySelector("#completionValue")?.textContent).toBe("39%");
+  });
 }
 
 function getRequiredElement(selector: string): HTMLElement {

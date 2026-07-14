@@ -1372,8 +1372,8 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test`: passed for the explicit `ProgressSnapshotView` rendering seam and the first `LocalHistoryClient` metadata/compatibility seam; remaining Local History Web Mode coverage is pending
-- `pnpm verify`: passed after the LocalHistoryClient metadata/compatibility slice; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test`: passed for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, and the first Local History connection behavior slice; remaining Local History Web Mode coverage is pending
+- `pnpm verify`: passed after the LocalHistoryProvider connection behavior slice; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1386,6 +1386,7 @@ TDD vertical slices:
 - [x] `ProgressSnapshotView` accepts an explicit Semantic Snapshot; `ProgressView` delegates to it, and Progress sections, items, and TOC render through its private context rather than the application Save Store.
 - [x] `LocalHistoryClient` reads authenticated `/api/v1/meta` responses through the browser-safe wire schemas, accepts unknown capabilities, validates compatibility, and classifies authentication failures without automatic retry.
 - [x] All Local History endpoint request/response schemas live in the browser-safe `http-wire` module; `http-contract` only decorates those schemas for OpenAPI route registration.
+- [x] `LocalHistoryProvider` establishes an in-memory authenticated compatibility session through the Topbar connection dialog; a successful connection clears Static Save state and returns to latest Progress.
 
 ### P6-T4 Add UI Open CLI Workflow
 
