@@ -103,15 +103,16 @@ pnpm --filter <changed-package> test
 
 Expand to dependent packages or full `pnpm test` when a change affects shared Interfaces, cross-package behavior, root tooling, fixtures, or integration paths.
 
-Do not run `pnpm --filter <changed-package> format/lint`, since `pnpm verify` covers formatting and cross-package linting.
+Do not run `pnpm --filter <changed-package> format/lint`, since the root validation sequence covers formatting and cross-package linting.
 
-Before commit, run the full repository verification:
+Before commit, run formatting and full repository verification serially, in this order:
 
 ```sh
+pnpm format
 pnpm verify
 ```
 
-`pnpm verify` runs formatting, linting, tests, builds, and custom verifications. It takes more than 90 seconds.
+`pnpm format` applies formatting and lint fixes. `pnpm verify` then runs linting, tests, builds, and custom verifications. It takes more than 90 seconds.
 
 If only `*.md` changed, `pnpm verify` may be skipped; run at least `pnpm format`.
 

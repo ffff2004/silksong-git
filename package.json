@@ -28,7 +28,7 @@
     "preview-cli": "pnpm --filter @silksong-git/cli preview",
     "preview-web": "pnpm --filter @silksong-git/web preview",
     "test": "pnpm --recursive --if-present run test",
-    "verify": "pnpm format && pnpm lint && pnpm test && pnpm build-web && pnpm verify-cli-pack",
+    "verify": "pnpm lint && pnpm test && pnpm build-web && pnpm verify-cli-pack",
     "verify-cli-pack": "pnpm --filter @silksong-git/cli verify-pack"
   },
   "devDependencies": {
