@@ -47,6 +47,7 @@ export function getVisibleCategoryView(input: {
   readonly mode: SaveMode;
   readonly sectionTitle: string;
   readonly selectedActs: readonly number[];
+  readonly shouldIncludeItem?: (itemId: string) => boolean;
   readonly showOnlyMissing: boolean;
 }): ProgressCategoryView | undefined {
   const obtainedGroups = new Set<string>();
@@ -65,6 +66,7 @@ export function getVisibleCategoryView(input: {
   let items = input.category.items.filter(
     (item) =>
       input.selectedActs.includes(item.act ?? 1)
+      && (input.shouldIncludeItem?.(item.id) ?? true)
       && itemMatchesSaveMode(item, input.hasSave, input.mode),
   );
 

@@ -1392,6 +1392,7 @@ TDD vertical slices:
 - [x] Connected Local History loads and renders the latest Save State through `LocalHistoryClient`, `LocalHistoryRuntime`, and the explicit SaveStore Local source seam.
 - [x] Local-only History, Diff, and Watcher routes preserve direct URLs behind a connection-required state; selected commit URLs load through the same Current Save routes and expose a stable Back to Latest banner.
 - [x] History Events and Observations views use one search form, selecting `/history` with no submitted fields and `/search` for submitted text while retaining a Local-only connection boundary.
+- [x] Semantic Diff defaults to changed items, optionally shows unchanged items, and highlights returned item changes through the Progress-style rendering seam.
 
 ### P6-T4 Add UI Open CLI Workflow
 

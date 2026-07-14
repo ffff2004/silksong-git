@@ -4,6 +4,10 @@ import { assetUrl } from "../../app/asset-url.ts";
 import { usePreferencesStore } from "../../state/preferences-store.tsx";
 import { useProgressSnapshot } from "./progress-snapshot-context.tsx";
 import type { ProgressItemData } from "./progress-types.ts";
+import styles from "./ProgressSnapshotView.module.css";
+
+// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the CSS Module key is defined beside this component.
+const diffChangedClass = styles["diffChanged"]!;
 
 const romanActs = new Map([
   [1, "I"],
@@ -50,12 +54,16 @@ export function ProgressItemCard(props: ProgressItemCardProps) {
       classList={{
         accepted: isAccepted(),
         done: isDone(),
+        [diffChangedClass]: progressSnapshot.isChanged(props.item.id),
         locked: !shouldRevealIcon(),
         unlocked: isSpoilerRevealed(),
         unobtainable:
           props.item.unobtainable === true && progressSnapshot.hasSave(),
       }}
       data-flag={getFlagLabel(props.item)}
+      data-diff-changed={
+        progressSnapshot.isChanged(props.item.id) ? "true" : undefined
+      }
       data-group={props.item.group}
       id={`progress-${props.item.id}`}
       onClick={() => {

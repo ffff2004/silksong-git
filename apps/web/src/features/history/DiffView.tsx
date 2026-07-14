@@ -81,7 +81,16 @@ function DiffView() {
       </form>
       <Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
       <Show when={diff()}>
-        {(value) => <ProgressSnapshotView snapshot={value().after} />}
+        {(value) => (
+          <ProgressSnapshotView
+            presentation={{
+              before: value().before,
+              events: value().events.map((entry) => entry.event),
+              kind: "comparison",
+            }}
+            snapshot={value().after}
+          />
+        )}
       </Show>
       <Show when={diff()}>
         {(value) => (

@@ -42,6 +42,7 @@ export function ProgressToc(props: ProgressTocProps) {
               mode: progressSnapshot.mode(),
               sectionTitle: title,
               selectedActs: preferences.selectedActs(),
+              shouldIncludeItem: progressSnapshot.shouldShowItem,
               showOnlyMissing: preferences.showOnlyMissing(),
             });
             if (view === undefined) {

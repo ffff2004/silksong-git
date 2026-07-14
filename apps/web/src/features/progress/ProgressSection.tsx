@@ -31,6 +31,7 @@ export function ProgressSection(props: ProgressSectionProps) {
           mode: progressSnapshot.mode(),
           sectionTitle: title(),
           selectedActs: preferences.selectedActs(),
+          shouldIncludeItem: progressSnapshot.shouldShowItem,
           showOnlyMissing: preferences.showOnlyMissing(),
         }),
       )

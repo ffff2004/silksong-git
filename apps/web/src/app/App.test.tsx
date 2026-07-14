@@ -1,5 +1,11 @@
 /// <reference types="node" />
 
+import type { SemanticItemEvent } from "@silksong-git/core";
+import {
+  createSemanticSnapshot,
+  getBuiltinMappingData,
+  parseDecodedSave,
+} from "@silksong-git/core";
 import {
   cleanup,
   fireEvent,
@@ -211,6 +217,110 @@ describe("Solid Web app routing", () => {
         urls.some((url) => url.includes("/api/v1/search?text=Bell+Beast")),
       ).toBe(true);
     });
+  });
+
+  it("renders Semantic Diff changes through the Progress view seam", async () => {
+    globalThis.location.hash = "#/diff?from=before&to=after";
+    const before = createWireSemanticSnapshot();
+    const changedItem = before.items.find(
+      (item) => item.label === "Mask Shard #2",
+    );
+    if (changedItem === undefined) {
+      throw new Error("Expected Mask Shard #2 in the snapshot.");
+    }
+
+    const after = {
+      ...before,
+      items: before.items.map((item) =>
+        item.id === changedItem.id
+          ? { ...item, status: "missing" as const }
+          : item,
+      ),
+    };
+    const event: SemanticItemEvent = {
+      kind: "item",
+      eventType: "itemStatusChanged",
+      item: {
+        id: changedItem.id,
+        label: changedItem.label,
+        sectionId: changedItem.sectionId,
+        categoryId: changedItem.categoryId,
+        type: changedItem.type,
+      },
+      before: { status: changedItem.status, value: changedItem.value },
+      after: { status: "missing", value: changedItem.value },
+      direction: "regression",
+      isRegression: true,
+      sourceReferences: changedItem.sourceReferences,
+      version: { before: before.version, after: after.version },
+    };
+    const fromCommit = {
+      committedAt: "2026-07-13T00:00:00.000Z",
+      ref: "before",
+      shortRef: "before",
+    };
+    const toCommit = {
+      committedAt: "2026-07-14T00:00:00.000Z",
+      ref: "after",
+      shortRef: "after",
+    };
+    const diff = {
+      after,
+      before,
+      events: [
+        {
+          commit: toCommit,
+          event,
+          id: "event-1",
+          observation: { ...latestObservation, commit: toCommit },
+          previousCommit: fromCommit,
+          snapshotSummary: after.summary,
+          visibility: { defaultVisible: true, filterReasons: [] },
+        },
+      ],
+      from: fromCommit,
+      to: toCommit,
+    };
+    const urls: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      urls.push(url);
+      if (url.includes("/api/v1/meta")) {
+        return Response.json(localHistoryMeta);
+      }
+      if (url.includes("/api/v1/save")) {
+        return Response.json({ status: "empty" });
+      }
+      if (url.includes("/api/v1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({ events: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(() => <App />);
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+    fireEvent.input(getRequiredElement("#local-history-token"), {
+      target: { value: "session-token" },
+    });
+    fireEvent.click(getRequiredElement("#local-history-connect"));
+
+    expect(await screen.findByTestId("diff-view")).toBeDefined();
+    fireEvent.input(getRequiredElement("#diff-from"), {
+      target: { value: "before" },
+    });
+    fireEvent.input(getRequiredElement("#diff-to"), {
+      target: { value: "after" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    await waitFor(() => {
+      expect(urls.some((url) => url.includes("/api/v1/diff"))).toBe(true);
+    });
+    await waitFor(() => {
+      expect(getProgressCard("Mask Shard #2")).toBeDefined();
+    });
+    expect(getProgressCard("Shining Needle")).toBeUndefined();
+    expect(getButtonByText("Show unchanged")).toBeDefined();
   });
 
   it("loads decoded JSON through Static Web Mode and renders summary metrics", async () => {
@@ -518,6 +628,41 @@ function getRequiredElement(selector: string): HTMLElement {
   }
 
   return element;
+}
+
+function getProgressCard(label: string): HTMLElement | undefined {
+  return [...document.querySelectorAll<HTMLElement>(".boss")].find(
+    (card) => card.querySelector(".title")?.textContent === label,
+  );
+}
+
+function createWireSemanticSnapshot() {
+  const mapping = getBuiltinMappingData();
+  const categoryIds = new Map(
+    mapping.sections.flatMap((section) =>
+      section.categories.flatMap((category) =>
+        category.items.map((item) => [item.id, category.id]),
+      ),
+    ),
+  );
+  const snapshot = createSemanticSnapshot(
+    parseDecodedSave(decodedSave),
+    mapping,
+  );
+
+  return {
+    ...snapshot,
+    items: snapshot.items.map((item) => ({
+      ...item,
+      categoryId: categoryIds.get(item.id) ?? "unknown",
+    })),
+  };
+}
+
+function getButtonByText(label: string): HTMLButtonElement | undefined {
+  return [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent.trim() === label,
+  );
 }
 
 function requestUrl(input: RequestInfo | URL): string {
