@@ -109,6 +109,8 @@ describe("Solid Web app routing", () => {
     expect(
       document.querySelector('[data-testid="progress-view"]'),
     ).not.toBeNull();
+    expect(document.querySelector("#upload-save")).toBeNull();
+    expect(document.querySelector("#clearDataBtn")).toBeNull();
   });
 
   it("loads decoded JSON through Static Web Mode and renders summary metrics", async () => {

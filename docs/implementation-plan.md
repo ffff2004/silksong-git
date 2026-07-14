@@ -1372,7 +1372,7 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test`: passed for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, and the first Local History connection behavior slice; remaining Local History Web Mode coverage is pending
+- `pnpm --filter @silksong-git/web test`: passed for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, and the first Local History connection behavior slices; remaining Local History Web Mode coverage is pending
 - `pnpm verify`: passed after the LocalHistoryProvider connection behavior slice; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
@@ -1387,6 +1387,7 @@ TDD vertical slices:
 - [x] `LocalHistoryClient` reads authenticated `/api/v1/meta` responses through the browser-safe wire schemas, accepts unknown capabilities, validates compatibility, and classifies authentication failures without automatic retry.
 - [x] All Local History endpoint request/response schemas live in the browser-safe `http-wire` module; `http-contract` only decorates those schemas for OpenAPI route registration.
 - [x] `LocalHistoryProvider` establishes an in-memory authenticated compatibility session through the Topbar connection dialog; a successful connection clears Static Save state and returns to latest Progress.
+- [x] Connected Local History mode hides the Static Save upload/reset controls while preserving them for disconnected Static Web Mode.
 
 ### P6-T4 Add UI Open CLI Workflow
 
