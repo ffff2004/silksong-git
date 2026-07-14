@@ -1,12 +1,12 @@
 import { For, Show } from "solid-js";
 
 import { usePreferencesStore } from "../../state/preferences-store.tsx";
-import { useSaveStore } from "../../state/save-store.tsx";
 import { ProgressItemCard } from "./ProgressItemCard.tsx";
 import {
   getProgressSectionTitle,
   getVisibleCategoryView,
 } from "./progress-selectors.ts";
+import { useProgressSnapshot } from "./progress-snapshot-context.tsx";
 import type {
   ProgressItemData,
   ProgressSectionData,
@@ -18,7 +18,7 @@ interface ProgressSectionProps {
 }
 
 export function ProgressSection(props: ProgressSectionProps) {
-  const saveStore = useSaveStore();
+  const progressSnapshot = useProgressSnapshot();
   const preferences = usePreferencesStore();
   const title = () => getProgressSectionTitle(props.section);
   const categoryViews = () =>
@@ -26,9 +26,9 @@ export function ProgressSection(props: ProgressSectionProps) {
       .map((category) =>
         getVisibleCategoryView({
           category,
-          hasSave: saveStore.hasSave(),
+          hasSave: progressSnapshot.hasSave(),
           isObtained,
-          mode: saveStore.mode(),
+          mode: progressSnapshot.mode(),
           sectionTitle: title(),
           selectedActs: preferences.selectedActs(),
           showOnlyMissing: preferences.showOnlyMissing(),
@@ -69,7 +69,7 @@ export function ProgressSection(props: ProgressSectionProps) {
   );
 
   function isObtained(item: ProgressItemData): boolean {
-    const status = saveStore.semanticItem(item.id)?.status;
+    const status = progressSnapshot.semanticItem(item.id)?.status;
     if (
       item.type === "relic"
       || item.type === "materium"

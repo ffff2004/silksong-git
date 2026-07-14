@@ -2,7 +2,7 @@ import { Show } from "solid-js";
 
 import { assetUrl } from "../../app/asset-url.ts";
 import { usePreferencesStore } from "../../state/preferences-store.tsx";
-import { useSaveStore } from "../../state/save-store.tsx";
+import { useProgressSnapshot } from "./progress-snapshot-context.tsx";
 import type { ProgressItemData } from "./progress-types.ts";
 
 const romanActs = new Map([
@@ -17,9 +17,9 @@ interface ProgressItemCardProps {
 }
 
 export function ProgressItemCard(props: ProgressItemCardProps) {
-  const saveStore = useSaveStore();
+  const progressSnapshot = useProgressSnapshot();
   const preferences = usePreferencesStore();
-  const semanticItem = () => saveStore.semanticItem(props.item.id);
+  const semanticItem = () => progressSnapshot.semanticItem(props.item.id);
   const isDone = () => semanticItem()?.status === "done";
   const isAccepted = () => semanticItem()?.status === "accepted";
   const isObtained = () => {
@@ -37,7 +37,7 @@ export function ProgressItemCard(props: ProgressItemCardProps) {
     preferences.showSpoilers() && !isDone() && !isAccepted();
   const shouldRevealIcon = () =>
     isSpoilerRevealed()
-    || (saveStore.hasSave() ? isObtained() || isAccepted() : false);
+    || (progressSnapshot.hasSave() ? isObtained() || isAccepted() : false);
   const iconSrc = () =>
     shouldRevealIcon()
       ? resolveIconSrc(props.item.icon)
@@ -52,7 +52,8 @@ export function ProgressItemCard(props: ProgressItemCardProps) {
         done: isDone(),
         locked: !shouldRevealIcon(),
         unlocked: isSpoilerRevealed(),
-        unobtainable: props.item.unobtainable === true && saveStore.hasSave(),
+        unobtainable:
+          props.item.unobtainable === true && progressSnapshot.hasSave(),
       }}
       data-flag={getFlagLabel(props.item)}
       data-group={props.item.group}
