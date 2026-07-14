@@ -1380,6 +1380,7 @@ Notes:
 
 - Completed the `packages/history` API 1.1 prerequisite: History, Search, Diff, and incremental events include after-Snapshot summary metrics; Raw Observation history returns summary-bearing entries with explicit `null` for Unrecognized Schema Observations.
 - The local HTTP meta, runtime schemas, and generated OpenAPI contract now describe API 1.1. Local History Web Mode implementation in `apps/web` remains part of this in-progress task.
+- Removed the legacy Normal and Steel Soul `ModeBanner` blink animations as a CSS-only polish change; no dedicated behavior test was added.
 
 TDD vertical slices:
 

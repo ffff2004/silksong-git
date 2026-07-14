@@ -1924,7 +1924,6 @@ main::-webkit-scrollbar-thumb:hover {
   text-shadow:
     0 0 6px #ccd5db,
     0 0 12px #596066;
-  animation: modeBannerBlinkSteel 1.2s infinite alternate;
 }
 
 #modeBanner .mode-icon {
@@ -2604,31 +2603,6 @@ main::-webkit-scrollbar-thumb:hover {
   display: inline-block;
   width: auto;
   box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
-  animation: modeBannerBlink 1.2s infinite alternate;
-}
-
-@keyframes modeBannerBlink {
-  0% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0.5;
-  }
-}
-
-@keyframes modeBannerBlinkSteel {
-  0% {
-    opacity: 1;
-    text-shadow:
-      0 0 6px #ccd5db,
-      0 0 12px #596066;
-  }
-  100% {
-    opacity: 0.6;
-    text-shadow:
-      0 0 12px #ccd5db,
-      0 0 24px #596066;
-  }
 }
 
 #modeBanner:empty {
