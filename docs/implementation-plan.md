@@ -1412,7 +1412,7 @@ Verification:
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
 - `pnpm --filter @silksong-git/web test`: passed for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, the first Local History connection behavior slices, and the Monaco Raw JSON diff slice
 - `pnpm format`: passed after the Monaco Raw JSON diff slice
-- `pnpm verify`: passed after the Monaco Raw JSON diff slice; the existing Vite large-chunk warning remains non-blocking and full P6-T3 acceptance remains pending
+- `pnpm verify`: passed after removing the unused Semantic Snapshot/Event category identifier; the existing Vite large-chunk warning remains non-blocking and full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1421,9 +1421,11 @@ Notes:
 - The local HTTP meta, runtime schemas, and generated OpenAPI contract now describe API 1.1. Local History Web Mode implementation in `apps/web` remains part of this in-progress task.
 - Removed the legacy Normal and Steel Soul `ModeBanner` blink animations as a CSS-only polish change; no dedicated behavior test was added.
 - Diff Raw JSON now loads both selected Decoded Saves independently from Semantic Diff and renders them through a lazy Monaco diff viewer; the jsdom fallback keeps both formatted JSON values inspectable, including Unrecognized Schema Observations.
+- Removed the unused `categoryId` from Semantic Snapshots, Semantic Events, the Local History wire contract, and the rebuildable read-model schema. Builtin mapping categories never provided that identifier, and no Web rendering or history query behavior consumed it; requiring it only caused valid rebuilt Save State responses to fail client protocol validation.
 
 TDD vertical slices:
 
+- [x] Remove the unused Semantic Snapshot/Event `categoryId` field across core and Local History contracts so rebuilt Save State responses validate without synthetic category identifiers.
 - [x] `ProgressSnapshotView` accepts an explicit Semantic Snapshot; `ProgressView` delegates to it, and Progress sections, items, and TOC render through its private context rather than the application Save Store.
 - [x] `LocalHistoryClient` reads authenticated `/api/v1/meta` responses through the browser-safe wire schemas, accepts unknown capabilities, validates compatibility, and classifies authentication failures without automatic retry.
 - [x] All Local History endpoint request/response schemas live in the browser-safe `http-wire` module; `http-contract` only decorates those schemas for OpenAPI route registration.

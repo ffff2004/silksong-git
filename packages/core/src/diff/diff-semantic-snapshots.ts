@@ -144,7 +144,6 @@ function createItemEvent(
       id: afterItem.id,
       label: afterItem.label,
       sectionId: afterItem.sectionId,
-      categoryId: afterItem.categoryId,
       type: afterItem.type,
     },
     before: {

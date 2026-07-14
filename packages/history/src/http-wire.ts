@@ -268,7 +268,6 @@ export function createLocalHttpWireSchemas(
     id: zod.string(),
     label: zod.string(),
     sectionId: zod.string(),
-    categoryId: zod.string(),
     type: zod.string(),
     status: snapshotStatusSchema,
     value: zod.unknown(),
@@ -305,7 +304,6 @@ export function createLocalHttpWireSchemas(
     id: zod.string(),
     label: zod.string(),
     sectionId: zod.string(),
-    categoryId: zod.string(),
     type: zod.string(),
   });
   const semanticEventStateSchema = zod.object({

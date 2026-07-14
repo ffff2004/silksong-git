@@ -244,7 +244,6 @@ describe("Solid Web app routing", () => {
         id: changedItem.id,
         label: changedItem.label,
         sectionId: changedItem.sectionId,
-        categoryId: changedItem.categoryId,
         type: changedItem.type,
       },
       before: { status: changedItem.status, value: changedItem.value },
@@ -660,25 +659,7 @@ function getProgressCard(label: string): HTMLElement | undefined {
 
 function createWireSemanticSnapshot() {
   const mapping = getBuiltinMappingData();
-  const categoryIds = new Map(
-    mapping.sections.flatMap((section) =>
-      section.categories.flatMap((category) =>
-        category.items.map((item) => [item.id, category.id]),
-      ),
-    ),
-  );
-  const snapshot = createSemanticSnapshot(
-    parseDecodedSave(decodedSave),
-    mapping,
-  );
-
-  return {
-    ...snapshot,
-    items: snapshot.items.map((item) => ({
-      ...item,
-      categoryId: categoryIds.get(item.id) ?? "unknown",
-    })),
-  };
+  return createSemanticSnapshot(parseDecodedSave(decodedSave), mapping);
 }
 
 function getButtonByText(label: string): HTMLButtonElement | undefined {

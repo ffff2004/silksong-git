@@ -23,7 +23,7 @@ export function createSemanticSnapshot(
   for (const section of mappingData.sections) {
     for (const category of section.categories) {
       for (const item of category.items) {
-        items.push(createSnapshotItem(context, item, section.id, category.id));
+        items.push(createSnapshotItem(context, item, section.id));
       }
     }
   }

@@ -10,7 +10,6 @@ interface MappingSection {
 }
 
 interface MappingCategory {
-  readonly id: string;
   readonly label: string;
   readonly items: readonly MappingItem[];
 }

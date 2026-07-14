@@ -49,7 +49,6 @@ export interface SemanticSnapshotItem {
   readonly id: string;
   readonly label: string;
   readonly sectionId: string;
-  readonly categoryId: string;
   readonly type: string;
   readonly status: SemanticSnapshotItemStatus;
   readonly value: unknown;
@@ -85,7 +84,6 @@ export interface SemanticEventItem {
   readonly id: string;
   readonly label: string;
   readonly sectionId: string;
-  readonly categoryId: string;
   readonly type: string;
 }
 

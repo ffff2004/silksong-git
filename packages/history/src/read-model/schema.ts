@@ -46,7 +46,6 @@ export function resetSchema(db: DatabaseSync): void {
       item_id text,
       item_label text,
       section_id text,
-      category_id text,
       item_type text,
       status_from text,
       status_to text,

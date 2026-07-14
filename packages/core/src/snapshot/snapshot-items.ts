@@ -24,7 +24,6 @@ export function createSnapshotItem(
   context: SnapshotCreationContext,
   item: MappingItem,
   sectionId: string,
-  categoryId: string,
 ): SemanticSnapshotItem {
   const value = readItemValue(context, item);
   const status = getItemStatus(item, value);
@@ -33,7 +32,6 @@ export function createSnapshotItem(
     id: item.id,
     label: item.label,
     sectionId,
-    categoryId,
     type: item.type,
     status,
     value,

@@ -149,14 +149,13 @@ function insertEvent(
       item_id,
       item_label,
       section_id,
-      category_id,
       item_type,
       status_from,
       status_to,
       metric,
       search_text,
       event_json
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     `${input.after.commitRef}:${input.eventIndex}`,
@@ -174,7 +173,6 @@ function insertEvent(
     itemColumns.itemId,
     itemColumns.itemLabel,
     itemColumns.sectionId,
-    itemColumns.categoryId,
     itemColumns.itemType,
     itemColumns.statusFrom,
     itemColumns.statusTo,
@@ -190,7 +188,6 @@ function getItemColumns(event: SemanticEvent) {
       itemId: toSqliteText(event.item.id),
       itemLabel: toSqliteText(event.item.label),
       sectionId: toSqliteText(event.item.sectionId),
-      categoryId: toSqliteText(event.item.categoryId),
       itemType: toSqliteText(event.item.type),
       statusFrom: toSqliteText(event.before.status),
       statusTo: toSqliteText(event.after.status),
@@ -203,7 +200,6 @@ function getItemColumns(event: SemanticEvent) {
     itemId: "",
     itemLabel: "",
     sectionId: "",
-    categoryId: "",
     itemType: "",
     statusFrom: "",
     statusTo: "",

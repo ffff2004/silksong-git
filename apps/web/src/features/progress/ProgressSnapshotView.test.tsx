@@ -63,7 +63,6 @@ describe("ProgressSnapshotView", () => {
         id: changedItem.id,
         label: changedItem.label,
         sectionId: changedItem.sectionId,
-        categoryId: changedItem.categoryId,
         type: changedItem.type,
       },
       before: { status: changedItem.status, value: changedItem.value },

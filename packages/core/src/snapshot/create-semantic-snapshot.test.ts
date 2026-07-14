@@ -105,7 +105,7 @@ test("createSemanticSnapshot maps direct playerData booleans to semantic item st
         flagItem("bell-beast", "Bell Beast", "defeatedBellBeast"),
         bossItem("moorwing", "Moorwing", "defeatedMoorwing"),
       ],
-      { categoryId: "bosses", categoryLabel: "Bosses", sectionId: "bosses" },
+      { categoryLabel: "Bosses", sectionId: "bosses" },
     ),
   );
 
@@ -153,7 +153,6 @@ test("createSemanticSnapshot maps key flags to semantic item status", () => {
         keyItem("unused-key", "Unused Key", { flag: "hasUnusedKey" }),
       ],
       {
-        categoryId: "keys",
         categoryLabel: "Keys",
         sectionId: "essentials",
         sectionLabel: "Essentials",
@@ -210,7 +209,7 @@ test("createSemanticSnapshot maps numeric thresholds to semantic item status", (
         flagIntItem("bell-key", "Bell Key", "bellKeyCount"),
         flagIntItem("simple-key-count", "Simple Key Count", "simpleKeyCount"),
       ],
-      { categoryId: "needle-upgrades", categoryLabel: "Needle Upgrades" },
+      { categoryLabel: "Needle Upgrades" },
     ),
   );
 
@@ -371,7 +370,6 @@ test("createSemanticSnapshot maps quest states to semantic item status", () => {
         questItem("quiet-wish", "Quiet Wish", "Quiet Wish"),
       ],
       {
-        categoryId: "wishes",
         categoryLabel: "Wishes",
         sectionId: "wishes",
         sectionLabel: "Wishes",
@@ -430,7 +428,7 @@ test("createSemanticSnapshot maps journal progress to semantic item status", () 
         journalItem("bell-beast-journal", "Bell Beast", "Bell Beast", 5),
         journalItem("missing-entry", "Missing Entry", "Missing Entry", 1),
       ],
-      { categoryId: "journal", categoryLabel: "Journal", sectionId: "journal" },
+      { categoryLabel: "Journal", sectionId: "journal" },
     ),
   );
 
@@ -538,7 +536,6 @@ test("createSemanticSnapshot maps relic, materium, and device states to semantic
         }),
       ],
       {
-        categoryId: "relics",
         categoryLabel: "Relics",
         sectionId: "completion",
         sectionLabel: "Completion",
@@ -597,7 +594,7 @@ test("createSemanticSnapshot maps sceneVisited entries to semantic item status",
         sceneVisitedItem("crawl-02", "Crawl 02", "Crawl_02"),
         sceneVisitedItem("song-09", "Song 09", "Song_09"),
       ],
-      { categoryId: "scenes", categoryLabel: "Scenes", sectionId: "scenes" },
+      { categoryLabel: "Scenes", sectionId: "scenes" },
     ),
   );
 
@@ -632,7 +629,7 @@ test("createSemanticSnapshot maps quill entries to semantic item status", () => 
         quillItem("QuillState_2", "Quill Entry 2", "QuillState"),
         quillItem("QuillState_3", "Quill Entry 3", "QuillState"),
       ],
-      { categoryId: "quill", categoryLabel: "Quill" },
+      { categoryLabel: "Quill" },
     ),
   );
 
@@ -711,7 +708,7 @@ test("createSemanticSnapshot maps anyOf entries to semantic item status", () => 
           label: "Missing Upgrade",
         },
       ],
-      { categoryId: "tool-pouch", categoryLabel: "Tool Pouch" },
+      { categoryLabel: "Tool Pouch" },
     ),
   );
 
@@ -773,7 +770,6 @@ test("createSemanticSnapshot supports Shell Fossil Mimic scene numeric entries",
         }),
       ],
       {
-        categoryId: "special",
         categoryLabel: "Special",
         sectionId: "completion",
         sectionLabel: "Completion",
@@ -877,7 +873,6 @@ test("getBuiltinMappingData exposes the current Web mapping tables", () => {
 function createMapping(
   items: readonly MappingItem[],
   options: {
-    readonly categoryId?: string;
     readonly categoryLabel?: string;
     readonly sectionId?: string;
     readonly sectionLabel?: string;
@@ -885,7 +880,6 @@ function createMapping(
 ): MappingData {
   const sectionId = options.sectionId ?? "main";
   const sectionLabel = options.sectionLabel ?? "Main";
-  const categoryId = options.categoryId ?? "items";
   const categoryLabel = options.categoryLabel ?? "Items";
 
   return {
@@ -896,7 +890,6 @@ function createMapping(
         label: sectionLabel,
         categories: [
           {
-            id: categoryId,
             label: categoryLabel,
             items,
           },

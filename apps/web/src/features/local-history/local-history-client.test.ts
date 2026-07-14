@@ -174,6 +174,60 @@ describe("LocalHistoryClient", () => {
     });
   });
 
+  it("accepts Save State items without unused category identifiers", async () => {
+    const saveState = {
+      status: "available" as const,
+      observation: {
+        commit: {
+          ref: "abcdef1234567890",
+          shortRef: "abcdef1",
+          committedAt: "2026-07-14T00:00:00.000Z",
+        },
+        observedAt: "2026-07-14T00:00:00.000Z",
+        trigger: "watcher",
+        sourcePath: "/tmp/user1.dat",
+        encodedSha256: "a".repeat(64),
+        decodedSha256: "b".repeat(64),
+        decoderVersion: "test",
+        schema: { status: "recognized", saveSchemaVersion: "1" },
+      },
+      decodedSave: { playerData: {} },
+      semanticSnapshot: {
+        items: [
+          {
+            id: "mask-shard-2",
+            label: "Mask Shard #2",
+            sectionId: "main",
+            type: "sceneBool",
+            status: "done",
+            value: true,
+            sourceReferences: [
+              {
+                kind: "sceneFlag",
+                scene: "Crawl_02",
+                flag: "Heart Piece",
+              },
+            ],
+          },
+        ],
+        summary: {},
+        version: {
+          saveSchemaVersion: "silksong-save-v1",
+          semanticCoreVersion: "core-semantic-v1",
+        },
+      },
+    };
+    const client = createLocalHistoryClient({
+      endpoint: "http://127.0.0.1:4312",
+      fetch: async () => Response.json(saveState),
+      token: "session-token",
+    });
+
+    await expect(client.getSave({ kind: "latest" })).resolves.toEqual(
+      saveState,
+    );
+  });
+
   it("classifies a failed request as temporarily unavailable", async () => {
     const client = createLocalHistoryClient({
       endpoint: "http://127.0.0.1:4312",
