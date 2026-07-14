@@ -1410,8 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test`: passed for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, and the first Local History connection behavior slices; remaining Local History Web Mode coverage is pending
-- `pnpm verify`: passed after the LocalHistoryProvider connection behavior slice; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test`: passed for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, the first Local History connection behavior slices, and the Monaco Raw JSON diff slice
+- `pnpm format`: passed after the Monaco Raw JSON diff slice
+- `pnpm verify`: passed after the Monaco Raw JSON diff slice; the existing Vite large-chunk warning remains non-blocking and full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1419,6 +1420,7 @@ Notes:
 - Completed the `packages/history` API 1.1 prerequisite: History, Search, Diff, and incremental events include after-Snapshot summary metrics; Raw Observation history returns summary-bearing entries with explicit `null` for Unrecognized Schema Observations.
 - The local HTTP meta, runtime schemas, and generated OpenAPI contract now describe API 1.1. Local History Web Mode implementation in `apps/web` remains part of this in-progress task.
 - Removed the legacy Normal and Steel Soul `ModeBanner` blink animations as a CSS-only polish change; no dedicated behavior test was added.
+- Diff Raw JSON now loads both selected Decoded Saves independently from Semantic Diff and renders them through a lazy Monaco diff viewer; the jsdom fallback keeps both formatted JSON values inspectable, including Unrecognized Schema Observations.
 
 TDD vertical slices:
 
@@ -1431,6 +1433,7 @@ TDD vertical slices:
 - [x] Local-only History, Diff, and Watcher routes preserve direct URLs behind a connection-required state; selected commit URLs load through the same Current Save routes and expose a stable Back to Latest banner.
 - [x] History Events and Observations views use one search form, selecting `/history` with no submitted fields and `/search` for submitted text while retaining a Local-only connection boundary.
 - [x] Semantic Diff defaults to changed items, optionally shows unchanged items, and highlights returned item changes through the Progress-style rendering seam.
+- [x] Diff Raw JSON compares the selected `from` and `to` Decoded Saves through a lazy Monaco diff viewer, including Unrecognized Schema Observations.
 
 ### P6-T4 Add UI Open CLI Workflow
 

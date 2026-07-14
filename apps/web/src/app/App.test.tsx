@@ -289,6 +289,22 @@ describe("Solid Web app routing", () => {
         return Response.json(localHistoryMeta);
       }
       if (url.includes("/api/v1/save")) {
+        if (url.includes("commit=before")) {
+          return Response.json({
+            decodedSave: { before: true },
+            observation: { ...latestObservation, commit: fromCommit },
+            semanticSnapshot: before,
+            status: "available",
+          });
+        }
+        if (url.includes("commit=after")) {
+          return Response.json({
+            decodedSave: { after: true },
+            observation: { ...latestObservation, commit: toCommit },
+            semanticSnapshot: after,
+            status: "available",
+          });
+        }
         return Response.json({ status: "empty" });
       }
       if (url.includes("/api/v1/diff")) {
@@ -321,6 +337,12 @@ describe("Solid Web app routing", () => {
     });
     expect(getProgressCard("Shining Needle")).toBeUndefined();
     expect(getButtonByText("Show unchanged")).toBeDefined();
+    await waitFor(() => {
+      expect(screen.getByTestId("raw-save-diff-fallback")).toBeDefined();
+    });
+    const rawDiff = screen.getByTestId("raw-save-diff-fallback");
+    expect(rawDiff.textContent).toContain('"before": true');
+    expect(rawDiff.textContent).toContain('"after": true');
   });
 
   it("loads decoded JSON through Static Web Mode and renders summary metrics", async () => {

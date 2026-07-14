@@ -4,6 +4,7 @@ import type { LocalHttpDiffResult } from "@silksong-git/history/http-wire";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
 import { ProgressSnapshotView } from "../progress/ProgressSnapshotView.tsx";
+import { MonacoJsonDiffViewer } from "../raw-save/MonacoJsonDiffViewer.tsx";
 import { MonacoJsonViewer } from "../raw-save/MonacoJsonViewer.tsx";
 
 export function DiffRoute() {
@@ -19,6 +20,10 @@ function DiffView() {
   const [from, setFrom] = createSignal("");
   const [to, setTo] = createSignal("");
   const [diff, setDiff] = createSignal<LocalHttpDiffResult>();
+  const [rawDiff, setRawDiff] = createSignal<{
+    readonly fromValue: string;
+    readonly toValue: string;
+  }>();
   const [error, setError] = createSignal<string>();
 
   onMount(() => {
@@ -36,9 +41,31 @@ function DiffView() {
       return;
     }
     try {
-      setDiff(
-        await connection.session.client.getDiff({ from: from(), to: to() }),
-      );
+      const fromRef = from();
+      const toRef = to();
+      const nextDiff = await connection.session.client.getDiff({
+        from: fromRef,
+        to: toRef,
+      });
+      setDiff(nextDiff);
+
+      const [fromSave, toSave] = await Promise.all([
+        connection.session.client.getSave({
+          commitRef: fromRef,
+          kind: "commit",
+        }),
+        connection.session.client.getSave({
+          commitRef: toRef,
+          kind: "commit",
+        }),
+      ]);
+      if (fromSave.status !== "available" || toSave.status !== "available") {
+        throw new Error("Decoded Save JSON is unavailable for this diff.");
+      }
+      setRawDiff({
+        fromValue: stringifyDecodedSave(fromSave.decodedSave),
+        toValue: stringifyDecodedSave(toSave.decodedSave),
+      });
       setError(undefined);
     } catch (error_) {
       setError(error_ instanceof Error ? error_.message : "Diff unavailable.");
@@ -94,11 +121,27 @@ function DiffView() {
       </Show>
       <Show when={diff()}>
         {(value) => (
-          <MonacoJsonViewer
-            value={JSON.stringify(value().after, undefined, 2)}
-          />
+          <Show
+            fallback={
+              <MonacoJsonViewer
+                value={JSON.stringify(value().after, undefined, 2)}
+              />
+            }
+            when={rawDiff()}
+          >
+            {(rawValue) => (
+              <MonacoJsonDiffViewer
+                fromValue={rawValue().fromValue}
+                toValue={rawValue().toValue}
+              />
+            )}
+          </Show>
         )}
       </Show>
     </section>
   );
+}
+
+function stringifyDecodedSave(decodedSave: unknown): string {
+  return JSON.stringify(decodedSave, undefined, 2);
 }
