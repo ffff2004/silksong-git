@@ -115,6 +115,44 @@ Notes:
 - `docs/current-design-reference/save-to-semantic.md` is English and ASCII-only.
 - `scripts/decode-save.ts` was removed by the user after causing unrelated lint failures.
 
+### P1-T2 Show Formatter-Only Diffs
+
+Status: complete
+
+Depends on:
+
+- P1-T1
+
+Owned files:
+
+- `scripts/format.ts`
+- `package.json`
+- `pnpm-lock.yaml`
+
+Relevant docs and ADRs:
+
+- none
+
+Acceptance criteria:
+
+- `pnpm format` keeps reporting when no files change.
+- Successful formatting reports the changed files and a unified diff containing only changes from the current formatter run.
+- If formatting modifies a file before failing, the unified diff is still reported and the command retains its failure exit code.
+
+Verification:
+
+- `pnpm format scripts/pnpm-exec.ts`: passed; reported no changed files.
+- `pnpm format scripts/format-smoke-success.ts`: passed against a temporary untracked fixture; reported the formatter-only unified diff.
+- `pnpm format scripts/format-smoke-success.ts scripts/format-smoke-failure.ts`: exited with code 1 against temporary untracked fixtures after ESLint changed `var` to `let`; reported that diff before preserving the ESLint failure.
+- `pnpm format scripts/format.ts package.json pnpm-lock.yaml`: passed; reported no changed files after implementation formatting.
+- `pnpm format`: passed before commit.
+- `pnpm verify`: passed before commit.
+
+Notes:
+
+- The temporary smoke fixtures were removed after verification.
+- `diff` is a direct root development dependency rather than relying on its existing transitive installation.
+
 ## P2 Workspace Skeleton
 
 ### P2-T1 Create Workspace Layout Without Behavior Change

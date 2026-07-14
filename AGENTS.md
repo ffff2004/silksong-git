@@ -114,8 +114,6 @@ pnpm verify
 
 `pnpm format` applies formatting and lint fixes. `pnpm verify` then runs linting, tests, builds, and custom verifications. It takes more than 90 seconds.
 
-If only `*.md` changed, `pnpm verify` may be skipped; run at least `pnpm format`.
-
-If `pnpm format` modified files, re-read them before editing again.
+If only `*.md` files changed, `pnpm verify` may be skipped; run `pnpm format <changed-markdown-files...>` so formatting is limited to the modified files.
 
 If validation fails because of unrelated local files or pre-existing issues, report the exact failing paths and checks.

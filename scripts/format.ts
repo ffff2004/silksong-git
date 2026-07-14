@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+
+import { createTwoFilesPatch } from "diff";
 
 import { runPnpmExec } from "./pnpm-exec.ts";
 
@@ -36,9 +37,9 @@ async function getGitCandidateFilePaths(): Promise<readonly string[]> {
   return stdout.split("\0").filter((filePath) => filePath !== "");
 }
 
-async function snapshotFileHashes(
+async function snapshotFileContents(
   filePaths: readonly string[],
-): Promise<ReadonlyMap<string, string>> {
+): Promise<ReadonlyMap<string, Buffer>> {
   const entries = await Promise.all(
     filePaths.map(async (filePath) => {
       const absoluteFilePath = path.resolve(REPO_ROOT, filePath);
@@ -47,8 +48,7 @@ async function snapshotFileHashes(
         return undefined;
       }
 
-      const content = await readFile(absoluteFilePath);
-      return [filePath, hashContent(content)] as const;
+      return [filePath, await readFile(absoluteFilePath)] as const;
     }),
   );
 
@@ -76,34 +76,53 @@ function isNodeErrorWithCode(error: unknown, code: string): boolean {
   );
 }
 
-function hashContent(content: Buffer): string {
-  return createHash("sha256").update(content).digest("hex");
+interface ChangedFile {
+  readonly after: Buffer;
+  readonly before: Buffer;
+  readonly filePath: string;
 }
 
-function getChangedFilePaths(
-  beforeHashes: ReadonlyMap<string, string>,
-  afterHashes: ReadonlyMap<string, string>,
-): readonly string[] {
-  return [...afterHashes]
-    .filter(([filePath, afterHash]) => beforeHashes.get(filePath) !== afterHash)
-    .map(([filePath]) => filePath);
+function getChangedFiles(
+  beforeContents: ReadonlyMap<string, Buffer>,
+  afterContents: ReadonlyMap<string, Buffer>,
+): readonly ChangedFile[] {
+  return [...afterContents]
+    .flatMap(([filePath, after]) => {
+      const before = beforeContents.get(filePath);
+
+      return before === undefined || before.equals(after)
+        ? []
+        : [{ after, before, filePath }];
+    })
+    .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
 }
 
-function printFormattedFiles(filePaths: readonly string[]) {
-  const uniqueFilePaths = [
-    ...new Set(filePaths.map((filePath) => normalizeFilePath(filePath))),
-  ].toSorted();
-
-  if (uniqueFilePaths.length === 0) {
-    console.log("No files changed by format.");
+function printFormattedFiles(files: readonly ChangedFile[]) {
+  if (files.length === 0) {
+    console.log("No file changed by format.");
     return;
   }
 
   console.log("Formatted files:");
-  for (const filePath of uniqueFilePaths) {
+  for (const { filePath } of files) {
     console.log(`- ${filePath}`);
   }
-  console.log("Re-read them before editing again");
+
+  for (const { after, before, filePath } of files) {
+    const normalizedFilePath = normalizeFilePath(filePath);
+    console.log("");
+    console.log(
+      createTwoFilesPatch(
+        `a/${normalizedFilePath}`,
+        `b/${normalizedFilePath}`,
+        before.toString(),
+        after.toString(),
+        "",
+        "",
+        { context: 3 },
+      ).trimEnd(),
+    );
+  }
 }
 
 function normalizeFilePath(filePath: string): string {
@@ -116,7 +135,13 @@ async function main() {
   const targets = process.argv.slice(2);
   const formatTargets = targets.length > 0 ? targets : ["."];
   const candidateFilePaths = await getGitCandidateFilePaths();
-  const beforeHashes = await snapshotFileHashes(candidateFilePaths);
+
+  // All execution paths use the same before/after comparison:
+  // - success without changes reports that no files changed;
+  // - success with changes prints the formatter-only diffs and exits successfully;
+  // - failure without changes reports that no files changed, then exits unsuccessfully;
+  // - failure after applying fixes prints those diffs, then exits unsuccessfully.
+  const beforeContents = await snapshotFileContents(candidateFilePaths);
   let formatError: Error | undefined;
 
   try {
@@ -133,13 +158,16 @@ async function main() {
       },
     );
   } catch (error) {
+    // ESLint or Prettier can modify files before returning a nonzero exit code. Defer the error so
+    // the post-format snapshot and diff reporting still run for that partially successful work.
     formatError = error instanceof Error ? error : new Error(String(error));
   }
 
-  const afterHashes = await snapshotFileHashes(candidateFilePaths);
-  printFormattedFiles(getChangedFilePaths(beforeHashes, afterHashes));
+  const afterContents = await snapshotFileContents(candidateFilePaths);
+  printFormattedFiles(getChangedFiles(beforeContents, afterContents));
 
   if (formatError !== undefined) {
+    // Preserve the formatter's failure status only after reporting every change it made.
     throw formatError;
   }
 }
