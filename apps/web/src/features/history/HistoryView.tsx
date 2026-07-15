@@ -3,12 +3,10 @@ import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
-import type {
-  HistoryEventFilters,
-  HistoryEventGroup,
-} from "./history-events-query.ts";
+import type { HistoryEventFilters } from "./history-events-query.ts";
 import { createHistoryEventsQuery } from "./history-events-query.ts";
 import { createHistoryObservationsQuery } from "./history-observations-query.ts";
+import { HistoryCommitCard } from "./HistoryCommitCard.tsx";
 
 const eventTypes = [
   "itemStatusChanged",
@@ -278,7 +276,7 @@ function HistoryView() {
             <For each={eventsQuery.groups()}>
               {(group) => (
                 <HistoryCommitCard
-                  group={group}
+                  record={{ group, kind: "events" }}
                   onRestore={() => {
                     setRestoreCommit(group.commit.ref);
                   }}
@@ -313,15 +311,18 @@ function HistoryView() {
           >
             <For each={observationsQuery.entries()}>
               {(entry) => (
-                <article class="history-card">
-                  <h3>{entry.observation.commit.shortRef}</h3>
-                  <time>{entry.observation.observedAt}</time>
-                  <p>
-                    {entry.snapshotSummary
-                      ? "Recognized schema"
-                      : "Unrecognized schema"}
-                  </p>
-                </article>
+                <HistoryCommitCard
+                  record={{ entry, kind: "observation" }}
+                  onRestore={() => {
+                    setRestoreCommit(entry.observation.commit.ref);
+                  }}
+                  onExport={() => {
+                    exportCommit(
+                      localHistory,
+                      entry.observation.commit.ref,
+                    ).catch(handleUnexpectedLoadError);
+                  }}
+                />
               )}
             </For>
           </Show>
@@ -372,75 +373,6 @@ function getEnumParam<T extends string>(
 ): "" | T {
   const value = params.get(name);
   return values.find((candidate) => candidate === value) ?? "";
-}
-
-function HistoryCommitCard(props: {
-  readonly group: HistoryEventGroup;
-  readonly onExport: () => void;
-  readonly onRestore: () => void;
-}) {
-  const first = props.group.events[0];
-  if (first === undefined) {
-    return <></>;
-  }
-
-  return (
-    <article class="history-card" data-testid="history-commit-card">
-      <header>
-        <strong>{props.group.commit.shortRef}</strong>
-        <time>{props.group.commit.committedAt}</time>
-      </header>
-      <dl class="save-summary-metrics">
-        <div>
-          <dt>Completion</dt>
-          <dd>{first.snapshotSummary.completionPercentage ?? 0}%</dd>
-        </div>
-        <div>
-          <dt>Play Time</dt>
-          <dd>{first.snapshotSummary.playTime ?? 0}</dd>
-        </div>
-        <div>
-          <dt>Rosaries</dt>
-          <dd>{first.snapshotSummary.rosaries ?? 0}</dd>
-        </div>
-        <div>
-          <dt>Shell Shards</dt>
-          <dd>{first.snapshotSummary.shellShards ?? 0}</dd>
-        </div>
-      </dl>
-      <div class="history-actions">
-        <a
-          class="btn-primary"
-          href={`/progress?commit=${encodeURIComponent(props.group.commit.ref)}`}
-        >
-          View Progress
-        </a>
-        <button class="btn-reset" type="button" onClick={props.onExport}>
-          Export
-        </button>
-        <button class="btn-reset" type="button" onClick={props.onRestore}>
-          Restore
-        </button>
-        <a
-          class="btn-reset"
-          href={`/diff?from=${encodeURIComponent(first.previousCommit?.ref ?? props.group.commit.ref)}&to=${encodeURIComponent(props.group.commit.ref)}`}
-        >
-          Compare
-        </a>
-      </div>
-      <ul>
-        <For each={props.group.events}>
-          {(event) => (
-            <li data-testid="history-event-row">
-              {event.event.kind === "item"
-                ? event.event.item.label
-                : event.event.metric}
-            </li>
-          )}
-        </For>
-      </ul>
-    </article>
-  );
 }
 
 async function exportCommit(

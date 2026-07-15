@@ -464,6 +464,92 @@ describe("History view", () => {
     expect(screen.getByText("initial-observation")).toBeDefined();
     expect(screen.getByText("older-observation")).toBeDefined();
   });
+
+  it("renders Events and Observations through one schema-aware commit card", async () => {
+    const event = createSummaryEvent(
+      "recognized-event",
+      "recognized-commit",
+      "completionPercentage",
+    );
+    const summarizedEvent = {
+      ...event,
+      snapshotSummary: {
+        completionPercentage: 81,
+        playTime: 9876,
+        rosaries: 1234,
+        shellShards: 88,
+      },
+    };
+    const unrecognizedEntry = {
+      ...createObservationEntry("unrecognized-commit"),
+      observation: {
+        ...createObservationEntry("unrecognized-commit").observation,
+        schema: { status: "unrecognized", reason: "future-save-schema" },
+      },
+      // eslint-disable-next-line unicorn/no-null -- the Local HTTP wire contract uses explicit null when no Semantic Snapshot summary exists.
+      snapshotSummary: null,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({ events: [summarizedEvent] });
+        }
+        if (url.includes("/api/v1/observations")) {
+          return Response.json({ entries: [unrecognizedEntry] });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    const eventCard = await screen.findByTestId("history-commit-card");
+    expect(eventCard.textContent).toContain("Recognized schema");
+    expect(eventCard.textContent).toContain("81%");
+    expect(eventCard.textContent).toContain("9876");
+    expect(eventCard.textContent).toContain("1234");
+    expect(eventCard.textContent).toContain("88");
+    expect(
+      eventCard.querySelector('a[href*="/progress?commit="]'),
+    ).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Observations" }));
+    await waitFor(() => {
+      expect(screen.getByText("unrecognized-commit")).toBeDefined();
+    });
+    const observationCard = screen.getByTestId("history-commit-card");
+    expect(observationCard.textContent).toContain("Unrecognized schema");
+    expect(observationCard.textContent).toContain("Summary unavailable");
+    expect(
+      observationCard.querySelector('a[href*="/raw-save?commit="]'),
+    ).not.toBeNull();
+    expect(
+      observationCard.querySelector('a[href*="/progress?commit="]'),
+    ).toBeNull();
+    expect(observationCard.textContent).toContain("Export");
+    expect(observationCard.textContent).toContain("Restore");
+    expect(observationCard.textContent).toContain("Compare");
+  });
 });
 
 function connectLocalHistory() {
