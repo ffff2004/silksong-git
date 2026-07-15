@@ -3,6 +3,7 @@ import { createContext, createSignal, useContext } from "solid-js";
 
 import type {
   LocalHttpMeta,
+  LocalHttpSaveState,
   LocalHttpWatcherStatus,
 } from "@silksong-git/history/http-wire";
 import type { LocalHistoryClient } from "../features/local-history/local-history-client.ts";
@@ -15,6 +16,7 @@ import {
 interface LocalHistorySession {
   readonly client: LocalHistoryClient;
   readonly endpoint: string;
+  readonly latestSaveState: () => LocalHttpSaveState | undefined;
   readonly meta: LocalHttpMeta;
   readonly observationRevision: () => number | undefined;
   readonly watcherStatus: () => LocalHttpWatcherStatus | undefined;
@@ -47,6 +49,7 @@ interface LocalHistoryStore {
   readonly disconnect: () => void;
   readonly reportRequestFailure: (error: unknown) => void;
   readonly reportRequestSuccess: () => void;
+  readonly updateLatestSaveState: (state: LocalHttpSaveState) => void;
   readonly updateWatcherStatus: (status: LocalHttpWatcherStatus) => void;
 }
 
@@ -59,6 +62,7 @@ export function LocalHistoryProvider(props: {
     kind: "disconnected",
   });
   let setWatcherStatus: Setter<LocalHttpWatcherStatus | undefined> | undefined;
+  let setLatestSaveState: Setter<LocalHttpSaveState | undefined> | undefined;
 
   const store: LocalHistoryStore = {
     async connect(input) {
@@ -71,13 +75,18 @@ export function LocalHistoryProvider(props: {
         const [watcherStatus, setNextWatcherStatus] = createSignal<
           LocalHttpWatcherStatus | undefined
         >();
+        const [latestSaveState, setNextLatestSaveState] = createSignal<
+          LocalHttpSaveState | undefined
+        >();
         setWatcherStatus = setNextWatcherStatus;
+        setLatestSaveState = setNextLatestSaveState;
         setConnection({
           availability: { kind: "available" },
           kind: "connected",
           session: {
             client,
             endpoint: input.endpoint,
+            latestSaveState,
             meta,
             observationRevision: () => watcherStatus()?.observationRevision,
             watcherStatus,
@@ -100,6 +109,7 @@ export function LocalHistoryProvider(props: {
     },
     connection,
     disconnect() {
+      setLatestSaveState = undefined;
       setWatcherStatus = undefined;
       setConnection({ kind: "disconnected" });
     },
@@ -131,6 +141,12 @@ export function LocalHistoryProvider(props: {
           ...current,
           availability: { kind: "available" },
         });
+      }
+    },
+    updateLatestSaveState(state) {
+      const updateState = setLatestSaveState;
+      if (connection().kind === "connected" && updateState !== undefined) {
+        updateState(state);
       }
     },
     updateWatcherStatus(status) {

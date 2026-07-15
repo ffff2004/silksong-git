@@ -14,6 +14,8 @@ export function LocalHistoryRuntime() {
   const navigate = useNavigate();
   const location = useLocation();
   let hadLocalSession = false;
+  let revisionSession: object | undefined;
+  let previousObservationRevision: number | undefined;
 
   createEffect(() => {
     const connection = localHistory.connection();
@@ -31,14 +33,17 @@ export function LocalHistoryRuntime() {
             : { commitRef: commit, kind: "commit" },
         )
         .then((state) => {
-          if (!cancelled) {
-            saveStore.loadLocalState(
-              state,
-              commit === undefined
-                ? undefined
-                : { commit, kind: "localCommit" },
-            );
+          if (cancelled) {
+            return;
           }
+
+          if (commit === undefined) {
+            localHistory.updateLatestSaveState(state);
+          }
+          saveStore.loadLocalState(
+            state,
+            commit === undefined ? undefined : { commit, kind: "localCommit" },
+          );
         })
         .catch((error: unknown) => {
           if (!cancelled) {
@@ -57,6 +62,55 @@ export function LocalHistoryRuntime() {
       saveStore.clear();
       navigate("/progress");
     }
+  });
+
+  createEffect(() => {
+    const connection = localHistory.connection();
+    if (connection.kind !== "connected") {
+      revisionSession = undefined;
+      previousObservationRevision = undefined;
+      return;
+    }
+
+    if (revisionSession !== connection.session) {
+      revisionSession = connection.session;
+      previousObservationRevision = undefined;
+    }
+    const nextRevision = connection.session.observationRevision();
+    if (nextRevision === undefined) {
+      return;
+    }
+    if (previousObservationRevision === undefined) {
+      previousObservationRevision = nextRevision;
+      return;
+    }
+    if (nextRevision === previousObservationRevision) {
+      return;
+    }
+    previousObservationRevision = nextRevision;
+
+    let cancelled = false;
+    connection.session.client
+      .getSave({ kind: "latest" })
+      .then((state) => {
+        if (cancelled) {
+          return;
+        }
+
+        localHistory.updateLatestSaveState(state);
+        if (getQueryParam(location.search, "commit") === undefined) {
+          saveStore.loadLocalState(state);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          localHistory.reportRequestFailure(error);
+        }
+      });
+
+    onCleanup(() => {
+      cancelled = true;
+    });
   });
 
   createEffect(() => {

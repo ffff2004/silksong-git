@@ -296,6 +296,126 @@ describe("Solid Web app routing", () => {
     expect(watcherRequests).toBe(1);
   });
 
+  it("refreshes moving latest on Watcher revision changes without replacing a historical selection", async () => {
+    let latestSaveRequests = 0;
+    let watcherRequests = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/watcher")) {
+          watcherRequests++;
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: watcherRequests,
+            startedAt: "2026-07-14T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/save")) {
+          const isHistorical = url.includes("commit=historical");
+          if (!isHistorical) {
+            latestSaveRequests++;
+          }
+          let completionPercentage = 70;
+          if (!isHistorical) {
+            completionPercentage = latestSaveRequests === 1 ? 81 : 82;
+          }
+          return Response.json({
+            status: "available",
+            observation: {
+              ...latestObservation,
+              commit: isHistorical
+                ? {
+                    ...latestObservation.commit,
+                    ref: "historical",
+                    shortRef: "historical",
+                  }
+                : latestObservation.commit,
+            },
+            decodedSave: { completionPercentage },
+            semanticSnapshot: {
+              items: [],
+              summary: {
+                completionPercentage,
+                playTime: 9876,
+                rosaries: 1234,
+                shellShards: 88,
+              },
+              version: {
+                saveSchemaVersion: "1",
+                semanticCoreVersion: "test",
+              },
+            },
+          });
+        }
+
+        return Response.json({ events: [] });
+      }),
+    );
+
+    render(() => <App />);
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+    fireEvent.input(getRequiredElement("#local-history-token"), {
+      target: { value: "session-token" },
+    });
+    fireEvent.click(getRequiredElement("#local-history-connect"));
+    await waitFor(() => {
+      expect(document.querySelector("#completionValue")?.textContent).toBe(
+        "81%",
+      );
+      expect(watcherRequests).toBe(1);
+    });
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => {
+      expect(document.querySelector("#completionValue")?.textContent).toBe(
+        "82%",
+      );
+    });
+
+    globalThis.location.hash = "#/progress?commit=historical";
+    globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+    await waitFor(() => {
+      expect(document.querySelector("#completionValue")?.textContent).toBe(
+        "70%",
+      );
+    });
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => {
+      expect(watcherRequests).toBe(3);
+    });
+    expect(document.querySelector("#completionValue")?.textContent).toBe("70%");
+  });
+
   it("uses History for the empty search and Search API for submitted text", async () => {
     globalThis.location.hash = "#/history";
     const urls: string[] = [];
