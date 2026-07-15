@@ -219,6 +219,91 @@ describe("Diff view", () => {
     expect(rawDiff.textContent).toContain('"commit": "after"');
     expect(screen.queryByTestId("progress-view")).toBeNull();
   });
+
+  it("selects Raw JSON and explains Semantic Diff for an Unrecognized Schema Observation", async () => {
+    const snapshot = createSemanticSnapshot(
+      parseDecodedSave(decodedSave),
+      getBuiltinMappingData(),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/diff")) {
+          return Response.json(
+            {
+              error: {
+                code: "read_model_unavailable",
+                message: "Semantic Diff is unavailable.",
+              },
+            },
+            { status: 503 },
+          );
+        }
+        if (url.includes("/api/v1/save") && url.includes("commit=")) {
+          const saveUrl = new URL(url);
+          const commitRef = saveUrl.searchParams.get("commit");
+          if (commitRef === null) {
+            throw new Error("Expected a commit-selected Save State request.");
+          }
+          const isUnrecognized = commitRef === "before";
+          return Response.json({
+            status: "available",
+            observation: {
+              ...latestObservation,
+              commit: createCommit(commitRef),
+              schema: isUnrecognized
+                ? { status: "unrecognized", reason: "future-save-schema" }
+                : latestObservation.schema,
+            },
+            decodedSave: { commit: commitRef },
+            // eslint-disable-next-line unicorn/no-null -- null is the wire value for an unavailable Semantic Snapshot.
+            semanticSnapshot: isUnrecognized ? null : snapshot,
+          });
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    expect(await screen.findByTestId("diff-view")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+
+    const rawTab = await screen.findByRole("tab", { name: "Raw JSON" });
+    await waitFor(() => {
+      expect(rawTab.getAttribute("aria-selected")).toBe("true");
+    });
+    expect(screen.getByTestId("raw-save-diff-fallback").textContent).toContain(
+      '"commit": "before"',
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Semantic" }));
+    expect(
+      screen.getByText(
+        "Semantic Diff is unavailable because an observation uses an unrecognized schema.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByTestId("progress-view")).toBeNull();
+  });
 });
 
 function connectLocalHistory() {

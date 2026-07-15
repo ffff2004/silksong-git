@@ -52,6 +52,7 @@ function DiffView() {
     setRawDiff(undefined);
     setRawError(undefined);
     setSemanticError(undefined);
+    setView("semantic");
 
     const [semanticResult, fromSaveResult, toSaveResult] =
       await Promise.allSettled([
@@ -81,10 +82,25 @@ function DiffView() {
       && fromSaveResult.value.status === "available"
       && toSaveResult.value.status === "available"
     ) {
+      const hasUnrecognizedSchema = [
+        fromSaveResult.value,
+        toSaveResult.value,
+      ].some(
+        (save) =>
+          save.semanticSnapshot === null
+          || save.observation.schema.status === "unrecognized",
+      );
       setRawDiff({
         fromValue: stringifyDecodedSave(fromSaveResult.value.decodedSave),
         toValue: stringifyDecodedSave(toSaveResult.value.decodedSave),
       });
+      if (hasUnrecognizedSchema) {
+        setDiff(undefined);
+        setSemanticError(
+          "Semantic Diff is unavailable because an observation uses an unrecognized schema.",
+        );
+        setView("raw");
+      }
     } else {
       const rejectedSave = [fromSaveResult, toSaveResult].find(
         (result) => result.status === "rejected",
