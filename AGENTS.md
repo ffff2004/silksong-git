@@ -112,7 +112,7 @@ pnpm format
 pnpm verify
 ```
 
-`pnpm format` applies formatting and lint fixes. `pnpm verify` then runs linting, tests, builds, and custom verifications. It takes more than 90 seconds.
+`pnpm format` applies formatting and lint fixes, taking about 40s. `pnpm verify` then runs linting, tests, builds, and custom verifications, taking more than 60s.
 
 If satisfying the linter would conflict with the design or degrade code quality, pause the work and report.
 
