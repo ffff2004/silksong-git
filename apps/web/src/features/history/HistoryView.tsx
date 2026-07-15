@@ -1,12 +1,14 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 
-import type {
-  LocalHttpHistoryResult,
-  LocalHttpObservationHistoryResult,
-} from "@silksong-git/history/http-wire";
+import type { LocalHttpObservationHistoryResult } from "@silksong-git/history/http-wire";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
+import type {
+  HistoryEventFilters,
+  HistoryEventGroup,
+} from "./history-events-query.ts";
+import { createHistoryEventsQuery } from "./history-events-query.ts";
 
 const eventTypes = [
   "itemStatusChanged",
@@ -29,7 +31,6 @@ function HistoryView() {
   const location = useLocation();
   const navigate = useNavigate();
   const [view, setView] = createSignal<"events" | "observations">("events");
-  const [history, setHistory] = createSignal<LocalHttpHistoryResult>();
   const [observations, setObservations] =
     createSignal<LocalHttpObservationHistoryResult>();
   const [text, setText] = createSignal("");
@@ -44,6 +45,37 @@ function HistoryView() {
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string>();
   const [restoreCommit, setRestoreCommit] = createSignal<string>();
+  const eventsQuery = createHistoryEventsQuery(() => {
+    const connection = localHistory.connection();
+    return connection.kind === "connected"
+      ? connection.session.client
+      : undefined;
+  });
+  let previousObservationRevision: number | undefined;
+
+  createEffect(() => {
+    const connection = localHistory.connection();
+    if (connection.kind !== "connected") {
+      previousObservationRevision = undefined;
+      return;
+    }
+
+    const nextRevision = connection.session.observationRevision();
+    if (nextRevision === undefined) {
+      return;
+    }
+    if (previousObservationRevision === undefined) {
+      previousObservationRevision = nextRevision;
+      return;
+    }
+    if (nextRevision === previousObservationRevision) {
+      return;
+    }
+    previousObservationRevision = nextRevision;
+    if (eventsQuery.hasLoaded()) {
+      eventsQuery.refresh().catch(handleUnexpectedLoadError);
+    }
+  });
 
   onMount(() => {
     const params = new URLSearchParams(location.search);
@@ -58,7 +90,9 @@ function HistoryView() {
     if (initialView === "observations") {
       loadObservations().catch(handleUnexpectedLoadError);
     } else {
-      loadEvents().catch(handleUnexpectedLoadError);
+      eventsQuery
+        .submit(currentEventFilters())
+        .catch(handleUnexpectedLoadError);
     }
   });
 
@@ -66,58 +100,18 @@ function HistoryView() {
     setError(error_ instanceof Error ? error_.message : "History unavailable.");
   }
 
-  async function loadEvents(
-    input: {
-      readonly append?: boolean;
-      readonly cursor?: string;
-    } = {},
-  ) {
-    const connection = localHistory.connection();
-    if (connection.kind !== "connected") {
-      return;
-    }
-
-    setIsLoading(true);
-    setError(undefined);
-    try {
-      const query = text().trim();
-      const selectedEventType = eventType();
-      const selectedStatus = statusTo();
-      const selectedDirection = direction();
-      const hasSearchFields =
-        query !== ""
-        || selectedEventType !== ""
-        || selectedStatus !== ""
-        || selectedDirection !== "";
-      const result = hasSearchFields
-        ? await connection.session.client.search({
-            statusTo: selectedStatus === "" ? undefined : selectedStatus,
-            eventType: selectedEventType === "" ? undefined : selectedEventType,
-            direction: selectedDirection === "" ? undefined : selectedDirection,
-            text: query === "" ? undefined : query,
-            includeFiltered: includeFiltered() ? true : undefined,
-            cursor: input.cursor,
-          })
-        : await connection.session.client.getHistory({
-            cursor: input.cursor,
-            includeFiltered: includeFiltered() ? true : undefined,
-          });
-      const current = history();
-      setHistory(
-        input.append === true && current !== undefined
-          ? {
-              events: [...current.events, ...result.events],
-              nextCursor: result.nextCursor,
-            }
-          : result,
-      );
-    } catch (error_) {
-      setError(
-        error_ instanceof Error ? error_.message : "History unavailable.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
+  function currentEventFilters(): HistoryEventFilters {
+    const query = text().trim();
+    const selectedEventType = eventType();
+    const selectedStatus = statusTo();
+    const selectedDirection = direction();
+    return {
+      direction: selectedDirection === "" ? undefined : selectedDirection,
+      eventType: selectedEventType === "" ? undefined : selectedEventType,
+      includeFiltered: includeFiltered() ? true : undefined,
+      statusTo: selectedStatus === "" ? undefined : selectedStatus,
+      text: query === "" ? undefined : query,
+    };
   }
 
   async function loadObservations(
@@ -170,8 +164,10 @@ function HistoryView() {
             const params = new URLSearchParams(location.search);
             params.set("view", "events");
             navigate(`/history?${params.toString()}`);
-            if (history() === undefined) {
-              loadEvents().catch(handleUnexpectedLoadError);
+            if (!eventsQuery.hasLoaded()) {
+              eventsQuery
+                .submit(currentEventFilters())
+                .catch(handleUnexpectedLoadError);
             }
           }}
         >
@@ -216,7 +212,9 @@ function HistoryView() {
             params.delete("includeFiltered");
           }
           navigate(`/history?${params.toString()}`);
-          loadEvents().catch(handleUnexpectedLoadError);
+          eventsQuery
+            .submit(currentEventFilters())
+            .catch(handleUnexpectedLoadError);
         }}
       >
         <label>
@@ -294,17 +292,19 @@ function HistoryView() {
           Search
         </button>
       </form>
-      <Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
-      <Show when={isLoading()}>
+      <Show when={error() ?? eventsQuery.error()}>
+        {(message) => <p role="alert">{message()}</p>}
+      </Show>
+      <Show when={isLoading() || eventsQuery.isLoading()}>
         <p>Loading history…</p>
       </Show>
       <Show when={view() === "events"}>
         <div data-testid="history-events">
           <Show
-            when={history()?.events.length}
+            when={eventsQuery.groups().length}
             fallback={<p>No events yet.</p>}
           >
-            <For each={groupEvents(history()?.events ?? [])}>
+            <For each={eventsQuery.groups()}>
               {(group) => (
                 <HistoryCommitCard
                   group={group}
@@ -322,15 +322,13 @@ function HistoryView() {
           </Show>
         </div>
       </Show>
-      <Show when={view() === "events" && history()?.nextCursor !== undefined}>
+      <Show when={view() === "events" && eventsQuery.hasMore()}>
         <button
           class="btn-reset"
           type="button"
-          disabled={isLoading()}
+          disabled={isLoading() || eventsQuery.isLoading()}
           onClick={() => {
-            loadEvents({ append: true, cursor: history()?.nextCursor }).catch(
-              handleUnexpectedLoadError,
-            );
+            eventsQuery.loadMore().catch(handleUnexpectedLoadError);
           }}
         >
           Load More
@@ -412,33 +410,8 @@ function getEnumParam<T extends string>(
   return values.find((candidate) => candidate === value) ?? "";
 }
 
-type HistoryEvent = LocalHttpHistoryResult["events"][number];
-
-interface HistoryGroup {
-  readonly commit: HistoryEvent["commit"];
-  readonly events: readonly HistoryEvent[];
-}
-
-function groupEvents(events: readonly HistoryEvent[]): readonly HistoryGroup[] {
-  const groups = new Map<string, HistoryGroup>();
-  for (const event of events) {
-    const existing = groups.get(event.commit.ref);
-    if (existing === undefined) {
-      groups.set(event.commit.ref, { commit: event.commit, events: [event] });
-    } else {
-      groups.set(event.commit.ref, {
-        commit: existing.commit,
-        events: [...existing.events, event],
-      });
-    }
-  }
-
-  // eslint-disable-next-line unicorn/prefer-iterator-to-array -- this keeps the grouping result readable and works on all supported browsers.
-  return [...groups.values()];
-}
-
 function HistoryCommitCard(props: {
-  readonly group: HistoryGroup;
+  readonly group: HistoryEventGroup;
   readonly onExport: () => void;
   readonly onRestore: () => void;
 }) {

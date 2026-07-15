@@ -37,6 +37,7 @@ describe("History view", () => {
 
   afterEach(() => {
     cleanup();
+    Reflect.deleteProperty(document, "visibilityState");
     globalThis.location.hash = "";
     vi.unstubAllGlobals();
   });
@@ -240,6 +241,155 @@ describe("History view", () => {
       });
     });
   });
+
+  it("loads more Events with the submitted query instead of unsubmitted form edits", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        urls.push(url);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({ events: [] });
+        }
+        if (url.includes("/api/v1/search")) {
+          return Response.json(
+            url.includes("cursor=older-search-events")
+              ? { events: [] }
+              : { events: [], nextCursor: "older-search-events" },
+          );
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    expect(await screen.findByTestId("history-view")).toBeDefined();
+    fireEvent.input(getRequiredInput("#history-search-text"), {
+      target: { value: "Bell Beast" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    const loadMore = await screen.findByRole("button", { name: "Load More" });
+
+    fireEvent.input(getRequiredInput("#history-search-text"), {
+      target: { value: "Moss Mother" },
+    });
+    fireEvent.click(loadMore);
+
+    await waitFor(() => {
+      const request = getLastRequest(urls, "/api/v1/search");
+      expect(request).toContain("cursor=older-search-events");
+    });
+    const loadMoreRequest = getLastRequest(urls, "/api/v1/search");
+    if (loadMoreRequest === undefined) {
+      throw new Error("Expected a paginated History Search request.");
+    }
+    const loadMoreUrl = new URL(loadMoreRequest);
+    expect(Object.fromEntries(loadMoreUrl.searchParams)).toEqual({
+      cursor: "older-search-events",
+      text: "Bell Beast",
+    });
+  });
+
+  it("merges refreshed Events into already paginated History when the Watcher revision changes", async () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    let historyPageRequests = 0;
+    let watcherRequests = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          watcherRequests++;
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: watcherRequests,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("cursor=older-events")) {
+          return Response.json({
+            events: [createSummaryEvent("older", "older", "rosaries")],
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          historyPageRequests++;
+          return Response.json(
+            historyPageRequests === 1
+              ? {
+                  events: [
+                    createSummaryEvent(
+                      "initial",
+                      "initial",
+                      "completionPercentage",
+                    ),
+                  ],
+                  nextCursor: "older-events",
+                }
+              : {
+                  events: [
+                    createSummaryEvent("newest", "newest", "shellShards"),
+                  ],
+                },
+          );
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    expect(await screen.findByText("completionPercentage")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Load More" }));
+    expect(await screen.findByText("rosaries")).toBeDefined();
+
+    setDocumentVisibility("visible");
+    await waitFor(() => {
+      expect(watcherRequests).toBe(1);
+    });
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    setDocumentVisibility("hidden");
+    setDocumentVisibility("visible");
+
+    expect(await screen.findByText("shellShards")).toBeDefined();
+    expect(screen.getByText("completionPercentage")).toBeDefined();
+    expect(screen.getByText("rosaries")).toBeDefined();
+  });
 });
 
 function connectLocalHistory() {
@@ -286,6 +436,57 @@ function getLastRequest(
 
 function getHashSearchParams(): URLSearchParams {
   return new URLSearchParams(globalThis.location.hash.split("?", 2)[1]);
+}
+
+function setDocumentVisibility(value: "hidden" | "visible") {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    value,
+  });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+function createSummaryEvent(
+  id: string,
+  shortRef: string,
+  metric: "completionPercentage" | "rosaries" | "shellShards",
+) {
+  const commit = {
+    committedAt: "2026-07-15T00:00:00.000Z",
+    ref: `${shortRef}-commit`,
+    shortRef,
+  };
+  const version = {
+    saveSchemaVersion: "1",
+    semanticCoreVersion: "test",
+  };
+  return {
+    id,
+    commit,
+    observation: {
+      commit,
+      observedAt: "2026-07-15T00:00:00.000Z",
+      trigger: "watcher",
+      sourcePath: "/tmp/user1.dat",
+      encodedSha256: "a".repeat(64),
+      decodedSha256: "b".repeat(64),
+      decoderVersion: "test",
+      schema: { status: "recognized", saveSchemaVersion: "1" },
+    },
+    snapshotSummary: {},
+    event: {
+      kind: "summaryMetric",
+      eventType: "summaryMetricChanged",
+      metric,
+      beforeValue: 1,
+      afterValue: 2,
+      direction: "progression",
+      isRegression: false,
+      sourceReferences: [],
+      version: { before: version, after: version },
+    },
+    visibility: { defaultVisible: true, filterReasons: [] },
+  };
 }
 
 function requestUrl(input: RequestInfo | URL): string {
