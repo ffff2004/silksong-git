@@ -6,7 +6,6 @@ import { useProgressSnapshot } from "./progress-snapshot-context.tsx";
 import type { ProgressItemData } from "./progress-types.ts";
 import styles from "./ProgressSnapshotView.module.css";
 
-// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the CSS Module key is defined beside this component.
 const diffChangedClass = styles["diffChanged"]!;
 
 const romanActs = new Map([

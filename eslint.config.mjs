@@ -43,6 +43,20 @@ export default defineConfig(
       "unicorn/try-complexity": "off",
 
       "@typescript-eslint/explicit-module-boundary-types": "off",
+      // Vite guarantees that class names declared in a CSS Module exist at runtime. TypeScript's
+      // generic CSS Module index signature cannot express that guarantee when
+      // noUncheckedIndexedAccess is enabled, so allow assertions only on the conventional `styles`
+      // import while preserving the ban everywhere else in Web code.
+      "@typescript-eslint/no-non-null-assertion": "off",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "TSNonNullExpression:not([expression.type='MemberExpression'][expression.object.name='styles'])",
+          message:
+            "Non-null assertions are only allowed for class names from the conventional CSS Module `styles` import.",
+        },
+      ],
       "no-unassigned-vars": "off",
       "perfectionist/sort-jsx-props": "off",
     },

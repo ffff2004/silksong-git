@@ -12,7 +12,6 @@ import { ProgressSection } from "./ProgressSection.tsx";
 import styles from "./ProgressSnapshotView.module.css";
 import { ProgressToc } from "./ProgressToc.tsx";
 
-// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the CSS Module key is defined beside this component.
 const progressDiffToolbarClass = styles["progressDiffToolbar"]!;
 
 interface ProgressSnapshotViewProps {
