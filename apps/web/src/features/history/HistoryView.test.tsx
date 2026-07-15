@@ -390,6 +390,80 @@ describe("History view", () => {
     expect(screen.getByText("completionPercentage")).toBeDefined();
     expect(screen.getByText("rosaries")).toBeDefined();
   });
+
+  it("merges refreshed Raw Save Observations into their independently paginated history", async () => {
+    globalThis.location.hash = "#/history?view=observations";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    let observationPageRequests = 0;
+    let watcherRequests = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          watcherRequests++;
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: watcherRequests,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("cursor=older-observations")) {
+          return Response.json({
+            entries: [createObservationEntry("older-observation")],
+          });
+        }
+        if (url.includes("/api/v1/observations")) {
+          observationPageRequests++;
+          return Response.json(
+            observationPageRequests === 1
+              ? {
+                  entries: [createObservationEntry("initial-observation")],
+                  nextCursor: "older-observations",
+                }
+              : {
+                  entries: [createObservationEntry("newest-observation")],
+                },
+          );
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    expect(await screen.findByText("initial-observation")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Load More" }));
+    expect(await screen.findByText("older-observation")).toBeDefined();
+
+    setDocumentVisibility("visible");
+    await waitFor(() => {
+      expect(watcherRequests).toBe(1);
+    });
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    setDocumentVisibility("hidden");
+    setDocumentVisibility("visible");
+
+    expect(await screen.findByText("newest-observation")).toBeDefined();
+    expect(screen.getByText("initial-observation")).toBeDefined();
+    expect(screen.getByText("older-observation")).toBeDefined();
+  });
 });
 
 function connectLocalHistory() {
@@ -486,6 +560,27 @@ function createSummaryEvent(
       version: { before: version, after: version },
     },
     visibility: { defaultVisible: true, filterReasons: [] },
+  };
+}
+
+function createObservationEntry(shortRef: string) {
+  const commit = {
+    committedAt: "2026-07-15T00:00:00.000Z",
+    ref: `${shortRef}-commit`,
+    shortRef,
+  };
+  return {
+    observation: {
+      commit,
+      observedAt: "2026-07-15T00:00:00.000Z",
+      trigger: "watcher",
+      sourcePath: "/tmp/user1.dat",
+      encodedSha256: "a".repeat(64),
+      decodedSha256: "b".repeat(64),
+      decoderVersion: "test",
+      schema: { status: "recognized", saveSchemaVersion: "1" },
+    },
+    snapshotSummary: {},
   };
 }
 

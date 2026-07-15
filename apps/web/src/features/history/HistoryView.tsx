@@ -1,7 +1,6 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 
-import type { LocalHttpObservationHistoryResult } from "@silksong-git/history/http-wire";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
 import type {
@@ -9,6 +8,7 @@ import type {
   HistoryEventGroup,
 } from "./history-events-query.ts";
 import { createHistoryEventsQuery } from "./history-events-query.ts";
+import { createHistoryObservationsQuery } from "./history-observations-query.ts";
 
 const eventTypes = [
   "itemStatusChanged",
@@ -31,8 +31,6 @@ function HistoryView() {
   const location = useLocation();
   const navigate = useNavigate();
   const [view, setView] = createSignal<"events" | "observations">("events");
-  const [observations, setObservations] =
-    createSignal<LocalHttpObservationHistoryResult>();
   const [text, setText] = createSignal("");
   const [eventType, setEventType] = createSignal("");
   const [statusTo, setStatusTo] = createSignal<
@@ -42,10 +40,15 @@ function HistoryView() {
     "" | "neutral" | "progression" | "regression"
   >("");
   const [includeFiltered, setIncludeFiltered] = createSignal(false);
-  const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string>();
   const [restoreCommit, setRestoreCommit] = createSignal<string>();
   const eventsQuery = createHistoryEventsQuery(() => {
+    const connection = localHistory.connection();
+    return connection.kind === "connected"
+      ? connection.session.client
+      : undefined;
+  });
+  const observationsQuery = createHistoryObservationsQuery(() => {
     const connection = localHistory.connection();
     return connection.kind === "connected"
       ? connection.session.client
@@ -75,6 +78,9 @@ function HistoryView() {
     if (eventsQuery.hasLoaded()) {
       eventsQuery.refresh().catch(handleUnexpectedLoadError);
     }
+    if (observationsQuery.hasLoaded()) {
+      observationsQuery.refresh().catch(handleUnexpectedLoadError);
+    }
   });
 
   onMount(() => {
@@ -88,7 +94,7 @@ function HistoryView() {
       params.get("view") === "observations" ? "observations" : "events";
     setView(initialView);
     if (initialView === "observations") {
-      loadObservations().catch(handleUnexpectedLoadError);
+      observationsQuery.load().catch(handleUnexpectedLoadError);
     } else {
       eventsQuery
         .submit(currentEventFilters())
@@ -112,41 +118,6 @@ function HistoryView() {
       statusTo: selectedStatus === "" ? undefined : selectedStatus,
       text: query === "" ? undefined : query,
     };
-  }
-
-  async function loadObservations(
-    input: {
-      readonly append?: boolean;
-      readonly cursor?: string;
-    } = {},
-  ) {
-    const connection = localHistory.connection();
-    if (connection.kind !== "connected") {
-      return;
-    }
-
-    setIsLoading(true);
-    setError(undefined);
-    try {
-      const result = await connection.session.client.getObservations({
-        cursor: input.cursor,
-      });
-      const current = observations();
-      setObservations(
-        input.append === true && current !== undefined
-          ? {
-              entries: [...current.entries, ...result.entries],
-              nextCursor: result.nextCursor,
-            }
-          : result,
-      );
-    } catch (error_) {
-      setError(
-        error_ instanceof Error ? error_.message : "History unavailable.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
   }
 
   return (
@@ -184,8 +155,8 @@ function HistoryView() {
             const params = new URLSearchParams(location.search);
             params.set("view", "observations");
             navigate(`/history?${params.toString()}`);
-            if (observations() === undefined) {
-              loadObservations().catch(handleUnexpectedLoadError);
+            if (!observationsQuery.hasLoaded()) {
+              observationsQuery.load().catch(handleUnexpectedLoadError);
             }
           }}
         >
@@ -292,10 +263,10 @@ function HistoryView() {
           Search
         </button>
       </form>
-      <Show when={error() ?? eventsQuery.error()}>
+      <Show when={error() ?? eventsQuery.error() ?? observationsQuery.error()}>
         {(message) => <p role="alert">{message()}</p>}
       </Show>
-      <Show when={isLoading() || eventsQuery.isLoading()}>
+      <Show when={eventsQuery.isLoading() || observationsQuery.isLoading()}>
         <p>Loading history…</p>
       </Show>
       <Show when={view() === "events"}>
@@ -326,7 +297,7 @@ function HistoryView() {
         <button
           class="btn-reset"
           type="button"
-          disabled={isLoading() || eventsQuery.isLoading()}
+          disabled={eventsQuery.isLoading() || observationsQuery.isLoading()}
           onClick={() => {
             eventsQuery.loadMore().catch(handleUnexpectedLoadError);
           }}
@@ -337,10 +308,10 @@ function HistoryView() {
       <Show when={view() === "observations"}>
         <div data-testid="history-observations">
           <Show
-            when={observations()?.entries.length}
+            when={observationsQuery.entries().length}
             fallback={<p>No observations yet.</p>}
           >
-            <For each={observations()?.entries}>
+            <For each={observationsQuery.entries()}>
               {(entry) => (
                 <article class="history-card">
                   <h3>{entry.observation.commit.shortRef}</h3>
@@ -356,20 +327,13 @@ function HistoryView() {
           </Show>
         </div>
       </Show>
-      <Show
-        when={
-          view() === "observations" && observations()?.nextCursor !== undefined
-        }
-      >
+      <Show when={view() === "observations" && observationsQuery.hasMore()}>
         <button
           class="btn-reset"
           type="button"
-          disabled={isLoading()}
+          disabled={eventsQuery.isLoading() || observationsQuery.isLoading()}
           onClick={() => {
-            loadObservations({
-              append: true,
-              cursor: observations()?.nextCursor,
-            }).catch(handleUnexpectedLoadError);
+            observationsQuery.loadMore().catch(handleUnexpectedLoadError);
           }}
         >
           Load More
