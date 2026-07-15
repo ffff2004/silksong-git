@@ -58,6 +58,11 @@ describe("MonacoJsonDiffViewer", () => {
       expect(monacoMock.createDiffEditor).toHaveBeenCalledTimes(1);
     });
 
+    const container = document.querySelector("#raw-save-diff-output");
+    if (!(container instanceof HTMLDivElement)) {
+      throw new TypeError("Expected the Monaco Diff editor container.");
+    }
+    expect(container.parentElement?.style.height).toBe("calc(100vh - 18rem)");
     expect(monacoMock.createModel).toHaveBeenNthCalledWith(
       1,
       '{"before":true}',

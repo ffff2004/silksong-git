@@ -1,3 +1,22 @@
+.progressLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.progressContent {
+  min-width: 0;
+}
+
+.progressLayout :global(.toc-container) {
+  position: sticky;
+  top: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-height: calc(100vh - var(--topbar-height));
+}
+
 .progressDiffToolbar {
   display: flex;
   justify-content: flex-end;

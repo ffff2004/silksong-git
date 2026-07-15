@@ -1956,20 +1956,6 @@ main::-webkit-scrollbar-thumb:hover {
   margin-bottom: 15px;
 }
 
-#raw-save-data-output {
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  flex: 1;
-  overflow-y: auto;
-  background: var(--bg-1);
-  color: var(--ink-1);
-  font-family: monospace;
-  line-height: 1.4;
-  font-size: 0.9rem;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  position: relative;
-}
-
 .rawsave-header {
   position: sticky;
   top: 0;
@@ -2335,11 +2321,6 @@ main::-webkit-scrollbar-thumb:hover {
 
 /* === TABLE OF CONTENTS (TOC) === */
 .toc-container {
-  position: fixed;
-  top: 44px;
-  right: 0;
-  bottom: 0;
-  width: 260px;
   background: rgba(17, 17, 18, 0.95);
   border-left: 2px solid rgba(197, 100, 50, 0.4);
   box-shadow: -3px 0 10px rgba(0, 0, 0, 0.45);

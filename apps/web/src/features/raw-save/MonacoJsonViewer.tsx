@@ -2,6 +2,8 @@ import loader from "@monaco-editor/loader";
 import type * as monaco from "monaco-editor";
 import { createEffect, onCleanup, onMount } from "solid-js";
 
+import styles from "./MonacoViewer.module.css";
+
 interface MonacoJsonViewerProps {
   readonly value: string;
 }
@@ -73,13 +75,16 @@ export function MonacoJsonViewer(props: MonacoJsonViewerProps) {
 
   return (
     <>
-      <div
-        ref={container}
-        id="raw-save-data-output"
-        style={{
-          display: import.meta.env.MODE === "test" ? "none" : undefined,
-        }}
-      />
+      <div class={styles["frame"]}>
+        <div
+          ref={container}
+          id="raw-save-data-output"
+          class={styles["editor"]}
+          style={{
+            display: import.meta.env.MODE === "test" ? "none" : undefined,
+          }}
+        />
+      </div>
       <pre
         data-testid="raw-save-fallback"
         style={{

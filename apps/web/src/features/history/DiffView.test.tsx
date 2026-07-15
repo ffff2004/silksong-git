@@ -137,7 +137,13 @@ describe("Diff view", () => {
         .getByRole("tab", { name: "Semantic" })
         .getAttribute("aria-selected"),
     ).toBe("true");
-    expect(screen.getByTestId("progress-view")).toBeDefined();
+    const progressView = screen.getByTestId("progress-view");
+    const progressLayout = screen.getByTestId("progress-layout");
+    expect(getRequiredElement("#main").style.marginRight).toBe("");
+    expect(progressLayout.contains(progressView)).toBe(true);
+    expect(
+      progressLayout.querySelector(":scope > .toc-container"),
+    ).not.toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Raw JSON" }));
     expect(
