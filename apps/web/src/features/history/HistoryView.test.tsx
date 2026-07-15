@@ -806,6 +806,86 @@ describe("History view", () => {
       screen.getByRole("button", { name: "Confirm Restore" }),
     ).toBeDefined();
   });
+
+  it("requires an explicit missing-file confirmation before restoring without an original-file backup", async () => {
+    const restoreRequests: RequestInit[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [createSummaryEvent("source", "source", "rosaries")],
+          });
+        }
+        if (url.includes("/api/v1/restores/in-place")) {
+          restoreRequests.push(init ?? {});
+          return Response.json({
+            commit: {
+              ref: "source-commit",
+              shortRef: "source",
+              committedAt: "2026-07-15T00:00:00.000Z",
+            },
+            targetPath: "/tmp/user1.dat",
+            writtenSha256: "d".repeat(64),
+          });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    const card = await screen.findByTestId("history-commit-card");
+    fireEvent.click(getCardAction(card, "Restore"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Confirm Restore" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "The Watched Save is missing. Restoring it cannot create an original-file backup.",
+      ),
+    ).toBeDefined();
+    expect(restoreRequests).toHaveLength(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Restore Missing Watched Save" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Restore completed. The watcher will observe the new save.",
+      ),
+    ).toBeDefined();
+    expect(restoreRequests).toHaveLength(1);
+    const restoreBody = restoreRequests[0]?.body;
+    if (typeof restoreBody !== "string") {
+      throw new TypeError("Expected Restore to send a JSON body.");
+    }
+    expect(JSON.parse(restoreBody)).toEqual({
+      confirmation: "restore-watched-save",
+      commitRef: "source-commit",
+      expectedCurrent: { status: "missing" },
+    });
+  });
 });
 
 function connectLocalHistory() {

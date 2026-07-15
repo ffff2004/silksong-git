@@ -414,29 +414,43 @@ function RestoreDialog(props: {
 }) {
   const localHistory = useLocalHistoryStore();
   const [isSubmitting, setIsSubmitting] = createSignal(false);
+  const [requiresMissingConfirmation, setRequiresMissingConfirmation] =
+    createSignal(false);
   const [message, setMessage] = createSignal<string>();
 
-  const restore = async () => {
+  const restore = async (confirmMissing = false) => {
     const connection = localHistory.connection();
     if (connection.kind !== "connected") {
       return;
     }
     setIsSubmitting(true);
     try {
-      const latest = await connection.session.client.getSave({
-        kind: "latest",
-      });
-      const expectedCurrent =
-        latest.status === "available"
-          ? {
-              encodedSha256: latest.observation.encodedSha256,
-              status: "present" as const,
-            }
-          : { status: "missing" as const };
+      let expectedCurrent:
+        | { readonly status: "present"; readonly encodedSha256: string }
+        | { readonly status: "missing" };
+      if (confirmMissing) {
+        expectedCurrent = { status: "missing" };
+      } else {
+        const latest = await connection.session.client.getSave({
+          kind: "latest",
+        });
+        if (latest.status === "empty") {
+          setRequiresMissingConfirmation(true);
+          setMessage(
+            "The Watched Save is missing. Restoring it cannot create an original-file backup.",
+          );
+          return;
+        }
+        expectedCurrent = {
+          encodedSha256: latest.observation.encodedSha256,
+          status: "present",
+        };
+      }
       await connection.session.client.restoreInPlace({
         commitRef: props.commit,
         expectedCurrent,
       });
+      setRequiresMissingConfirmation(false);
       setMessage("Restore completed. The watcher will observe the new save.");
     } catch (error) {
       setMessage(getRestoreErrorMessage(error));
@@ -473,6 +487,20 @@ function RestoreDialog(props: {
         >
           {isSubmitting() ? "Restoring…" : "Confirm Restore"}
         </button>
+        <Show when={requiresMissingConfirmation()}>
+          <button
+            class="btn-primary"
+            type="button"
+            disabled={isSubmitting()}
+            onClick={() => {
+              restore(true).catch((error_: unknown) => {
+                setMessage(getRestoreErrorMessage(error_));
+              });
+            }}
+          >
+            Restore Missing Watched Save
+          </button>
+        </Show>
       </div>
     </div>
   );
