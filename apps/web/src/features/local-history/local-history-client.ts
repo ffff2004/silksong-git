@@ -419,8 +419,20 @@ async function parseJsonResponse<T>(
 }
 
 function parseFileName(disposition: string | null): string {
-  const match = /filename="(?<name>[^"]+)"/u.exec(disposition ?? "");
-  return match?.groups?.["name"] ?? "save.dat";
+  const encodedMatch = /filename\*=UTF-8''(?<name>[^;]+)/iu.exec(
+    disposition ?? "",
+  );
+  const encodedName = encodedMatch?.groups?.["name"];
+  if (encodedName !== undefined) {
+    try {
+      return decodeURIComponent(encodedName);
+    } catch {
+      // Fall through to the ASCII filename when filename* is malformed.
+    }
+  }
+
+  const fallbackMatch = /filename="(?<name>[^"]+)"/u.exec(disposition ?? "");
+  return fallbackMatch?.groups?.["name"] ?? "save.dat";
 }
 
 async function createApiError(

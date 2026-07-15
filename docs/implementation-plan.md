@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test`: passed with 41 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection and Local Network Access denial, stale-session, visible-page Watcher polling, moving-latest refresh, and historical-selection behavior, Monaco Raw JSON diff, structured History search and URL restoration, feature-local Events and Raw Save Observation query ownership and revision merge, both History cursor pagination slices, the shared schema-aware History commit card, and History Compare URL selection
-- `pnpm format`: passed after the History Compare selection slice
-- `pnpm verify`: passed after the History Compare selection slice; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test`: passed with 42 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection and Local Network Access denial, stale-session, visible-page Watcher polling, moving-latest refresh, and historical-selection behavior, Monaco Raw JSON diff, structured History search and URL restoration, feature-local Events and Raw Save Observation query ownership and revision merge, both History cursor pagination slices, the shared schema-aware History commit card, History Compare URL selection, and authenticated History Export
+- `pnpm format`: passed after the authenticated History Export slice
+- `pnpm verify`: passed after the authenticated History Export slice; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1460,7 +1460,7 @@ History slices:
 - [x] Raw Save Observation query state is owned by an independent feature-local Module that keeps its opaque pagination and revision refresh behind one Interface.
 - [x] Events and Observations reuse one commit-card Module that displays schema availability plus Completion, Play Time, Rosaries, and Shell Shards and exposes the applicable commit actions.
 - [x] History Compare selection stores `compareFrom` in the URL and selecting a target commit opens Diff with canonical `from` and `to` refs.
-- [ ] History Export downloads authenticated Encoded Save bytes with the server-provided filename, revokes its browser object URL, preserves selection, and reports failures.
+- [x] History Export downloads authenticated Encoded Save bytes with the server-provided filename, revokes its browser object URL, preserves selection, and reports failures.
 - [ ] Normal History Restore uses the latest committed observation hash as the `present` precondition, reports synchronization conflicts, and never offers a force override or automatic retry.
 - [ ] An explicit missing-Watched-Save Restore flow sends the server-verified `missing` precondition and warns that no original-file backup can be created.
 - [ ] Watcher revision refresh merges persistent Events and Raw Save Observations into already paginated History state without disrupting the current scroll position.

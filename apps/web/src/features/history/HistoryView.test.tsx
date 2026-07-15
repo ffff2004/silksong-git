@@ -604,6 +604,114 @@ describe("History view", () => {
       );
     });
   });
+
+  it("downloads an authenticated History export without changing selection and reports failures", async () => {
+    globalThis.location.hash = "#/history?compareFrom=pinned-commit";
+    const exportRequests: Array<{
+      readonly init: RequestInit | undefined;
+      readonly url: string;
+    }> = [];
+    const exportedValues: Array<Blob | MediaSource> = [];
+    const createObjectUrl = vi
+      .spyOn(URL, "createObjectURL")
+      .mockImplementation((blob) => {
+        exportedValues.push(blob);
+        return "blob:history-export";
+      });
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [
+              createSummaryEvent("source", "source", "rosaries"),
+              createSummaryEvent("target", "target", "shellShards"),
+            ],
+          });
+        }
+        if (url.includes("/api/v1/export")) {
+          exportRequests.push({ init, url });
+          if (url.includes("target-commit")) {
+            return Response.json(
+              {
+                error: {
+                  code: "read_model_unavailable",
+                  message: "Export is temporarily unavailable.",
+                },
+              },
+              { status: 503 },
+            );
+          }
+
+          return new Response(Uint8Array.from([1, 2, 3, 4]), {
+            headers: {
+              "Content-Disposition":
+                "attachment; filename=\"slot.source.dat\"; filename*=UTF-8''%E5%AD%98%E6%A1%A3.source.dat",
+              "Content-Type": "application/octet-stream",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    const cards = await screen.findAllByTestId("history-commit-card");
+    fireEvent.click(getCardAction(cards[0], "Export"));
+
+    await waitFor(() => {
+      expect(anchorClick).toHaveBeenCalledTimes(1);
+    });
+    const downloadAnchor = anchorClick.mock.contexts[0];
+    if (!(downloadAnchor instanceof HTMLAnchorElement)) {
+      throw new TypeError("Expected Export to click a download anchor.");
+    }
+    expect(downloadAnchor.download).toBe("存档.source.dat");
+    expect(downloadAnchor.href).toBe("blob:history-export");
+    expect(exportedValues).toHaveLength(1);
+    const exportedBlob = exportedValues[0];
+    if (!(exportedBlob instanceof Blob)) {
+      throw new TypeError("Expected Export to create a Blob URL.");
+    }
+    expect(exportedBlob.size).toBe(4);
+    expect(createObjectUrl).toHaveBeenCalledTimes(1);
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:history-export");
+    const exportHeaders = new Headers(exportRequests[0]?.init?.headers);
+    expect(exportHeaders.get("Authorization")).toBe("Bearer session-token");
+    expect(globalThis.location.hash).toBe(
+      "#/history?compareFrom=pinned-commit",
+    );
+
+    fireEvent.click(getCardAction(cards[1], "Export"));
+    expect(
+      await screen.findByText("Export is temporarily unavailable."),
+    ).toBeDefined();
+    expect(anchorClick).toHaveBeenCalledTimes(1);
+  });
 });
 
 function connectLocalHistory() {
