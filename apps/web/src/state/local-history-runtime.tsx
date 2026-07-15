@@ -17,6 +17,9 @@ export function LocalHistoryRuntime() {
     const connection = localHistory.connection();
     if (connection.kind === "connected") {
       hadLocalSession = true;
+      if (connection.availability.kind === "stale") {
+        return;
+      }
       const commit = getQueryParam(location.search, "commit");
       let cancelled = false;
       connection.session.client
@@ -37,7 +40,7 @@ export function LocalHistoryRuntime() {
         })
         .catch((error: unknown) => {
           if (!cancelled) {
-            console.error("[local-history] Unable to load latest save:", error);
+            localHistory.reportRequestFailure(error);
           }
         });
 

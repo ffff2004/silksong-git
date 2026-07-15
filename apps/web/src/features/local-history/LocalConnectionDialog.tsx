@@ -20,6 +20,18 @@ export function LocalConnectionDialog(props: LocalConnectionDialogProps) {
 
     return connection.kind === "error" ? connection.error : undefined;
   };
+  const connectedAvailability = () => {
+    const connection = localHistory.connection();
+
+    return connection.kind === "connected"
+      ? connection.availability
+      : undefined;
+  };
+  const staleAvailability = () => {
+    const availability = connectedAvailability();
+
+    return availability?.kind === "stale" ? availability : undefined;
+  };
 
   const close = () => {
     if (!isConnecting()) {
@@ -56,7 +68,16 @@ export function LocalConnectionDialog(props: LocalConnectionDialogProps) {
           </button>
         }
       >
-        <span class={styles["status"]}>Local History connected</span>
+        <span
+          class={styles["status"]}
+          classList={{ [styles["stale"]!]: staleAvailability() !== undefined }}
+          role={staleAvailability() === undefined ? undefined : "alert"}
+          title={staleAvailability()?.error.message}
+        >
+          {staleAvailability() === undefined
+            ? "Local History connected"
+            : "Local History stale"}
+        </span>
         <button
           class="btn-reset"
           id="disconnect-local-history"

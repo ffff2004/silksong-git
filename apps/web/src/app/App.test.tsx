@@ -179,6 +179,59 @@ describe("Solid Web app routing", () => {
     expect(document.querySelector("#clearDataBtn")).toBeNull();
   });
 
+  it("keeps loaded Local Save data visible when a later request makes the session stale", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("commit=unavailable")) {
+          throw new TypeError("Local endpoint became unavailable.");
+        }
+
+        return Response.json({
+          status: "available",
+          observation: latestObservation,
+          decodedSave: { playerData: { geo: 1234 } },
+          semanticSnapshot: {
+            items: [],
+            summary: {
+              completionPercentage: 81,
+              playTime: 9876,
+              rosaries: 1234,
+              shellShards: 88,
+            },
+            version: {
+              saveSchemaVersion: "1",
+              semanticCoreVersion: "test",
+            },
+          },
+        });
+      }),
+    );
+
+    render(() => <App />);
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+    fireEvent.input(getRequiredElement("#local-history-token"), {
+      target: { value: "session-token" },
+    });
+    fireEvent.click(getRequiredElement("#local-history-connect"));
+
+    await waitFor(() => {
+      expect(document.querySelector("#completionValue")?.textContent).toBe(
+        "81%",
+      );
+    });
+
+    globalThis.location.hash = "#/progress?commit=unavailable";
+    globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+
+    expect(await screen.findByText("Local History stale")).toBeDefined();
+    expect(document.querySelector("#completionValue")?.textContent).toBe("81%");
+  });
+
   it("uses History for the empty search and Search API for submitted text", async () => {
     globalThis.location.hash = "#/history";
     const urls: string[] = [];

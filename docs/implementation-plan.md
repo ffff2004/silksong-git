@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test`: passed for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, the first Local History connection behavior slices, Monaco Raw JSON diff, and both History cursor pagination slices
-- `pnpm format`: passed after the Raw Save Observations cursor pagination slice
-- `pnpm verify`: passed after the Raw Save Observations cursor pagination slice; the existing Vite large-chunk warning remains non-blocking and full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test`: passed with 30 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection and stale-session behavior, Monaco Raw JSON diff, and both History cursor pagination slices
+- `pnpm format`: passed after the Local History stale-session slice
+- `pnpm verify`: passed after the Local History stale-session slice; the existing Vite large-chunk warning remains non-blocking and full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1424,6 +1424,7 @@ Notes:
 - Removed the unused `categoryId` from Semantic Snapshots, Semantic Events, the Local History wire contract, and the rebuildable read-model schema. Builtin mapping categories never provided that identifier, and no Web rendering or history query behavior consumed it; requiring it only caused valid rebuilt Save State responses to fail client protocol validation.
 - History Events Load More keeps opaque cursors in component state, appends older results without hiding the existing list, and groups the combined event pages so a commit split at a cursor boundary remains one card.
 - Raw Save Observations has independent cursor state and Load More behavior, so switching History views cannot reuse an Events cursor; appending older entries also keeps the existing Observation list visible.
+- Connected Local History session availability is explicit: later request failures retain the authenticated session and already displayed Local Save as stale, while authentication, incompatibility, and malformed-protocol failures are classified to pause automatic requests.
 
 TDD vertical slices:
 
@@ -1440,6 +1441,45 @@ TDD vertical slices:
 - [x] History Events and Observations views use one search form, selecting `/history` with no submitted fields and `/search` for submitted text while retaining a Local-only connection boundary.
 - [x] Semantic Diff defaults to changed items, optionally shows unchanged items, and highlights returned item changes through the Progress-style rendering seam.
 - [x] Diff Raw JSON compares the selected `from` and `to` Decoded Saves through a lazy Monaco diff viewer, including Unrecognized Schema Observations.
+
+Local session/runtime slices:
+
+- [x] Classify Local History connection and polling failures while preserving already loaded data as stale; authentication and protocol failures pause automatic requests until reconnect or disconnect.
+- [ ] `LocalHistoryRuntime` polls Watcher status only while the document is visible and exposes the latest Watcher snapshot and `observationRevision` through the Local session Interface.
+- [ ] A Watcher revision change refreshes a moving latest Save State without replacing an explicitly selected historical commit.
+- [ ] Historical selection reports when a newer latest observation exists and Back to Latest switches the shared Current Save views to that moving source.
+- [ ] The connection UI distinguishes Local Network Access denial from endpoint unavailability, authentication failure, protocol incompatibility, and transient history availability.
+
+History slices:
+
+- [ ] The History search form submits free text, event kind, target status, direction, and `includeFiltered`; submitted fields live in the URL, choose `/search`, and reset the in-memory Events cursor, while an empty search uses `/history`.
+- [ ] Direct navigation or reconnection restores the History view and submitted filters from the URL, loading Observations immediately for `view=observations` instead of unconditionally loading Events.
+- [ ] Events query state is owned by a feature-local Module that keeps `/history` versus `/search` selection, opaque pagination, cross-page commit grouping, and revision refresh behind one Interface.
+- [ ] Raw Save Observation query state is owned by an independent feature-local Module that keeps its opaque pagination and revision refresh behind one Interface.
+- [ ] Events and Observations reuse one commit-card Module that displays schema availability plus Completion, Play Time, Rosaries, and Shell Shards and exposes the applicable commit actions.
+- [ ] History Compare selection stores `compareFrom` in the URL and selecting a target commit opens Diff with canonical `from` and `to` refs.
+- [ ] History Export downloads authenticated Encoded Save bytes with the server-provided filename, revokes its browser object URL, preserves selection, and reports failures.
+- [ ] Normal History Restore uses the latest committed observation hash as the `present` precondition, reports synchronization conflicts, and never offers a force override or automatic retry.
+- [ ] An explicit missing-Watched-Save Restore flow sends the server-verified `missing` precondition and warns that no original-file backup can be created.
+- [ ] Watcher revision refresh merges persistent Events and Raw Save Observations into already paginated History state without disrupting the current scroll position.
+
+Diff slices:
+
+- [ ] Diff keeps canonical `from` and `to` refs in the URL and exposes Semantic and Raw JSON views as explicit tabs.
+- [ ] Diff loads Semantic comparison and both Decoded Saves independently so one failed data source does not discard the other result.
+- [ ] Unrecognized Schema Observations show an explicit Semantic Diff unavailable state while retaining the lazy Monaco Decoded Save JSON comparison.
+
+Watcher slices:
+
+- [ ] Watcher renders the Runtime-owned status snapshot, including activity, Watched Save path, Capture Policy, latest observation, and Watcher Error state, without starting a second polling loop.
+- [ ] Watcher Manual Checkpoint submits an optional message once and renders committed, skipped, and Watcher Error results without automatic retry.
+- [ ] Watcher Manual Checkpoint exposes explicit `allowUnchanged` intent while preserving the same single-submit behavior.
+
+P6-T3 closeout review:
+
+- [ ] Real-browser smoke testing covers Local Network Access permission behavior, authenticated Export, Restore confirmation/conflict, reconnection, visible-page polling, and historical selection.
+- [ ] Static Web Mode and the existing Progress, Map, and Raw Save Data workflows pass regression testing after Local History completion.
+- [ ] A final standards/spec review finds no remaining P6-T3 acceptance gaps; full validation passes and P6-T3 is marked complete.
 
 ### P6-T4 Add UI Open CLI Workflow
 

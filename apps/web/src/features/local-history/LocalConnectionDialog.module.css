@@ -9,6 +9,10 @@
   font-size: 0.85rem;
 }
 
+.stale {
+  color: #f2c879;
+}
+
 .overlay {
   position: fixed;
   inset: 0;

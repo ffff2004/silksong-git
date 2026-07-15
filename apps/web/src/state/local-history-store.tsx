@@ -15,10 +15,22 @@ interface LocalHistorySession {
   readonly meta: LocalHttpMeta;
 }
 
+type LocalHistoryAvailability =
+  | { readonly kind: "available" }
+  | {
+      readonly automaticRequestsPaused: boolean;
+      readonly error: LocalHistoryClientError;
+      readonly kind: "stale";
+    };
+
 export type LocalHistoryConnection =
   | { readonly kind: "disconnected" }
   | { readonly kind: "connecting" }
-  | { readonly kind: "connected"; readonly session: LocalHistorySession }
+  | {
+      readonly availability: LocalHistoryAvailability;
+      readonly kind: "connected";
+      readonly session: LocalHistorySession;
+    }
   | { readonly error: LocalHistoryClientError; readonly kind: "error" };
 
 interface LocalHistoryStore {
@@ -28,6 +40,7 @@ interface LocalHistoryStore {
   }) => Promise<boolean>;
   readonly connection: () => LocalHistoryConnection;
   readonly disconnect: () => void;
+  readonly reportRequestFailure: (error: unknown) => void;
 }
 
 const LocalHistoryContext = createContext<LocalHistoryStore>();
@@ -48,22 +61,17 @@ export function LocalHistoryProvider(props: {
         const meta = await client.getMeta();
         assertLocalHistoryCompatibility(meta);
         setConnection({
+          availability: { kind: "available" },
           kind: "connected",
           session: { client, endpoint: input.endpoint, meta },
         });
 
         return true;
       } catch (error) {
-        const clientError =
-          error instanceof LocalHistoryClientError
-            ? error
-            : new LocalHistoryClientError(
-                {
-                  kind: "protocol",
-                  message: "Local History connection failed.",
-                },
-                { cause: error },
-              );
+        const clientError = toLocalHistoryClientError(
+          error,
+          "Local History connection failed.",
+        );
         setConnection({
           kind: "error",
           error: clientError,
@@ -76,6 +84,24 @@ export function LocalHistoryProvider(props: {
     disconnect() {
       setConnection({ kind: "disconnected" });
     },
+    reportRequestFailure(error) {
+      const current = connection();
+      if (current.kind !== "connected") {
+        return;
+      }
+      const clientError = toLocalHistoryClientError(
+        error,
+        "Local History request failed.",
+      );
+      setConnection({
+        ...current,
+        availability: {
+          automaticRequestsPaused: shouldPauseAutomaticRequests(clientError),
+          error: clientError,
+          kind: "stale",
+        },
+      });
+    },
   };
 
   return (
@@ -83,6 +109,22 @@ export function LocalHistoryProvider(props: {
       {props.children}
     </LocalHistoryContext.Provider>
   );
+}
+
+function toLocalHistoryClientError(
+  error: unknown,
+  fallbackMessage: string,
+): LocalHistoryClientError {
+  return error instanceof LocalHistoryClientError
+    ? error
+    : new LocalHistoryClientError(
+        { kind: "protocol", message: fallbackMessage },
+        { cause: error },
+      );
+}
+
+function shouldPauseAutomaticRequests(error: LocalHistoryClientError): boolean {
+  return ["incompatible", "protocol", "unauthorized"].includes(error.kind);
 }
 
 export function useLocalHistoryStore(): LocalHistoryStore {
