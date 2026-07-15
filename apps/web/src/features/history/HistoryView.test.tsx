@@ -38,6 +38,11 @@ describe("History view", () => {
   afterEach(() => {
     cleanup();
     Reflect.deleteProperty(document, "visibilityState");
+    Reflect.deleteProperty(document.documentElement, "scrollHeight");
+    Object.defineProperty(globalThis, "scrollY", {
+      configurable: true,
+      value: 0,
+    });
     globalThis.location.hash = "";
     vi.unstubAllGlobals();
   });
@@ -310,13 +315,21 @@ describe("History view", () => {
     });
   });
 
-  it("merges refreshed Events into already paginated History when the Watcher revision changes", async () => {
+  it("merges refreshed Events into already paginated History without moving the visible list position", async () => {
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       value: "hidden",
     });
     let historyPageRequests = 0;
     let watcherRequests = 0;
+    Object.defineProperty(globalThis, "scrollY", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(document.documentElement, "scrollHeight", {
+      configurable: true,
+      get: () => (historyPageRequests > 1 ? 1400 : 1000),
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -389,6 +402,9 @@ describe("History view", () => {
     expect(await screen.findByText("shellShards")).toBeDefined();
     expect(screen.getByText("completionPercentage")).toBeDefined();
     expect(screen.getByText("rosaries")).toBeDefined();
+    await waitFor(() => {
+      expect(window.scrollTo).toHaveBeenCalledWith({ top: 800 });
+    });
   });
 
   it("merges refreshed Raw Save Observations into their independently paginated history", async () => {

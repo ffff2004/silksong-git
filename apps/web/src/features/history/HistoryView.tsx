@@ -74,12 +74,7 @@ function HistoryView() {
       return;
     }
     previousObservationRevision = nextRevision;
-    if (eventsQuery.hasLoaded()) {
-      eventsQuery.refresh().catch(handleUnexpectedLoadError);
-    }
-    if (observationsQuery.hasLoaded()) {
-      observationsQuery.refresh().catch(handleUnexpectedLoadError);
-    }
+    refreshLoadedHistoryPreservingScroll().catch(handleUnexpectedLoadError);
   });
 
   onMount(() => {
@@ -103,6 +98,25 @@ function HistoryView() {
 
   function handleUnexpectedLoadError(error_: unknown) {
     setError(error_ instanceof Error ? error_.message : "History unavailable.");
+  }
+
+  async function refreshLoadedHistoryPreservingScroll() {
+    const scrollTop = window.scrollY;
+    const previousScrollHeight = document.documentElement.scrollHeight;
+    const refreshes: Array<Promise<void>> = [];
+    if (eventsQuery.hasLoaded()) {
+      refreshes.push(eventsQuery.refresh());
+    }
+    if (observationsQuery.hasLoaded()) {
+      refreshes.push(observationsQuery.refresh());
+    }
+    await Promise.all(refreshes);
+
+    const addedHeight =
+      document.documentElement.scrollHeight - previousScrollHeight;
+    if (scrollTop > 0 && addedHeight > 0) {
+      window.scrollTo({ top: scrollTop + addedHeight });
+    }
   }
 
   function currentEventFilters(): HistoryEventFilters {

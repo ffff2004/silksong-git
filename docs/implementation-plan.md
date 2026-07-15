@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test`: passed with 44 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection and Local Network Access denial, stale-session, visible-page Watcher polling, moving-latest refresh, and historical-selection behavior, Monaco Raw JSON diff, structured History search and URL restoration, feature-local Events and Raw Save Observation query ownership and revision merge, both History cursor pagination slices, the shared schema-aware History commit card, History Compare URL selection, authenticated History Export, normal conflict-safe History Restore, and explicit missing-Watched-Save Restore
-- `pnpm format`: passed after the explicit missing-Watched-Save Restore slice
-- `pnpm verify`: passed after the explicit missing-Watched-Save Restore slice; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test`: passed with 44 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection and Local Network Access denial, stale-session, visible-page Watcher polling, moving-latest refresh, and historical-selection behavior, Monaco Raw JSON diff, structured History search and URL restoration, feature-local Events and Raw Save Observation query ownership and revision merge with stable scroll position, both History cursor pagination slices, the shared schema-aware History commit card, History Compare URL selection, authenticated History Export, normal conflict-safe History Restore, and explicit missing-Watched-Save Restore
+- `pnpm format`: passed after the stable History revision refresh slice
+- `pnpm verify`: passed after the stable History revision refresh slice; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1463,7 +1463,7 @@ History slices:
 - [x] History Export downloads authenticated Encoded Save bytes with the server-provided filename, revokes its browser object URL, preserves selection, and reports failures.
 - [x] Normal History Restore uses the latest committed observation hash as the `present` precondition, reports synchronization conflicts, and never offers a force override or automatic retry.
 - [x] An explicit missing-Watched-Save Restore flow sends the server-verified `missing` precondition and warns that no original-file backup can be created.
-- [ ] Watcher revision refresh merges persistent Events and Raw Save Observations into already paginated History state without disrupting the current scroll position.
+- [x] Watcher revision refresh merges persistent Events and Raw Save Observations into already paginated History state without disrupting the current scroll position.
 
 Diff slices:
 
