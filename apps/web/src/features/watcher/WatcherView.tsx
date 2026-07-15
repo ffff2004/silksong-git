@@ -1,6 +1,9 @@
-import { Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 
-import type { LocalHttpWatcherStatus } from "@silksong-git/history/http-wire";
+import type {
+  LocalHttpCheckpointResult,
+  LocalHttpWatcherStatus,
+} from "@silksong-git/history/http-wire";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
 
@@ -14,6 +17,11 @@ export function WatcherRoute() {
 
 function WatcherView() {
   const localHistory = useLocalHistoryStore();
+  const [checkpointMessage, setCheckpointMessage] = createSignal("");
+  const [checkpointPending, setCheckpointPending] = createSignal(false);
+  const [checkpointResult, setCheckpointResult] =
+    createSignal<LocalHttpCheckpointResult>();
+  const [checkpointError, setCheckpointError] = createSignal<string>();
   const status = () => {
     const connection = localHistory.connection();
     return connection.kind === "connected"
@@ -59,6 +67,56 @@ function WatcherView() {
           </dl>
         )}
       </Show>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (checkpointPending()) {
+            return;
+          }
+          const connection = localHistory.connection();
+          if (connection.kind !== "connected") {
+            return;
+          }
+
+          const message = checkpointMessage().trim();
+          setCheckpointPending(true);
+          setCheckpointResult(undefined);
+          setCheckpointError(undefined);
+          connection.session.client
+            .checkpoint(message === "" ? {} : { message })
+            .then(setCheckpointResult)
+            .catch((error: unknown) => {
+              localHistory.reportRequestFailure(error);
+              setCheckpointError(
+                error instanceof Error
+                  ? error.message
+                  : "Manual Checkpoint failed.",
+              );
+            })
+            .finally(() => {
+              setCheckpointPending(false);
+            });
+        }}
+      >
+        <label for="checkpoint-message">Checkpoint message (optional)</label>
+        <input
+          id="checkpoint-message"
+          type="text"
+          value={checkpointMessage()}
+          onInput={(event) => {
+            setCheckpointMessage(event.currentTarget.value);
+          }}
+        />
+        <button type="submit" disabled={checkpointPending()}>
+          {checkpointPending() ? "Creating checkpoint…" : "Create checkpoint"}
+        </button>
+      </form>
+      <Show when={checkpointResult()}>
+        {(result) => <p>{getCheckpointResultMessage(result())}</p>}
+      </Show>
+      <Show when={checkpointError()}>
+        {(message) => <p role="alert">{message()}</p>}
+      </Show>
     </section>
   );
 }
@@ -69,4 +127,20 @@ function getWatcherErrorMessage(
   return observation.status === "watcherError"
     ? observation.error.message
     : undefined;
+}
+
+function getCheckpointResultMessage(result: LocalHttpCheckpointResult): string {
+  switch (result.status) {
+    case "committed": {
+      return `Checkpoint committed as ${result.observation.commit.shortRef}.`;
+    }
+
+    case "skipped": {
+      return `Checkpoint skipped: ${result.reason}.`;
+    }
+
+    case "watcherError": {
+      return result.error.message;
+    }
+  }
 }

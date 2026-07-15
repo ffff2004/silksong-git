@@ -494,7 +494,7 @@ export function createLocalHttpWireSchemas(
     error: watcherErrorSchema,
   });
   const observeSaveResultSchema: z.ZodType<ObserveSaveResult> = decorate(
-    zod.discriminatedUnion("status", [
+    zod.union([
       committedSaveResultSchema,
       unchangedSaveResultSchema,
       deferredSaveResultSchema,

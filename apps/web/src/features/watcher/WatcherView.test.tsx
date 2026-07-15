@@ -99,6 +99,121 @@ describe("Watcher view", () => {
       expect(watcherRequests).toBe(1);
     });
   });
+
+  it("submits an optional Manual Checkpoint message once and renders every result", async () => {
+    const checkpointBodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-16T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: {
+              debounceWriteMs: 500,
+              minCommitIntervalMs: 0,
+            },
+          });
+        }
+        if (url.includes("/api/v1/checkpoints")) {
+          const body = init?.body;
+          if (typeof body !== "string") {
+            throw new TypeError("Expected a Manual Checkpoint JSON body.");
+          }
+          checkpointBodies.push(JSON.parse(body));
+          if (checkpointBodies.length === 1) {
+            return Response.json({
+              status: "committed",
+              observation: {
+                commit: {
+                  ref: "checkpoint-commit",
+                  shortRef: "checkpo",
+                  committedAt: "2026-07-16T00:02:00.000Z",
+                },
+                observedAt: "2026-07-16T00:02:00.000Z",
+                trigger: "manualCheckpoint",
+                message: "before risky operation",
+                sourcePath: "/tmp/user1.dat",
+                encodedSha256: "a".repeat(64),
+                decodedSha256: "b".repeat(64),
+                decoderVersion: "test",
+                schema: { status: "recognized", saveSchemaVersion: "1" },
+              },
+              semanticUpdate: {
+                status: "notAvailable",
+                reason: "readModelUnavailable",
+              },
+            });
+          }
+          if (checkpointBodies.length === 2) {
+            return Response.json({
+              status: "skipped",
+              reason: "unchanged",
+              encodedSha256: "a".repeat(64),
+            });
+          }
+
+          return Response.json({
+            status: "watcherError",
+            error: {
+              reason: "readFailure",
+              message: "The Watched Save could not be read.",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    expect(await screen.findByTestId("watcher-view")).toBeDefined();
+
+    fireEvent.input(getRequiredElement("#checkpoint-message"), {
+      target: { value: "before risky operation" },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create checkpoint" }),
+    );
+    expect(
+      await screen.findByText("Checkpoint committed as checkpo."),
+    ).toBeDefined();
+    expect(checkpointBodies).toEqual([{ message: "before risky operation" }]);
+
+    fireEvent.input(getRequiredElement("#checkpoint-message"), {
+      target: { value: "" },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create checkpoint" }),
+    );
+    expect(
+      await screen.findByText("Checkpoint skipped: unchanged."),
+    ).toBeDefined();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create checkpoint" }),
+    );
+    expect(
+      await screen.findByText("The Watched Save could not be read."),
+    ).toBeDefined();
+    expect(checkpointBodies).toEqual([
+      { message: "before risky operation" },
+      {},
+      {},
+    ]);
+  });
 });
 
 function connectLocalHistory() {

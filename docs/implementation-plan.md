@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test WatcherView.test.tsx`: passed with 1 test covering Runtime-owned Watcher status rendering without a second polling loop
-- `pnpm format`: passed after the Runtime-owned Watcher status slice
-- `pnpm verify`: passed after the Runtime-owned Watcher status slice with 48 Web tests; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test WatcherView.test.tsx`: passed with 2 tests covering Runtime-owned status and non-retrying Manual Checkpoint results
+- `pnpm format`: passed after the Manual Checkpoint result slice
+- `pnpm verify`: passed after the Manual Checkpoint result slice with 49 Web tests; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1427,6 +1427,7 @@ Notes:
 - Connected Local History session availability is explicit: later request failures retain the authenticated session and already displayed Local Save as stale, while authentication, incompatibility, and malformed-protocol failures are classified to pause automatic requests.
 - `LocalHistoryRuntime` owns one visibility-aware Watcher polling loop; the Local session Interface exposes the latest validated Watcher status and its `observationRevision` without making Views own timers or transport state.
 - Watcher revision changes refresh a session-owned moving latest Save State; the shared Save Store follows that source only without a selected `commit`, so an in-flight refresh cannot replace an immutable historical selection.
+- Manual Checkpoint response validation uses a wire union rather than a `status`-discriminated union because both unchanged and minimum-interval results intentionally share `status: "skipped"`; the public DTO and HTTP response shapes remain unchanged.
 
 TDD vertical slices:
 
@@ -1474,7 +1475,7 @@ Diff slices:
 Watcher slices:
 
 - [x] Watcher renders the Runtime-owned status snapshot, including activity, Watched Save path, Capture Policy, latest observation, and Watcher Error state, without starting a second polling loop.
-- [ ] Watcher Manual Checkpoint submits an optional message once and renders committed, skipped, and Watcher Error results without automatic retry.
+- [x] Watcher Manual Checkpoint submits an optional message once and renders committed, skipped, and Watcher Error results without automatic retry.
 - [ ] Watcher Manual Checkpoint exposes explicit `allowUnchanged` intent while preserving the same single-submit behavior.
 
 P6-T3 closeout review:
