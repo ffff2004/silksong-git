@@ -1,7 +1,10 @@
-import type { JSX } from "solid-js";
+import type { JSX, Setter } from "solid-js";
 import { createContext, createSignal, useContext } from "solid-js";
 
-import type { LocalHttpMeta } from "@silksong-git/history/http-wire";
+import type {
+  LocalHttpMeta,
+  LocalHttpWatcherStatus,
+} from "@silksong-git/history/http-wire";
 import type { LocalHistoryClient } from "../features/local-history/local-history-client.ts";
 import {
   LocalHistoryClientError,
@@ -13,6 +16,8 @@ interface LocalHistorySession {
   readonly client: LocalHistoryClient;
   readonly endpoint: string;
   readonly meta: LocalHttpMeta;
+  readonly observationRevision: () => number | undefined;
+  readonly watcherStatus: () => LocalHttpWatcherStatus | undefined;
 }
 
 type LocalHistoryAvailability =
@@ -41,6 +46,8 @@ interface LocalHistoryStore {
   readonly connection: () => LocalHistoryConnection;
   readonly disconnect: () => void;
   readonly reportRequestFailure: (error: unknown) => void;
+  readonly reportRequestSuccess: () => void;
+  readonly updateWatcherStatus: (status: LocalHttpWatcherStatus) => void;
 }
 
 const LocalHistoryContext = createContext<LocalHistoryStore>();
@@ -51,6 +58,7 @@ export function LocalHistoryProvider(props: {
   const [connection, setConnection] = createSignal<LocalHistoryConnection>({
     kind: "disconnected",
   });
+  let setWatcherStatus: Setter<LocalHttpWatcherStatus | undefined> | undefined;
 
   const store: LocalHistoryStore = {
     async connect(input) {
@@ -60,10 +68,20 @@ export function LocalHistoryProvider(props: {
         const client = createLocalHistoryClient(input);
         const meta = await client.getMeta();
         assertLocalHistoryCompatibility(meta);
+        const [watcherStatus, setNextWatcherStatus] = createSignal<
+          LocalHttpWatcherStatus | undefined
+        >();
+        setWatcherStatus = setNextWatcherStatus;
         setConnection({
           availability: { kind: "available" },
           kind: "connected",
-          session: { client, endpoint: input.endpoint, meta },
+          session: {
+            client,
+            endpoint: input.endpoint,
+            meta,
+            observationRevision: () => watcherStatus()?.observationRevision,
+            watcherStatus,
+          },
         });
 
         return true;
@@ -82,6 +100,7 @@ export function LocalHistoryProvider(props: {
     },
     connection,
     disconnect() {
+      setWatcherStatus = undefined;
       setConnection({ kind: "disconnected" });
     },
     reportRequestFailure(error) {
@@ -101,6 +120,24 @@ export function LocalHistoryProvider(props: {
           kind: "stale",
         },
       });
+    },
+    reportRequestSuccess() {
+      const current = connection();
+      if (
+        current.kind === "connected"
+        && current.availability.kind === "stale"
+      ) {
+        setConnection({
+          ...current,
+          availability: { kind: "available" },
+        });
+      }
+    },
+    updateWatcherStatus(status) {
+      const updateStatus = setWatcherStatus;
+      if (connection().kind === "connected" && updateStatus !== undefined) {
+        updateStatus(status);
+      }
     },
   };
 

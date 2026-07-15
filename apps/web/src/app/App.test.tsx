@@ -84,6 +84,7 @@ describe("Solid Web app routing", () => {
 
   afterEach(() => {
     cleanup();
+    Reflect.deleteProperty(document, "visibilityState");
     globalThis.localStorage.clear();
     globalThis.location.hash = "";
     vi.unstubAllGlobals();
@@ -230,6 +231,69 @@ describe("Solid Web app routing", () => {
 
     expect(await screen.findByText("Local History stale")).toBeDefined();
     expect(document.querySelector("#completionValue")?.textContent).toBe("81%");
+  });
+
+  it("polls Watcher status only while the Local History page is visible", async () => {
+    let watcherRequests = 0;
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/watcher")) {
+          watcherRequests++;
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 3,
+            startedAt: "2026-07-14T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+
+        return Response.json({ status: "empty" });
+      }),
+    );
+
+    render(() => <App />);
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+    fireEvent.input(getRequiredElement("#local-history-token"), {
+      target: { value: "session-token" },
+    });
+    fireEvent.click(getRequiredElement("#local-history-connect"));
+    await waitFor(() => {
+      expect(
+        document.querySelector("#disconnect-local-history"),
+      ).not.toBeNull();
+    });
+    expect(watcherRequests).toBe(0);
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => {
+      expect(watcherRequests).toBe(1);
+    });
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 1100);
+    });
+    expect(watcherRequests).toBe(1);
   });
 
   it("uses History for the empty search and Search API for submitted text", async () => {

@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test`: passed with 30 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection and stale-session behavior, Monaco Raw JSON diff, and both History cursor pagination slices
-- `pnpm format`: passed after the Local History stale-session slice
-- `pnpm verify`: passed after the Local History stale-session slice; the existing Vite large-chunk warning remains non-blocking and full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test`: passed with 31 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection, stale-session, and visible-page Watcher polling behavior, Monaco Raw JSON diff, and both History cursor pagination slices
+- `pnpm format`: passed after the visible-page Watcher polling slice
+- `pnpm verify`: passed after the visible-page Watcher polling slice; the existing Vite large-chunk warning remains non-blocking and full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1425,6 +1425,7 @@ Notes:
 - History Events Load More keeps opaque cursors in component state, appends older results without hiding the existing list, and groups the combined event pages so a commit split at a cursor boundary remains one card.
 - Raw Save Observations has independent cursor state and Load More behavior, so switching History views cannot reuse an Events cursor; appending older entries also keeps the existing Observation list visible.
 - Connected Local History session availability is explicit: later request failures retain the authenticated session and already displayed Local Save as stale, while authentication, incompatibility, and malformed-protocol failures are classified to pause automatic requests.
+- `LocalHistoryRuntime` owns one visibility-aware Watcher polling loop; the Local session Interface exposes the latest validated Watcher status and its `observationRevision` without making Views own timers or transport state.
 
 TDD vertical slices:
 
@@ -1445,7 +1446,7 @@ TDD vertical slices:
 Local session/runtime slices:
 
 - [x] Classify Local History connection and polling failures while preserving already loaded data as stale; authentication and protocol failures pause automatic requests until reconnect or disconnect.
-- [ ] `LocalHistoryRuntime` polls Watcher status only while the document is visible and exposes the latest Watcher snapshot and `observationRevision` through the Local session Interface.
+- [x] `LocalHistoryRuntime` polls Watcher status only while the document is visible and exposes the latest Watcher snapshot and `observationRevision` through the Local session Interface.
 - [ ] A Watcher revision change refreshes a moving latest Save State without replacing an explicitly selected historical commit.
 - [ ] Historical selection reports when a newer latest observation exists and Back to Latest switches the shared Current Save views to that moving source.
 - [ ] The connection UI distinguishes Local Network Access denial from endpoint unavailability, authentication failure, protocol incompatibility, and transient history availability.
