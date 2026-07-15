@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from "@solidjs/router";
 import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
+import { LocalHistoryClientError } from "../local-history/local-history-client.ts";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
 import type { HistoryEventFilters } from "./history-events-query.ts";
 import { createHistoryEventsQuery } from "./history-events-query.ts";
@@ -438,7 +439,7 @@ function RestoreDialog(props: {
       });
       setMessage("Restore completed. The watcher will observe the new save.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Restore failed.");
+      setMessage(getRestoreErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -475,4 +476,15 @@ function RestoreDialog(props: {
       </div>
     </div>
   );
+}
+
+function getRestoreErrorMessage(error: unknown): string {
+  if (
+    error instanceof LocalHistoryClientError
+    && error.code === "restore_conflict"
+  ) {
+    return `${error.message} Wait for watcher synchronization or create a Manual Checkpoint before trying again.`;
+  }
+
+  return error instanceof Error ? error.message : "Restore failed.";
 }

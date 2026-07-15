@@ -712,6 +712,100 @@ describe("History view", () => {
     ).toBeDefined();
     expect(anchorClick).toHaveBeenCalledTimes(1);
   });
+
+  it("restores against the latest committed observation once and reports synchronization conflicts", async () => {
+    const latestHash = "c".repeat(64);
+    const restoreRequests: RequestInit[] = [];
+    let saveRequests = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          saveRequests++;
+          return saveRequests === 1
+            ? Response.json({ status: "empty" })
+            : Response.json({
+                status: "available",
+                observation: {
+                  ...createObservationEntry("latest").observation,
+                  encodedSha256: latestHash,
+                },
+                decodedSave: {},
+                semanticSnapshot: {
+                  items: [],
+                  summary: {},
+                  version: {
+                    saveSchemaVersion: "1",
+                    semanticCoreVersion: "test",
+                  },
+                },
+              });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [createSummaryEvent("source", "source", "rosaries")],
+          });
+        }
+        if (url.includes("/api/v1/restores/in-place")) {
+          restoreRequests.push(init ?? {});
+          return Response.json(
+            {
+              error: {
+                code: "restore_conflict",
+                message: "The Watched Save changed after confirmation.",
+              },
+            },
+            { status: 409 },
+          );
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    const card = await screen.findByTestId("history-commit-card");
+    fireEvent.click(getCardAction(card, "Restore"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Confirm Restore" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "The Watched Save changed after confirmation. Wait for watcher synchronization or create a Manual Checkpoint before trying again.",
+      ),
+    ).toBeDefined();
+    expect(restoreRequests).toHaveLength(1);
+    const restoreBody = restoreRequests[0]?.body;
+    if (typeof restoreBody !== "string") {
+      throw new TypeError("Expected Restore to send a JSON body.");
+    }
+    expect(JSON.parse(restoreBody)).toEqual({
+      confirmation: "restore-watched-save",
+      commitRef: "source-commit",
+      expectedCurrent: { status: "present", encodedSha256: latestHash },
+    });
+    expect(screen.queryByText(/force/iu)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Confirm Restore" }),
+    ).toBeDefined();
+  });
 });
 
 function connectLocalHistory() {
