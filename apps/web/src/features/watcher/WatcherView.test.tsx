@@ -214,6 +214,64 @@ describe("Watcher view", () => {
       {},
     ]);
   });
+
+  it("submits explicit allowUnchanged intent once", async () => {
+    const checkpointBodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-16T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: {
+              debounceWriteMs: 500,
+              minCommitIntervalMs: 0,
+            },
+          });
+        }
+        if (url.includes("/api/v1/checkpoints")) {
+          const body = init?.body;
+          if (typeof body !== "string") {
+            throw new TypeError("Expected a Manual Checkpoint JSON body.");
+          }
+          checkpointBodies.push(JSON.parse(body));
+          return Response.json({
+            status: "skipped",
+            reason: "unchanged",
+            encodedSha256: "a".repeat(64),
+          });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    expect(await screen.findByTestId("watcher-view")).toBeDefined();
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Allow unchanged save" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create checkpoint" }));
+
+    expect(
+      await screen.findByText("Checkpoint skipped: unchanged."),
+    ).toBeDefined();
+    expect(checkpointBodies).toEqual([{ allowUnchanged: true }]);
+  });
 });
 
 function connectLocalHistory() {

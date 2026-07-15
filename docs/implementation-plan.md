@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test WatcherView.test.tsx`: passed with 2 tests covering Runtime-owned status and non-retrying Manual Checkpoint results
-- `pnpm format`: passed after the Manual Checkpoint result slice
-- `pnpm verify`: passed after the Manual Checkpoint result slice with 49 Web tests; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test WatcherView.test.tsx`: passed with 3 tests, including explicit `allowUnchanged` Manual Checkpoint intent
+- `pnpm format`: passed after the Manual Checkpoint `allowUnchanged` slice
+- `pnpm verify`: passed after the Manual Checkpoint `allowUnchanged` slice with 50 Web tests; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1476,7 +1476,7 @@ Watcher slices:
 
 - [x] Watcher renders the Runtime-owned status snapshot, including activity, Watched Save path, Capture Policy, latest observation, and Watcher Error state, without starting a second polling loop.
 - [x] Watcher Manual Checkpoint submits an optional message once and renders committed, skipped, and Watcher Error results without automatic retry.
-- [ ] Watcher Manual Checkpoint exposes explicit `allowUnchanged` intent while preserving the same single-submit behavior.
+- [x] Watcher Manual Checkpoint exposes explicit `allowUnchanged` intent while preserving the same single-submit behavior.
 
 P6-T3 closeout review:
 

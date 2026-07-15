@@ -18,6 +18,7 @@ export function WatcherRoute() {
 function WatcherView() {
   const localHistory = useLocalHistoryStore();
   const [checkpointMessage, setCheckpointMessage] = createSignal("");
+  const [allowUnchanged, setAllowUnchanged] = createSignal(false);
   const [checkpointPending, setCheckpointPending] = createSignal(false);
   const [checkpointResult, setCheckpointResult] =
     createSignal<LocalHttpCheckpointResult>();
@@ -83,7 +84,10 @@ function WatcherView() {
           setCheckpointResult(undefined);
           setCheckpointError(undefined);
           connection.session.client
-            .checkpoint(message === "" ? {} : { message })
+            .checkpoint({
+              ...(message !== "" && { message }),
+              ...(allowUnchanged() && { allowUnchanged: true }),
+            })
             .then(setCheckpointResult)
             .catch((error: unknown) => {
               localHistory.reportRequestFailure(error);
@@ -107,6 +111,16 @@ function WatcherView() {
             setCheckpointMessage(event.currentTarget.value);
           }}
         />
+        <label>
+          <input
+            type="checkbox"
+            checked={allowUnchanged()}
+            onChange={(event) => {
+              setAllowUnchanged(event.currentTarget.checked);
+            }}
+          />
+          Allow unchanged save
+        </label>
         <button type="submit" disabled={checkpointPending()}>
           {checkpointPending() ? "Creating checkpoint…" : "Create checkpoint"}
         </button>
