@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test WatcherView.test.tsx`: passed with 3 tests, including explicit `allowUnchanged` Manual Checkpoint intent
-- `pnpm format`: passed after the Manual Checkpoint `allowUnchanged` slice
-- `pnpm verify`: passed after the Manual Checkpoint `allowUnchanged` slice with 50 Web tests; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test HistoryView.test.tsx`: passed with 10 tests, including History Compare navigation populating canonical Diff refs
+- `pnpm format`: passed after the History-to-Diff route parameter fix
+- `pnpm verify`: passed after the History-to-Diff route parameter fix with 50 Web tests; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1428,6 +1428,7 @@ Notes:
 - `LocalHistoryRuntime` owns one visibility-aware Watcher polling loop; the Local session Interface exposes the latest validated Watcher status and its `observationRevision` without making Views own timers or transport state.
 - Watcher revision changes refresh a session-owned moving latest Save State; the shared Save Store follows that source only without a selected `commit`, so an in-flight refresh cannot replace an immutable historical selection.
 - Manual Checkpoint response validation uses a wire union rather than a `status`-discriminated union because both unchanged and minimum-interval results intentionally share `status: "skipped"`; the public DTO and HTTP response shapes remain unchanged.
+- History-to-Diff navigation previously left canonical `from` and `to` refs out of the form because `DiffView` read `globalThis.location.hash` before the browser hash synchronized during a HashRouter transition; reading the Router-owned `location.search` fixes both inputs while keeping the URL contract unchanged.
 
 TDD vertical slices:
 

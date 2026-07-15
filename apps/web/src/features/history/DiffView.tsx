@@ -1,4 +1,4 @@
-import { useNavigate } from "@solidjs/router";
+import { useLocation, useNavigate } from "@solidjs/router";
 import { createSignal, onMount, Show } from "solid-js";
 
 import type { LocalHttpDiffResult } from "@silksong-git/history/http-wire";
@@ -17,6 +17,7 @@ export function DiffRoute() {
 
 function DiffView() {
   const localHistory = useLocalHistoryStore();
+  const location = useLocation();
   const navigate = useNavigate();
   const [from, setFrom] = createSignal("");
   const [to, setTo] = createSignal("");
@@ -30,9 +31,7 @@ function DiffView() {
   const [semanticError, setSemanticError] = createSignal<string>();
 
   onMount(() => {
-    const params = new URLSearchParams(
-      globalThis.location.hash.split("?", 2)[1] ?? "",
-    );
+    const params = new URLSearchParams(location.search);
     setFrom(params.get("from") ?? "");
     setTo(params.get("to") ?? "");
   });

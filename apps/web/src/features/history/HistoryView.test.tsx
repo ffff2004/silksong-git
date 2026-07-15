@@ -619,6 +619,8 @@ describe("History view", () => {
         "#/diff?from=source-commit&to=target-commit",
       );
     });
+    expect(getRequiredInput("#diff-from").value).toBe("source-commit");
+    expect(getRequiredInput("#diff-to").value).toBe("target-commit");
   });
 
   it("downloads an authenticated History export without changing selection and reports failures", async () => {
