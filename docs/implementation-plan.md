@@ -1480,6 +1480,11 @@ Watcher slices:
 - [x] Watcher Manual Checkpoint submits an optional message once and renders committed, skipped, and Watcher Error results without automatic retry.
 - [x] Watcher Manual Checkpoint exposes explicit `allowUnchanged` intent while preserving the same single-submit behavior.
 
+Closeout-found fix slices:
+
+- [x] History-to-Diff navigation reads Router-owned search state so canonical `from` and `to` refs populate the Diff form after an in-app transition.
+- [x] Raw JSON Diff uses a shared explicitly sized Monaco frame, while width-neutral App shell layout and a Progress-owned sticky TOC grid keep both Raw and Semantic Diff layouts intact.
+
 P6-T3 closeout review:
 
 - [ ] Real-browser smoke testing covers Local Network Access permission behavior, authenticated Export, Restore confirmation/conflict, reconnection, visible-page polling, and historical selection.
