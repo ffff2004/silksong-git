@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test`: passed with 34 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection and Local Network Access denial, stale-session, visible-page Watcher polling, moving-latest refresh, and historical-selection behavior, Monaco Raw JSON diff, and both History cursor pagination slices
-- `pnpm format`: passed after the Local Network Access denial slice
-- `pnpm verify`: passed after the Local Network Access denial slice; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test`: passed with 35 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection and Local Network Access denial, stale-session, visible-page Watcher polling, moving-latest refresh, and historical-selection behavior, Monaco Raw JSON diff, structured History search, and both History cursor pagination slices
+- `pnpm format`: passed after the structured History search slice
+- `pnpm verify`: passed after the structured History search slice; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1454,7 +1454,7 @@ Local session/runtime slices:
 
 History slices:
 
-- [ ] The History search form submits free text, event kind, target status, direction, and `includeFiltered`; submitted fields live in the URL, choose `/search`, and reset the in-memory Events cursor, while an empty search uses `/history`.
+- [x] The History search form submits free text, event kind, target status, direction, and `includeFiltered`; submitted fields live in the URL, choose `/search`, and reset the in-memory Events cursor, while an empty search uses `/history`.
 - [ ] Direct navigation or reconnection restores the History view and submitted filters from the URL, loading Observations immediately for `view=observations` instead of unconditionally loading Events.
 - [ ] Events query state is owned by a feature-local Module that keeps `/history` versus `/search` selection, opaque pagination, cross-page commit grouping, and revision refresh behind one Interface.
 - [ ] Raw Save Observation query state is owned by an independent feature-local Module that keeps its opaque pagination and revision refresh behind one Interface.

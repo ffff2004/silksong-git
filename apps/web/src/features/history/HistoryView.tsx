@@ -25,6 +25,14 @@ function HistoryView() {
   const [observations, setObservations] =
     createSignal<LocalHttpObservationHistoryResult>();
   const [text, setText] = createSignal("");
+  const [eventType, setEventType] = createSignal("");
+  const [statusTo, setStatusTo] = createSignal<
+    "" | "accepted" | "done" | "missing" | "unknown"
+  >("");
+  const [direction, setDirection] = createSignal<
+    "" | "neutral" | "progression" | "regression"
+  >("");
+  const [includeFiltered, setIncludeFiltered] = createSignal(false);
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string>();
   const [restoreCommit, setRestoreCommit] = createSignal<string>();
@@ -55,13 +63,27 @@ function HistoryView() {
     setError(undefined);
     try {
       const query = text().trim();
-      const result =
-        query === ""
-          ? await connection.session.client.getHistory({ cursor: input.cursor })
-          : await connection.session.client.search({
-              text: query,
-              cursor: input.cursor,
-            });
+      const selectedEventType = eventType();
+      const selectedStatus = statusTo();
+      const selectedDirection = direction();
+      const hasSearchFields =
+        query !== ""
+        || selectedEventType !== ""
+        || selectedStatus !== ""
+        || selectedDirection !== "";
+      const result = hasSearchFields
+        ? await connection.session.client.search({
+            statusTo: selectedStatus === "" ? undefined : selectedStatus,
+            eventType: selectedEventType === "" ? undefined : selectedEventType,
+            direction: selectedDirection === "" ? undefined : selectedDirection,
+            text: query === "" ? undefined : query,
+            includeFiltered: includeFiltered() ? true : undefined,
+            cursor: input.cursor,
+          })
+        : await connection.session.client.getHistory({
+            cursor: input.cursor,
+            includeFiltered: includeFiltered() ? true : undefined,
+          });
       const current = history();
       setHistory(
         input.append === true && current !== undefined
@@ -167,6 +189,14 @@ function HistoryView() {
           } else {
             params.set("text", text().trim());
           }
+          setOptionalParam(params, "eventType", eventType());
+          setOptionalParam(params, "statusTo", statusTo());
+          setOptionalParam(params, "direction", direction());
+          if (includeFiltered()) {
+            params.set("includeFiltered", "true");
+          } else {
+            params.delete("includeFiltered");
+          }
           navigate(`/history?${params.toString()}`);
           loadEvents().catch(handleUnexpectedLoadError);
         }}
@@ -180,6 +210,67 @@ function HistoryView() {
               setText(event.currentTarget.value);
             }}
           />
+        </label>
+        <label>
+          Event kind
+          <select
+            id="history-search-event-kind"
+            value={eventType()}
+            onChange={(event) => {
+              setEventType(event.currentTarget.value);
+            }}
+          >
+            <option value="">Any event kind</option>
+            <option value="itemStatusChanged">Item status changed</option>
+            <option value="itemValueChanged">Item value changed</option>
+            <option value="summaryMetricChanged">Summary changed</option>
+          </select>
+        </label>
+        <label>
+          Target status
+          <select
+            id="history-search-target-status"
+            value={statusTo()}
+            onChange={(event) => {
+              setStatusTo(
+                event.currentTarget.value as ReturnType<typeof statusTo>,
+              );
+            }}
+          >
+            <option value="">Any target status</option>
+            <option value="accepted">Accepted</option>
+            <option value="done">Done</option>
+            <option value="missing">Missing</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </label>
+        <label>
+          Direction
+          <select
+            id="history-search-direction"
+            value={direction()}
+            onChange={(event) => {
+              setDirection(
+                event.currentTarget.value as ReturnType<typeof direction>,
+              );
+            }}
+          >
+            <option value="">Any direction</option>
+            <option value="progression">Progression</option>
+            <option value="regression">Regression</option>
+            <option value="neutral">Neutral</option>
+          </select>
+        </label>
+        <label>
+          <input
+            id="history-search-include-filtered"
+            type="checkbox"
+            checked={includeFiltered()}
+            onChange={(event) => {
+              setIncludeFiltered(event.currentTarget.checked);
+            }}
+          />
+          Include filtered events
         </label>
         <button class="btn-primary" type="submit">
           Search
@@ -280,6 +371,18 @@ function HistoryView() {
       </Show>
     </section>
   );
+}
+
+function setOptionalParam(
+  params: URLSearchParams,
+  name: string,
+  value: string,
+) {
+  if (value === "") {
+    params.delete(name);
+  } else {
+    params.set(name, value);
+  }
 }
 
 type HistoryEvent = LocalHttpHistoryResult["events"][number];
