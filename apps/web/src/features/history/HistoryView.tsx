@@ -8,6 +8,14 @@ import type {
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
 
+const eventTypes = [
+  "itemStatusChanged",
+  "itemValueChanged",
+  "summaryMetricChanged",
+] as const;
+const targetStatuses = ["accepted", "done", "missing", "unknown"] as const;
+const eventDirections = ["neutral", "progression", "regression"] as const;
+
 export function HistoryRoute() {
   return (
     <LocalRoute>
@@ -40,8 +48,18 @@ function HistoryView() {
   onMount(() => {
     const params = new URLSearchParams(location.search);
     setText(params.get("text") ?? "");
-    setView(params.get("view") === "observations" ? "observations" : "events");
-    loadEvents().catch(handleUnexpectedLoadError);
+    setEventType(getEnumParam(params, "eventType", eventTypes));
+    setStatusTo(getEnumParam(params, "statusTo", targetStatuses));
+    setDirection(getEnumParam(params, "direction", eventDirections));
+    setIncludeFiltered(params.get("includeFiltered") === "true");
+    const initialView =
+      params.get("view") === "observations" ? "observations" : "events";
+    setView(initialView);
+    if (initialView === "observations") {
+      loadObservations().catch(handleUnexpectedLoadError);
+    } else {
+      loadEvents().catch(handleUnexpectedLoadError);
+    }
   });
 
   function handleUnexpectedLoadError(error_: unknown) {
@@ -149,10 +167,8 @@ function HistoryView() {
           aria-selected={view() === "events"}
           onClick={() => {
             setView("events");
-            const params = new URLSearchParams({ view: "events" });
-            if (text() !== "") {
-              params.set("text", text());
-            }
+            const params = new URLSearchParams(location.search);
+            params.set("view", "events");
             navigate(`/history?${params.toString()}`);
             if (history() === undefined) {
               loadEvents().catch(handleUnexpectedLoadError);
@@ -169,7 +185,9 @@ function HistoryView() {
           aria-selected={view() === "observations"}
           onClick={() => {
             setView("observations");
-            navigate("/history?view=observations");
+            const params = new URLSearchParams(location.search);
+            params.set("view", "observations");
+            navigate(`/history?${params.toString()}`);
             if (observations() === undefined) {
               loadObservations().catch(handleUnexpectedLoadError);
             }
@@ -383,6 +401,15 @@ function setOptionalParam(
   } else {
     params.set(name, value);
   }
+}
+
+function getEnumParam<T extends string>(
+  params: URLSearchParams,
+  name: string,
+  values: readonly T[],
+): "" | T {
+  const value = params.get(name);
+  return values.find((candidate) => candidate === value) ?? "";
 }
 
 type HistoryEvent = LocalHttpHistoryResult["events"][number];

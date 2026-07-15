@@ -153,6 +153,93 @@ describe("History view", () => {
       expect(globalThis.location.hash).toBe("#/history?view=events");
     });
   });
+
+  it("restores a direct Observations URL before choosing which history data to load", async () => {
+    globalThis.location.hash =
+      "#/history?view=observations&text=Bell+Beast&eventType=itemStatusChanged&statusTo=done&direction=regression&includeFiltered=true";
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        urls.push(url);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/observations")) {
+          return Response.json({ entries: [] });
+        }
+        if (url.includes("/api/v1/search")) {
+          return Response.json({ events: [] });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    expect(await screen.findByTestId("history-observations")).toBeDefined();
+    await waitFor(() => {
+      expect(getLastRequest(urls, "/api/v1/observations")).toBeDefined();
+    });
+    expect(getLastRequest(urls, "/api/v1/history")).toBeUndefined();
+    expect(getLastRequest(urls, "/api/v1/search")).toBeUndefined();
+    expect(getRequiredInput("#history-search-text").value).toBe("Bell Beast");
+    expect(getRequiredSelect("#history-search-event-kind").value).toBe(
+      "itemStatusChanged",
+    );
+    expect(getRequiredSelect("#history-search-target-status").value).toBe(
+      "done",
+    );
+    expect(getRequiredSelect("#history-search-direction").value).toBe(
+      "regression",
+    );
+    expect(getRequiredInput("#history-search-include-filtered").checked).toBe(
+      true,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Events" }));
+    await waitFor(() => {
+      expect(getLastRequest(urls, "/api/v1/search")).toBeDefined();
+    });
+    const searchRequest = getLastRequest(urls, "/api/v1/search");
+    if (searchRequest === undefined) {
+      throw new Error("Expected restored filters to select History Search.");
+    }
+    const searchUrl = new URL(searchRequest);
+    expect(Object.fromEntries(searchUrl.searchParams)).toEqual({
+      direction: "regression",
+      eventType: "itemStatusChanged",
+      includeFiltered: "true",
+      statusTo: "done",
+      text: "Bell Beast",
+    });
+    await waitFor(() => {
+      expect(Object.fromEntries(getHashSearchParams())).toEqual({
+        direction: "regression",
+        eventType: "itemStatusChanged",
+        includeFiltered: "true",
+        statusTo: "done",
+        text: "Bell Beast",
+        view: "events",
+      });
+    });
+  });
 });
 
 function connectLocalHistory() {
@@ -167,6 +254,24 @@ function getRequiredElement(selector: string): HTMLElement {
   const element = document.querySelector<HTMLElement>(selector);
   if (element === null) {
     throw new Error(`Expected ${selector} to exist.`);
+  }
+
+  return element;
+}
+
+function getRequiredInput(selector: string): HTMLInputElement {
+  const element = getRequiredElement(selector);
+  if (!(element instanceof HTMLInputElement)) {
+    throw new TypeError(`Expected ${selector} to be an input.`);
+  }
+
+  return element;
+}
+
+function getRequiredSelect(selector: string): HTMLSelectElement {
+  const element = getRequiredElement(selector);
+  if (!(element instanceof HTMLSelectElement)) {
+    throw new TypeError(`Expected ${selector} to be a select.`);
   }
 
   return element;
