@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test`: passed with 32 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection, stale-session, visible-page Watcher polling, and moving-latest refresh behavior, Monaco Raw JSON diff, and both History cursor pagination slices
-- `pnpm format`: passed after the moving-latest refresh slice
-- `pnpm verify`: passed after the moving-latest refresh slice; the existing Vite large-chunk warning remains non-blocking and full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test`: passed with 33 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection, stale-session, visible-page Watcher polling, moving-latest refresh, and historical-selection behavior, Monaco Raw JSON diff, and both History cursor pagination slices
+- `pnpm format`: passed after the historical-selection latest-state slice
+- `pnpm verify`: passed after the historical-selection latest-state slice; the existing Vite large-chunk warning remains non-blocking and full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1449,7 +1449,7 @@ Local session/runtime slices:
 - [x] Classify Local History connection and polling failures while preserving already loaded data as stale; authentication and protocol failures pause automatic requests until reconnect or disconnect.
 - [x] `LocalHistoryRuntime` polls Watcher status only while the document is visible and exposes the latest Watcher snapshot and `observationRevision` through the Local session Interface.
 - [x] A Watcher revision change refreshes a moving latest Save State without replacing an explicitly selected historical commit.
-- [ ] Historical selection reports when a newer latest observation exists and Back to Latest switches the shared Current Save views to that moving source.
+- [x] Historical selection reports when a newer latest observation exists and Back to Latest switches the shared Current Save views to that moving source.
 - [ ] The connection UI distinguishes Local Network Access denial from endpoint unavailability, authentication failure, protocol incompatibility, and transient history availability.
 
 History slices:

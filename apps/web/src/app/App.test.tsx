@@ -416,6 +416,80 @@ describe("Solid Web app routing", () => {
     expect(document.querySelector("#completionValue")?.textContent).toBe("70%");
   });
 
+  it("reports a newer latest observation and returns a historical selection to it", async () => {
+    globalThis.location.hash = "#/progress?commit=historical";
+    const latestCommit = {
+      ...latestObservation.commit,
+      ref: "latest",
+      shortRef: "latest",
+    };
+    const historicalCommit = {
+      ...latestObservation.commit,
+      ref: "historical",
+      shortRef: "historical",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 2,
+            startedAt: "2026-07-14T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+            lastObservation: {
+              cause: "change",
+              completedAt: "2026-07-14T00:00:00.000Z",
+              status: "committed",
+              commit: latestCommit,
+              eventCount: 1,
+              semanticStatus: "updated",
+            },
+          });
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json(
+            createAvailableLocalSaveState(
+              url.includes("commit=historical") ? 70 : 82,
+              url.includes("commit=historical")
+                ? historicalCommit
+                : latestCommit,
+            ),
+          );
+        }
+
+        return Response.json({ events: [] });
+      }),
+    );
+
+    render(() => <App />);
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+    fireEvent.input(getRequiredElement("#local-history-token"), {
+      target: { value: "session-token" },
+    });
+    fireEvent.click(getRequiredElement("#local-history-connect"));
+
+    expect(
+      await screen.findByText("A newer latest save is available."),
+    ).toBeDefined();
+    expect(document.querySelector("#completionValue")?.textContent).toBe("70%");
+
+    fireEvent.click(getRequiredElement("#back-to-latest"));
+    await waitFor(() => {
+      expect(document.querySelector("#completionValue")?.textContent).toBe(
+        "82%",
+      );
+    });
+    expect(globalThis.location.hash).toBe("#/progress");
+  });
+
   it("uses History for the empty search and Search API for submitted text", async () => {
     globalThis.location.hash = "#/history";
     const urls: string[] = [];
@@ -1075,6 +1149,30 @@ function getProgressCard(label: string): HTMLElement | undefined {
 function createWireSemanticSnapshot() {
   const mapping = getBuiltinMappingData();
   return createSemanticSnapshot(parseDecodedSave(decodedSave), mapping);
+}
+
+function createAvailableLocalSaveState(
+  completionPercentage: number,
+  commit: typeof latestObservation.commit,
+) {
+  return {
+    status: "available",
+    observation: { ...latestObservation, commit },
+    decodedSave: { completionPercentage },
+    semanticSnapshot: {
+      items: [],
+      summary: {
+        completionPercentage,
+        playTime: 9876,
+        rosaries: 1234,
+        shellShards: 88,
+      },
+      version: {
+        saveSchemaVersion: "1",
+        semanticCoreVersion: "test",
+      },
+    },
+  };
 }
 
 function createHistoricalItemEvent(

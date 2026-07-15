@@ -10,6 +10,29 @@ export function HistoricalSelectionBanner() {
   const navigate = useNavigate();
   const localHistory = useLocalHistoryStore();
   const selectedCommit = () => getQueryParam(location.search, "commit");
+  const latestCommit = () => {
+    const connection = localHistory.connection();
+    if (connection.kind !== "connected") {
+      return undefined;
+    }
+    const lastObservation = connection.session.watcherStatus()?.lastObservation;
+    if (lastObservation?.status === "committed") {
+      return lastObservation.commit;
+    }
+    const latestState = connection.session.latestSaveState();
+
+    return latestState?.status === "available"
+      ? latestState.observation.commit
+      : undefined;
+  };
+  const hasNewerLatest = () => {
+    const latest = latestCommit();
+    const selected = selectedCommit();
+
+    return (
+      latest !== undefined && selected !== undefined && latest.ref !== selected
+    );
+  };
 
   return (
     <Show
@@ -25,6 +48,9 @@ export function HistoricalSelectionBanner() {
         <span>
           Viewing historical commit <code>{selectedCommit()}</code>
         </span>
+        <Show when={hasNewerLatest()}>
+          <span>A newer latest save is available.</span>
+        </Show>
         <button
           class="btn-reset"
           id="back-to-latest"
