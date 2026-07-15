@@ -34,5 +34,19 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     chunkSizeWarningLimit: 700,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          minSize: 0,
+          groups: [
+            {
+              name: "core-data",
+              test: /packages[/\\]core[/\\]src[/\\]data[/\\]/,
+              priority: 100,
+            },
+          ],
+        },
+      },
+    },
   },
 }));
