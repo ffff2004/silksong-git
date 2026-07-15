@@ -861,6 +861,7 @@ describe("Solid Web app routing", () => {
     });
     expect(getProgressCard("Shining Needle")).toBeUndefined();
     expect(getButtonByText("Show unchanged")).toBeDefined();
+    fireEvent.click(screen.getByRole("tab", { name: "Raw JSON" }));
     await waitFor(() => {
       expect(screen.getByTestId("raw-save-diff-fallback")).toBeDefined();
     });

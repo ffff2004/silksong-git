@@ -1,3 +1,4 @@
+import { useNavigate } from "@solidjs/router";
 import { createSignal, onMount, Show } from "solid-js";
 
 import type { LocalHttpDiffResult } from "@silksong-git/history/http-wire";
@@ -17,8 +18,10 @@ export function DiffRoute() {
 
 function DiffView() {
   const localHistory = useLocalHistoryStore();
+  const navigate = useNavigate();
   const [from, setFrom] = createSignal("");
   const [to, setTo] = createSignal("");
+  const [view, setView] = createSignal<"raw" | "semantic">("semantic");
   const [diff, setDiff] = createSignal<LocalHttpDiffResult>();
   const [rawDiff, setRawDiff] = createSignal<{
     readonly fromValue: string;
@@ -43,6 +46,9 @@ function DiffView() {
     try {
       const fromRef = from();
       const toRef = to();
+      navigate(
+        `/diff?from=${encodeURIComponent(fromRef)}&to=${encodeURIComponent(toRef)}`,
+      );
       const nextDiff = await connection.session.client.getDiff({
         from: fromRef,
         to: toRef,
@@ -108,35 +114,67 @@ function DiffView() {
       </form>
       <Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
       <Show when={diff()}>
-        {(value) => (
-          <ProgressSnapshotView
-            presentation={{
-              before: value().before,
-              events: value().events.map((entry) => entry.event),
-              kind: "comparison",
+        <div class="local-history-tabs" role="tablist" aria-label="Diff view">
+          <button
+            class="btn-reset"
+            classList={{ active: view() === "semantic" }}
+            type="button"
+            role="tab"
+            aria-selected={view() === "semantic"}
+            onClick={() => {
+              setView("semantic");
             }}
-            snapshot={value().after}
-          />
-        )}
-      </Show>
-      <Show when={diff()}>
-        {(value) => (
-          <Show
-            fallback={
-              <MonacoJsonViewer
-                value={JSON.stringify(value().after, undefined, 2)}
-              />
-            }
-            when={rawDiff()}
           >
-            {(rawValue) => (
-              <MonacoJsonDiffViewer
-                fromValue={rawValue().fromValue}
-                toValue={rawValue().toValue}
+            Semantic
+          </button>
+          <button
+            class="btn-reset"
+            classList={{ active: view() === "raw" }}
+            type="button"
+            role="tab"
+            aria-selected={view() === "raw"}
+            onClick={() => {
+              setView("raw");
+            }}
+          >
+            Raw JSON
+          </button>
+        </div>
+        <Show when={view() === "semantic"}>
+          <Show when={diff()}>
+            {(value) => (
+              <ProgressSnapshotView
+                presentation={{
+                  before: value().before,
+                  events: value().events.map((entry) => entry.event),
+                  kind: "comparison",
+                }}
+                snapshot={value().after}
               />
             )}
           </Show>
-        )}
+        </Show>
+        <Show when={view() === "raw"}>
+          <Show when={diff()}>
+            {(value) => (
+              <Show
+                fallback={
+                  <MonacoJsonViewer
+                    value={JSON.stringify(value().after, undefined, 2)}
+                  />
+                }
+                when={rawDiff()}
+              >
+                {(rawValue) => (
+                  <MonacoJsonDiffViewer
+                    fromValue={rawValue().fromValue}
+                    toValue={rawValue().toValue}
+                  />
+                )}
+              </Show>
+            )}
+          </Show>
+        </Show>
       </Show>
     </section>
   );
