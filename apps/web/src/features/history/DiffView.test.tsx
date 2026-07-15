@@ -148,6 +148,77 @@ describe("Diff view", () => {
     expect(await screen.findByTestId("raw-save-diff-fallback")).toBeDefined();
     expect(screen.queryByTestId("progress-view")).toBeNull();
   });
+
+  it("keeps the Raw JSON comparison when Semantic Diff fails", async () => {
+    const requestedCommits: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/diff")) {
+          return Response.json(
+            {
+              error: {
+                code: "read_model_unavailable",
+                message: "Semantic Diff is temporarily unavailable.",
+              },
+            },
+            { status: 503 },
+          );
+        }
+        if (url.includes("/api/v1/save") && url.includes("commit=")) {
+          const saveUrl = new URL(url);
+          const commitRef = saveUrl.searchParams.get("commit");
+          if (commitRef === null) {
+            throw new Error("Expected a commit-selected Save State request.");
+          }
+          requestedCommits.push(commitRef);
+          return Response.json({
+            status: "available",
+            observation: {
+              ...latestObservation,
+              commit: createCommit(commitRef),
+            },
+            decodedSave: { commit: commitRef },
+            // eslint-disable-next-line unicorn/no-null -- null is the wire value for an unavailable Semantic Snapshot.
+            semanticSnapshot: null,
+          });
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    expect(await screen.findByTestId("diff-view")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+
+    expect(await screen.findByRole("tab", { name: "Raw JSON" })).toBeDefined();
+    expect(requestedCommits.toSorted()).toEqual(["after", "before"]);
+    fireEvent.click(screen.getByRole("tab", { name: "Raw JSON" }));
+    const rawDiff = await screen.findByTestId("raw-save-diff-fallback");
+    expect(rawDiff.textContent).toContain('"commit": "before"');
+    expect(rawDiff.textContent).toContain('"commit": "after"');
+    expect(screen.queryByTestId("progress-view")).toBeNull();
+  });
 });
 
 function connectLocalHistory() {

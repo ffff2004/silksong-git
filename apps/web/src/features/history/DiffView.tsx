@@ -6,7 +6,6 @@ import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
 import { ProgressSnapshotView } from "../progress/ProgressSnapshotView.tsx";
 import { MonacoJsonDiffViewer } from "../raw-save/MonacoJsonDiffViewer.tsx";
-import { MonacoJsonViewer } from "../raw-save/MonacoJsonViewer.tsx";
 
 export function DiffRoute() {
   return (
@@ -27,7 +26,8 @@ function DiffView() {
     readonly fromValue: string;
     readonly toValue: string;
   }>();
-  const [error, setError] = createSignal<string>();
+  const [rawError, setRawError] = createSignal<string>();
+  const [semanticError, setSemanticError] = createSignal<string>();
 
   onMount(() => {
     const params = new URLSearchParams(
@@ -43,19 +43,22 @@ function DiffView() {
     if (connection.kind !== "connected" || from() === "" || to() === "") {
       return;
     }
-    try {
-      const fromRef = from();
-      const toRef = to();
-      navigate(
-        `/diff?from=${encodeURIComponent(fromRef)}&to=${encodeURIComponent(toRef)}`,
-      );
-      const nextDiff = await connection.session.client.getDiff({
-        from: fromRef,
-        to: toRef,
-      });
-      setDiff(nextDiff);
+    const fromRef = from();
+    const toRef = to();
+    navigate(
+      `/diff?from=${encodeURIComponent(fromRef)}&to=${encodeURIComponent(toRef)}`,
+    );
+    setDiff(undefined);
+    setRawDiff(undefined);
+    setRawError(undefined);
+    setSemanticError(undefined);
 
-      const [fromSave, toSave] = await Promise.all([
+    const [semanticResult, fromSaveResult, toSaveResult] =
+      await Promise.allSettled([
+        connection.session.client.getDiff({
+          from: fromRef,
+          to: toRef,
+        }),
         connection.session.client.getSave({
           commitRef: fromRef,
           kind: "commit",
@@ -65,22 +68,38 @@ function DiffView() {
           kind: "commit",
         }),
       ]);
-      if (fromSave.status !== "available" || toSave.status !== "available") {
-        throw new Error("Decoded Save JSON is unavailable for this diff.");
-      }
+
+    if (semanticResult.status === "fulfilled") {
+      setDiff(semanticResult.value);
+    } else {
+      setSemanticError(toErrorMessage(semanticResult.reason, "Semantic Diff"));
+    }
+
+    if (
+      fromSaveResult.status === "fulfilled"
+      && toSaveResult.status === "fulfilled"
+      && fromSaveResult.value.status === "available"
+      && toSaveResult.value.status === "available"
+    ) {
       setRawDiff({
-        fromValue: stringifyDecodedSave(fromSave.decodedSave),
-        toValue: stringifyDecodedSave(toSave.decodedSave),
+        fromValue: stringifyDecodedSave(fromSaveResult.value.decodedSave),
+        toValue: stringifyDecodedSave(toSaveResult.value.decodedSave),
       });
-      setError(undefined);
-    } catch (error_) {
-      setError(error_ instanceof Error ? error_.message : "Diff unavailable.");
+    } else {
+      const rejectedSave = [fromSaveResult, toSaveResult].find(
+        (result) => result.status === "rejected",
+      );
+      setRawError(
+        rejectedSave?.status === "rejected"
+          ? toErrorMessage(rejectedSave.reason, "Decoded Save JSON comparison")
+          : "Decoded Save JSON is unavailable for this diff.",
+      );
     }
   };
 
   const handleSubmit = (event: SubmitEvent) => {
     submit(event).catch((error_: unknown) => {
-      setError(error_ instanceof Error ? error_.message : "Diff unavailable.");
+      setSemanticError(toErrorMessage(error_, "Diff"));
     });
   };
 
@@ -112,8 +131,14 @@ function DiffView() {
           Compare
         </button>
       </form>
-      <Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
-      <Show when={diff()}>
+      <Show
+        when={
+          diff() !== undefined
+          || rawDiff() !== undefined
+          || semanticError() !== undefined
+          || rawError() !== undefined
+        }
+      >
         <div class="local-history-tabs" role="tablist" aria-label="Diff view">
           <button
             class="btn-reset"
@@ -141,6 +166,9 @@ function DiffView() {
           </button>
         </div>
         <Show when={view() === "semantic"}>
+          <Show when={semanticError()}>
+            {(message) => <p role="alert">{message()}</p>}
+          </Show>
           <Show when={diff()}>
             {(value) => (
               <ProgressSnapshotView
@@ -155,23 +183,15 @@ function DiffView() {
           </Show>
         </Show>
         <Show when={view() === "raw"}>
-          <Show when={diff()}>
-            {(value) => (
-              <Show
-                fallback={
-                  <MonacoJsonViewer
-                    value={JSON.stringify(value().after, undefined, 2)}
-                  />
-                }
-                when={rawDiff()}
-              >
-                {(rawValue) => (
-                  <MonacoJsonDiffViewer
-                    fromValue={rawValue().fromValue}
-                    toValue={rawValue().toValue}
-                  />
-                )}
-              </Show>
+          <Show when={rawError()}>
+            {(message) => <p role="alert">{message()}</p>}
+          </Show>
+          <Show when={rawDiff()}>
+            {(rawValue) => (
+              <MonacoJsonDiffViewer
+                fromValue={rawValue().fromValue}
+                toValue={rawValue().toValue}
+              />
             )}
           </Show>
         </Show>
@@ -182,4 +202,10 @@ function DiffView() {
 
 function stringifyDecodedSave(decodedSave: unknown): string {
   return JSON.stringify(decodedSave, undefined, 2);
+}
+
+function toErrorMessage(error: unknown, source: string): string {
+  return error instanceof Error
+    ? error.message
+    : `${source} is unavailable for this diff.`;
 }

@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test DiffView.test.tsx`: passed with 1 test for canonical Diff URL refs and explicit Semantic/Raw JSON tabs
-- `pnpm format`: passed after the canonical Diff tabs slice
-- `pnpm verify`: passed after the canonical Diff tabs slice with 45 Web tests; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test DiffView.test.tsx`: passed with 2 tests, including Raw JSON remaining available when Semantic Diff fails
+- `pnpm format`: passed after the independent Diff data-source slice
+- `pnpm verify`: passed after the independent Diff data-source slice with 46 Web tests; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1468,7 +1468,7 @@ History slices:
 Diff slices:
 
 - [x] Diff keeps canonical `from` and `to` refs in the URL and exposes Semantic and Raw JSON views as explicit tabs.
-- [ ] Diff loads Semantic comparison and both Decoded Saves independently so one failed data source does not discard the other result.
+- [x] Diff loads Semantic comparison and both Decoded Saves independently so one failed data source does not discard the other result.
 - [ ] Unrecognized Schema Observations show an explicit Semantic Diff unavailable state while retaining the lazy Monaco Decoded Save JSON comparison.
 
 Watcher slices:
