@@ -550,6 +550,60 @@ describe("History view", () => {
     expect(observationCard.textContent).toContain("Restore");
     expect(observationCard.textContent).toContain("Compare");
   });
+
+  it("stores a pending compare source in History URL state before opening a canonical Diff", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/meta")) {
+          return Response.json(localHistoryMeta);
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [
+              createSummaryEvent("source", "source", "rosaries"),
+              createSummaryEvent("target", "target", "shellShards"),
+            ],
+          });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+    const cards = await screen.findAllByTestId("history-commit-card");
+    fireEvent.click(getCardAction(cards[0], "Compare"));
+
+    await waitFor(() => {
+      expect(globalThis.location.hash).toBe(
+        "#/history?compareFrom=source-commit",
+      );
+    });
+    fireEvent.click(getCardAction(cards[1], "Compare"));
+
+    await waitFor(() => {
+      expect(globalThis.location.hash).toBe(
+        "#/diff?from=source-commit&to=target-commit",
+      );
+    });
+  });
 });
 
 function connectLocalHistory() {
@@ -585,6 +639,17 @@ function getRequiredSelect(selector: string): HTMLSelectElement {
   }
 
   return element;
+}
+
+function getCardAction(card: HTMLElement | undefined, name: string) {
+  const action = [
+    ...(card?.querySelectorAll<HTMLElement>("a, button") ?? []),
+  ].find((candidate) => candidate.textContent.trim() === name);
+  if (action === undefined) {
+    throw new Error(`Expected History card action ${name}.`);
+  }
+
+  return action;
 }
 
 function getLastRequest(

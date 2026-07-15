@@ -118,6 +118,20 @@ function HistoryView() {
     };
   }
 
+  function selectCompareCommit(commit: string) {
+    const params = new URLSearchParams(location.search);
+    const compareFrom = params.get("compareFrom");
+    if (compareFrom === null) {
+      params.set("compareFrom", commit);
+      navigate(`/history?${params.toString()}`);
+      return;
+    }
+
+    navigate(
+      `/diff?from=${encodeURIComponent(compareFrom)}&to=${encodeURIComponent(commit)}`,
+    );
+  }
+
   return (
     <section class="tab local-history-view" data-testid="history-view">
       <h2>History</h2>
@@ -277,6 +291,7 @@ function HistoryView() {
               {(group) => (
                 <HistoryCommitCard
                   record={{ group, kind: "events" }}
+                  onCompare={selectCompareCommit}
                   onRestore={() => {
                     setRestoreCommit(group.commit.ref);
                   }}
@@ -313,6 +328,7 @@ function HistoryView() {
               {(entry) => (
                 <HistoryCommitCard
                   record={{ entry, kind: "observation" }}
+                  onCompare={selectCompareCommit}
                   onRestore={() => {
                     setRestoreCommit(entry.observation.commit.ref);
                   }}

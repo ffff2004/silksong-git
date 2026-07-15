@@ -10,6 +10,7 @@ export type HistoryCommitRecord =
   | { readonly entry: ObservationEntry; readonly kind: "observation" };
 
 export function HistoryCommitCard(props: {
+  readonly onCompare: (commit: string) => void;
   readonly onExport: () => void;
   readonly onRestore: () => void;
   readonly record: HistoryCommitRecord;
@@ -25,10 +26,6 @@ export function HistoryCommitCard(props: {
     props.record.kind === "events"
       ? firstEvent()?.snapshotSummary
       : (props.record.entry.snapshotSummary ?? undefined);
-  const previousCommit = () =>
-    props.record.kind === "events"
-      ? firstEvent()?.previousCommit?.ref
-      : props.record.entry.observation.previousCommit;
   const currentSavePath = () =>
     observation()?.schema.status === "recognized" && summary() !== undefined
       ? "/progress"
@@ -84,12 +81,15 @@ export function HistoryCommitCard(props: {
             <button class="btn-reset" type="button" onClick={props.onRestore}>
               Restore
             </button>
-            <a
+            <button
               class="btn-reset"
-              href={`/diff?from=${encodeURIComponent(previousCommit() ?? selectedCommit().ref)}&to=${encodeURIComponent(selectedCommit().ref)}`}
+              type="button"
+              onClick={() => {
+                props.onCompare(selectedCommit().ref);
+              }}
             >
               Compare
-            </a>
+            </button>
           </div>
           <Show when={props.record.kind === "events"}>
             <ul>
