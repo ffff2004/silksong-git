@@ -1410,7 +1410,7 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test`: passed with 44 tests for the explicit `ProgressSnapshotView` rendering seam, the `LocalHistoryClient` metadata/compatibility seam, Local History connection and Local Network Access denial, stale-session, visible-page Watcher polling, moving-latest refresh, and historical-selection behavior, Monaco Raw JSON diff, structured History search and URL restoration, feature-local Events and Raw Save Observation query ownership and revision merge with stable scroll position, both History cursor pagination slices, the shared schema-aware History commit card, History Compare URL selection, authenticated History Export, normal conflict-safe History Restore, and explicit missing-Watched-Save Restore
+- `pnpm --filter @silksong-git/web test -- HistoryView.test.tsx`: passed with 44 tests, including Watcher revision refresh preserving the current History scroll position
 - `pnpm format`: passed after the stable History revision refresh slice
 - `pnpm verify`: passed after the stable History revision refresh slice; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
