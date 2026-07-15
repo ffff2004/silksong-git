@@ -187,6 +187,9 @@ function formatError(error: LocalHistoryClientError): string {
   if (error.kind === "incompatible") {
     return "The Local History API is not compatible with this Web UI.";
   }
+  if (error.kind === "local-network-denied") {
+    return "Local Network Access was denied. Allow this site to access the local network, then try again.";
+  }
   if (error.kind === "unavailable") {
     return "The Local History endpoint is unavailable.";
   }

@@ -177,7 +177,12 @@ function toLocalHistoryClientError(
 }
 
 function shouldPauseAutomaticRequests(error: LocalHistoryClientError): boolean {
-  return ["incompatible", "protocol", "unauthorized"].includes(error.kind);
+  return [
+    "incompatible",
+    "local-network-denied",
+    "protocol",
+    "unauthorized",
+  ].includes(error.kind);
 }
 
 export function useLocalHistoryStore(): LocalHistoryStore {

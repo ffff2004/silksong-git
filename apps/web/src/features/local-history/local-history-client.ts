@@ -29,6 +29,7 @@ import { createLocalHistoryUrl } from "./url-utils.ts";
 export type LocalHistoryClientErrorKind =
   | "api"
   | "incompatible"
+  | "local-network-denied"
   | "protocol"
   | "unauthorized"
   | "unavailable";
@@ -191,11 +192,17 @@ export function createLocalHistoryClient(
         throw error;
       }
 
+      const localNetworkAccessDenied = await isLocalNetworkAccessDenied(url);
       throw new LocalHistoryClientError(
-        {
-          kind: "unavailable",
-          message: "Unable to reach the Local History API.",
-        },
+        localNetworkAccessDenied
+          ? {
+              kind: "local-network-denied",
+              message: "Browser Local Network Access was denied.",
+            }
+          : {
+              kind: "unavailable",
+              message: "Unable to reach the Local History API.",
+            },
         { cause: error },
       );
     }
@@ -343,6 +350,26 @@ function createQueryUrl(path: string, endpoint: string, query: object): string {
   }
 
   return url.href;
+}
+
+async function isLocalNetworkAccessDenied(url: string): Promise<boolean> {
+  const { hostname } = new URL(url);
+  const isLoopback =
+    hostname === "localhost"
+    || hostname === "[::1]"
+    || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
+  if (!isLoopback) {
+    return false;
+  }
+
+  try {
+    const permission = await globalThis.navigator.permissions.query({
+      name: "loopback-network" as PermissionName,
+    });
+    return permission.state === "denied";
+  } catch {
+    return false;
+  }
 }
 
 function createAuthorizationHeaders(

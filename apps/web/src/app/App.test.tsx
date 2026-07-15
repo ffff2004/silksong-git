@@ -180,6 +180,42 @@ describe("Solid Web app routing", () => {
     expect(document.querySelector("#clearDataBtn")).toBeNull();
   });
 
+  it("explains when browser Local Network Access was denied", async () => {
+    const navigatorWithDeniedLoopbackPermission = Object.create(
+      globalThis.navigator,
+    ) as Navigator;
+    Object.defineProperty(
+      navigatorWithDeniedLoopbackPermission,
+      "permissions",
+      {
+        configurable: true,
+        value: {
+          query: vi.fn(async () => ({ state: "denied" })),
+        },
+      },
+    );
+    vi.stubGlobal("navigator", navigatorWithDeniedLoopbackPermission);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+
+    render(() => <App />);
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+    fireEvent.input(getRequiredElement("#local-history-token"), {
+      target: { value: "session-token" },
+    });
+    fireEvent.click(getRequiredElement("#local-history-connect"));
+
+    expect(
+      await screen.findByText(
+        "Local Network Access was denied. Allow this site to access the local network, then try again.",
+      ),
+    ).toBeDefined();
+  });
+
   it("keeps loaded Local Save data visible when a later request makes the session stale", async () => {
     vi.stubGlobal(
       "fetch",
