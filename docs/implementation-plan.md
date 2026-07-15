@@ -1410,9 +1410,9 @@ Acceptance criteria:
 Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
-- `pnpm --filter @silksong-git/web test DiffView.test.tsx`: passed with 3 tests, including Unrecognized Schema fallback to Raw JSON
-- `pnpm format`: passed after the Unrecognized Schema Diff fallback slice
-- `pnpm verify`: passed after the Unrecognized Schema Diff fallback slice with 47 Web tests; full P6-T3 acceptance remains pending
+- `pnpm --filter @silksong-git/web test WatcherView.test.tsx`: passed with 1 test covering Runtime-owned Watcher status rendering without a second polling loop
+- `pnpm format`: passed after the Runtime-owned Watcher status slice
+- `pnpm verify`: passed after the Runtime-owned Watcher status slice with 48 Web tests; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1473,7 +1473,7 @@ Diff slices:
 
 Watcher slices:
 
-- [ ] Watcher renders the Runtime-owned status snapshot, including activity, Watched Save path, Capture Policy, latest observation, and Watcher Error state, without starting a second polling loop.
+- [x] Watcher renders the Runtime-owned status snapshot, including activity, Watched Save path, Capture Policy, latest observation, and Watcher Error state, without starting a second polling loop.
 - [ ] Watcher Manual Checkpoint submits an optional message once and renders committed, skipped, and Watcher Error results without automatic retry.
 - [ ] Watcher Manual Checkpoint exposes explicit `allowUnchanged` intent while preserving the same single-submit behavior.
 

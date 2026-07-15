@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from "solid-js";
+import { Show } from "solid-js";
 
 import type { LocalHttpWatcherStatus } from "@silksong-git/history/http-wire";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
@@ -14,28 +14,16 @@ export function WatcherRoute() {
 
 function WatcherView() {
   const localHistory = useLocalHistoryStore();
-  const [status, setStatus] = createSignal<LocalHttpWatcherStatus>();
-  const [error, setError] = createSignal<string>();
-
-  onMount(() => {
+  const status = () => {
     const connection = localHistory.connection();
-    if (connection.kind !== "connected") {
-      return;
-    }
-    connection.session.client
-      .getWatcher()
-      .then(setStatus)
-      .catch((error_: unknown) => {
-        setError(
-          error_ instanceof Error ? error_.message : "Watcher unavailable.",
-        );
-      });
-  });
+    return connection.kind === "connected"
+      ? connection.session.watcherStatus()
+      : undefined;
+  };
 
   return (
     <section class="tab" data-testid="watcher-view">
       <h2>Watcher</h2>
-      <Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
       <Show when={status()} fallback={<p>Watcher status unavailable.</p>}>
         {(value) => (
           <dl>
@@ -45,9 +33,40 @@ function WatcherView() {
             <dd>{value().observationRevision}</dd>
             <dt>Watched path</dt>
             <dd>{value().watchedSavePath}</dd>
+            <dt>Capture Policy</dt>
+            <dd>
+              {value().capturePolicy.debounceWriteMs} ms debounce,{" "}
+              {value().capturePolicy.minCommitIntervalMs} ms minimum interval
+            </dd>
+            <Show when={value().lastObservation}>
+              {(observation) => (
+                <>
+                  <dt>Latest observation</dt>
+                  <dd>{observation().completedAt}</dd>
+                  <dt>Result</dt>
+                  <dd>{observation().status}</dd>
+                  <Show when={getWatcherErrorMessage(observation())}>
+                    {(message) => (
+                      <>
+                        <dt>Watcher Error</dt>
+                        <dd role="alert">{message()}</dd>
+                      </>
+                    )}
+                  </Show>
+                </>
+              )}
+            </Show>
           </dl>
         )}
       </Show>
     </section>
   );
+}
+
+function getWatcherErrorMessage(
+  observation: NonNullable<LocalHttpWatcherStatus["lastObservation"]>,
+): string | undefined {
+  return observation.status === "watcherError"
+    ? observation.error.message
+    : undefined;
 }
