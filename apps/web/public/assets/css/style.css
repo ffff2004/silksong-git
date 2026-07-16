@@ -2210,10 +2210,6 @@ main::-webkit-scrollbar-thumb:hover {
 }
 
 .progress-legend {
-  position: fixed;
-  right: calc(260px + 3.4rem);
-  bottom: 1.5rem;
-  max-width: calc(100vw - 2rem);
   background: rgba(17, 17, 18, 0.94);
   border: 1px solid rgba(197, 100, 50, 0.35);
   border-radius: 8px;

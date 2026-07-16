@@ -1411,8 +1411,9 @@ Verification:
 
 - `pnpm --filter @silksong-git/history test`: passed for the local HTTP API 1.1 DTO and browser-safe wire schema slices
 - `pnpm --filter @silksong-git/web test DiffView.test.tsx`: passed with 3 tests, including full-width Diff with Progress-owned Semantic TOC layout
-- `pnpm format`: passed after the shared Monaco layout and Progress-owned TOC layout fix
-- `pnpm verify`: passed after the shared Monaco layout and Progress-owned TOC layout fix with 50 Web tests; full P6-T3 acceptance remains pending
+- Chromium CDP layout probe at 800×600 and 1440×900: passed with no Progress Legend/TOC overlap
+- `pnpm format`: passed after the Progress Legend/TOC overlap fix
+- `pnpm verify`: passed after the Progress Legend/TOC overlap fix with 50 Web tests; full P6-T3 acceptance remains pending
 - local Web UI smoke test: pending
 
 Notes:
@@ -1429,7 +1430,7 @@ Notes:
 - Watcher revision changes refresh a session-owned moving latest Save State; the shared Save Store follows that source only without a selected `commit`, so an in-flight refresh cannot replace an immutable historical selection.
 - Manual Checkpoint response validation uses a wire union rather than a `status`-discriminated union because both unchanged and minimum-interval results intentionally share `status: "skipped"`; the public DTO and HTTP response shapes remain unchanged.
 - History-to-Diff navigation previously left canonical `from` and `to` refs out of the form because `DiffView` read `globalThis.location.hash` before the browser hash synchronized during a HashRouter transition; reading the Router-owned `location.search` fixes both inputs while keeping the URL contract unchanged.
-- `AppShell` is width-neutral; `ProgressSnapshotView` owns its content/TOC grid and sticky TOC placement so both standalone Progress and embedded Semantic Diff render correctly, while Raw JSON Diff uses the full route width and a shared explicitly sized Monaco frame.
+- `AppShell` is width-neutral; `ProgressSnapshotView` owns its content/TOC grid, bottom-sticky Legend, and sticky TOC placement so both standalone Progress and embedded Semantic Diff render correctly without overlay overlap, while Raw JSON Diff uses the full route width and a shared explicitly sized Monaco frame.
 
 TDD vertical slices:
 

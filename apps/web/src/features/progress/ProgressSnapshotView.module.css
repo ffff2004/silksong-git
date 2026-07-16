@@ -9,6 +9,15 @@
   min-width: 0;
 }
 
+.progressContent :global(.progress-legend) {
+  position: sticky;
+  right: auto;
+  bottom: 1.5rem;
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
+}
+
 .progressLayout :global(.toc-container) {
   position: sticky;
   top: 0;
