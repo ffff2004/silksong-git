@@ -1436,6 +1436,44 @@ Notes:
 - CSS Module migration preparation captured the current rendered UI before changing style ownership. The screenshots are temporary local review artifacts rather than committed fixtures; they intentionally preserve existing compact-layout behavior instead of treating it as a new acceptance standard.
 - Removed 634 lines of confirmed-unreferenced Home/Cinematic, legacy Progress-container, Raw Save search, Map loading, and miscellaneous CSS from `apps/web/public/assets/css/style.css`, reducing it from 2,828 to 2,195 lines without migrating a component. Mixed selectors retained their active branches, including `.sidebar-links`, `main a`, `.info-link`, `.main-section-block`, `.grid`, and `.category-description`.
 
+CSS Module migration checklist:
+
+- [ ] Step 2: finish the partially modularized banner styles.
+  - [ ] Move `ModeBanner` base, `hidden`, `steel`, and icon styles into `ModeBanner.module.css`; use module state classes while retaining `id="modeBanner"` only as a DOM Interface.
+  - [ ] Give `HistoricalSelectionBanner` its own Module instead of sharing mixed ownership through `SaveBanner.module.css`.
+  - [ ] Remove the corresponding global `#modeBanner` rules and verify Static, Local, Normal, Steel Soul, and historical-selection Topbar states.
+- [ ] Step 3: migrate independent leaf Modules in order.
+  - [ ] Migrate `BackToTop`, expressing visibility through conditional rendering, `hidden`, or a module state class.
+  - [ ] Migrate `RawSaveView` while keeping editor internals owned by `MonacoViewer.module.css`.
+  - [ ] Migrate `UploadModal`, including overlay, panel, dropzone, drag state, help, platforms, and pills; do not extract a shared Dialog Module yet.
+  - [ ] Migrate `PreferenceControls`, replacing global dropdown/toggle/checkbox styles and the global `.hidden` dependency with local state and `aria-expanded`/`hidden` behavior.
+- [ ] Step 4: migrate the Map cluster in dependency order.
+  - [ ] Migrate `InteractiveMapCanvas`, including page/modal variants, stage, image, pins, markers, and obtained state; expose stable `data-variant` or semantic DOM state for tests.
+  - [ ] Migrate `MapFiltersPanel`, including collapsed/open state, search, filter controls, and filter items; expose expansion through `aria-expanded`.
+  - [ ] Migrate `MapView` page layout and map selector controls.
+  - [ ] Keep `InfoModal` dependent only on the public `InteractiveMapCanvas` Interface, not its internal class names.
+- [ ] Step 5: migrate the Progress cluster in order.
+  - [ ] Migrate `ProgressItemCard`, moving card, item status, spoiler state, Act label, special icons, journal counter, and diff-change styles into its own Module.
+  - [ ] Replace test dependencies on `.boss`, `.done`, `.locked`, and related style classes with explicit `data-status`, `data-spoiler-state`, and existing semantic attributes; remove the `body.spoiler-on` side effect.
+  - [ ] Migrate `ProgressLegend`, preserving its existing `aria-expanded` Interface.
+  - [ ] Migrate `ProgressToc`, replacing global `open`, `active`, and `hidden` classes with module state plus `aria-expanded`, `aria-current`, and `hidden` behavior.
+  - [ ] Migrate `ProgressSection`, retaining heading IDs only for the TOC scroll Interface.
+  - [ ] Reduce `ProgressSnapshotView.module.css` to page-level layout, stats, and Diff toolbar ownership; remove its `:global(...)` selectors.
+  - [ ] Migrate `InfoModal`, including its item content, journal presentation, map wrapper, and link styles.
+- [ ] Step 6: migrate the application shell after its children are stable.
+  - [ ] Migrate `Sidebar`, including responsive layout and active navigation state; expose route selection through link semantics such as `aria-current`.
+  - [ ] Migrate `Topbar`, limiting it to primary-row, right-controls, and historical second-row layout without styling child internals.
+  - [ ] Migrate `AppShell`, including `main-wrapper`, `main`, scrollbars, and responsive layout; verify every route after removing global element-level layout rules.
+- [ ] Step 7: consolidate real shared styles and close the global stylesheet.
+  - [ ] Move shared primary, danger/reset, secondary, and small button variants into one `Button.module.css` without introducing a speculative component wrapper.
+  - [ ] Compare Upload, Info, and Local Connection dialogs; extract only overlay/panel/close styles that demonstrably change together into a shared Dialog Module.
+  - [ ] Move the remaining fonts, theme tokens, `html`/`body` reset, cursor, `button { font: inherit }`, and minimal element defaults into `apps/web/src/app/global.css`, imported by `main.tsx`.
+  - [ ] Remove the public `style.css` link and delete the global `.hidden`, feature ID selectors, broad `main a !important` overrides, feature descendant selectors, and all migrated class rules.
+- [ ] Close out the migration.
+  - [ ] Run the narrow Web tests after every vertical slice, then run `pnpm format` and `pnpm verify` before commit.
+  - [ ] Repeat the 800×600 and 1440×900 Chromium checks for Progress, Semantic Diff, Map, Upload, Raw Save, Static/Local Topbars, and dialog layering against the migration baseline.
+  - [ ] Confirm tests use semantic DOM Interfaces rather than CSS Module hashes and that no feature or shell style remains in the global stylesheet.
+
 TDD vertical slices:
 
 - [x] Raw Save Observations uses its own recent-first opaque cursor; Load More appends older entries independently from History Events pagination.
