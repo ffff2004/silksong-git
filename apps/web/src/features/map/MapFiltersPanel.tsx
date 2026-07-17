@@ -1,6 +1,7 @@
 import { For } from "solid-js";
 
 import { formatMapCategory } from "./map-selectors.ts";
+import styles from "./MapFiltersPanel.module.css";
 
 interface MapFiltersPanelProps {
   readonly activeCategories: ReadonlySet<string>;
@@ -16,25 +17,32 @@ interface MapFiltersPanelProps {
 
 export function MapFiltersPanel(props: MapFiltersPanelProps) {
   return (
-    <div class="map-sidebar" classList={{ collapsed: !props.isOpen }}>
-      <div id="map-filters-body" classList={{ open: props.isOpen }}>
-        <div class="map-sidebar-header">
-          <h3>Map Filters</h3>
+    <div
+      class={`${styles["sidebar"]} ${props.isOpen ? "" : styles["collapsed"]}`}
+    >
+      <div id="map-filters-body" class={styles["body"]} hidden={!props.isOpen}>
+        <div class={styles["header"]}>
+          <h3 class={styles["heading"]}>Map Filters</h3>
           <button
             id="toggle-map-filters"
-            class="map-filter-toggle"
+            class={styles["hide-button"]}
             type="button"
             title="Hide filters"
+            aria-controls="map-filters-body"
+            aria-expanded={props.isOpen}
             onClick={props.onToggleOpen}
           >
             <i class="fa-solid fa-sliders" />
             <span>Hide Filters</span>
           </button>
         </div>
-        <div class="search-container">
+        <div class={styles["search-container"]}>
           <input
             type="text"
             id="map-search"
+            class={styles["search"]}
+            role="searchbox"
+            aria-label="Search map items"
             placeholder="Search item..."
             autocomplete="off"
             value={props.searchTerm}
@@ -42,16 +50,16 @@ export function MapFiltersPanel(props: MapFiltersPanelProps) {
               props.onSearch(event.currentTarget.value);
             }}
           />
-          <span id="map-search-count">
+          <span id="map-search-count" class={styles["search-count"]}>
             {props.searchTerm === ""
               ? ""
               : `${props.searchCount} result${props.searchCount === 1 ? "" : "s"}`}
           </span>
         </div>
-        <div class="filter-controls">
+        <div class={styles["filter-controls"]}>
           <button
             id="show-all-filters"
-            class="btn-small"
+            class={styles["small-button"]}
             type="button"
             onClick={() => {
               props.onSetAllCategories(true);
@@ -61,7 +69,7 @@ export function MapFiltersPanel(props: MapFiltersPanelProps) {
           </button>
           <button
             id="hide-all-filters"
-            class="btn-small"
+            class={styles["small-button"]}
             type="button"
             onClick={() => {
               props.onSetAllCategories(false);
@@ -70,10 +78,10 @@ export function MapFiltersPanel(props: MapFiltersPanelProps) {
             Hide All
           </button>
         </div>
-        <div id="map-filters" class="filter-list">
+        <div id="map-filters" class={styles["filter-list"]}>
           <For each={props.categories}>
             {(category) => (
-              <label class="filter-item">
+              <label class={styles["filter-item"]}>
                 <input
                   type="checkbox"
                   data-category={category}
@@ -93,8 +101,11 @@ export function MapFiltersPanel(props: MapFiltersPanelProps) {
       </div>
       <button
         id="toggle-map-filters-collapsed"
-        class="map-filter-show-btn"
+        class={styles["show-button"]}
         type="button"
+        aria-controls="map-filters-body"
+        aria-expanded={props.isOpen}
+        hidden={props.isOpen}
         onClick={props.onToggleOpen}
       >
         <i class="fa-solid fa-sliders" />

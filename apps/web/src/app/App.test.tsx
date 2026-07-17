@@ -1075,9 +1075,33 @@ describe("Solid Web app routing", () => {
     );
 
     fireEvent.click(screen.getByRole("link", { name: "Interactive Map" }));
-    expect(await screen.findByTestId("map-view")).toBeDefined();
+    expect(
+      await screen.findByRole("region", { name: "Interactive Map" }),
+    ).toBeDefined();
     expect(document.querySelector("#worldMap")).not.toBeNull();
-    expect(document.querySelectorAll(".map-pin").length).toBeGreaterThan(0);
+    expect(document.querySelectorAll("[data-map-pin]").length).toBeGreaterThan(
+      0,
+    );
+
+    const showFilters = screen.getByRole("button", { name: "Show Filters" });
+    expect(showFilters.getAttribute("aria-expanded")).toBe("false");
+    expect(getRequiredElement("#map-filters-body").hidden).toBe(true);
+
+    fireEvent.click(showFilters);
+
+    const hideFilters = screen.getByRole("button", { name: "Hide Filters" });
+    expect(hideFilters.getAttribute("aria-expanded")).toBe("true");
+    expect(getRequiredElement("#map-filters-body").hidden).toBe(false);
+    expect(
+      screen.getByRole("searchbox", { name: "Search map items" }),
+    ).toBeDefined();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Select map act" }), {
+      target: { value: "assets/ui/scene's_name_map.png" },
+    });
+    expect(
+      screen.getByRole("img", { name: "Pharloom Map" }).getAttribute("src"),
+    ).toContain("scene's_name_map.png");
   });
 
   it("shows progress item map locations in the shared interactive map canvas", () => {
@@ -1086,25 +1110,26 @@ describe("Solid Web app routing", () => {
     fireEvent.click(getRequiredElement("#progress-bell_beast"));
 
     const modal = getRequiredElement("#info-overlay");
-    const canvas = modal.querySelector(".interactive-map-canvas");
+    const canvas = modal.querySelector(
+      '[data-map-canvas][data-variant="modal"]',
+    );
     if (canvas === null) {
       throw new Error("Expected modal map canvas to exist.");
     }
 
-    expect(canvas.classList.contains("interactive-map-canvas-modal")).toBe(
-      true,
-    );
     expect(canvas.querySelector("img")?.getAttribute("src")).toContain(
       "labelled_map_act3.png",
     );
     expect(
-      canvas.querySelector<HTMLElement>('.map-pin[aria-label="Bell Beast"]'),
+      canvas.querySelector<HTMLElement>(
+        '[data-map-pin][aria-label="Bell Beast"]',
+      ),
     ).not.toBeNull();
 
     const image = canvas.querySelector<HTMLImageElement>(
-      ".interactive-map-image",
+      'img[alt="Bell Beast map location"]',
     );
-    const stage = canvas.querySelector<HTMLElement>(".interactive-map-stage");
+    const stage = canvas.querySelector<HTMLElement>("[data-map-stage]");
     if (image === null || stage === null) {
       throw new Error("Expected modal map image and stage to exist.");
     }
@@ -1127,11 +1152,11 @@ describe("Solid Web app routing", () => {
     fireEvent.click(screen.getByRole("link", { name: "Interactive Map" }));
     expect(await screen.findByTestId("map-view")).toBeDefined();
 
-    const canvas = getRequiredElement(".interactive-map-canvas");
+    const canvas = getRequiredElement('[data-map-canvas][data-variant="page"]');
     const image = canvas.querySelector<HTMLImageElement>(
-      ".interactive-map-image",
+      'img[alt="Pharloom Map"]',
     );
-    const stage = canvas.querySelector<HTMLElement>(".interactive-map-stage");
+    const stage = canvas.querySelector<HTMLElement>("[data-map-stage]");
     if (image === null || stage === null) {
       throw new Error("Expected map image and stage to exist.");
     }

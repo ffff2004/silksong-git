@@ -92,7 +92,7 @@ export function useMapPanZoom(input: {
     const onPointerDown = (event: PointerEvent) => {
       if (
         event.button !== 0
-        || (event.target as HTMLElement).closest(".map-pin")
+        || (event.target as HTMLElement).closest("[data-map-pin]")
       ) {
         return;
       }

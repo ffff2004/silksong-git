@@ -1,5 +1,6 @@
 import { For } from "solid-js";
 
+import styles from "./InteractiveMapCanvas.module.css";
 import type { MapPanZoomFocus } from "./use-map-pan-zoom.ts";
 import { useMapPanZoom } from "./use-map-pan-zoom.ts";
 
@@ -39,31 +40,32 @@ export function InteractiveMapCanvas<TPayload>(
 
   return (
     <div
-      class="interactive-map-canvas"
-      classList={{
-        "interactive-map-canvas-modal": props.variant === "modal",
-        "interactive-map-canvas-page": props.variant === "page",
-      }}
+      class={styles["canvas"]}
+      data-map-canvas
+      data-variant={props.variant}
       ref={wrapper}
     >
-      <div class="interactive-map-stage" ref={stage}>
-        <div class="interactive-map-inner">
+      <div class={styles["stage"]} data-map-stage ref={stage}>
+        <div class={styles["inner"]}>
           <img
             id={props.imageId}
-            class="interactive-map-image"
+            class={styles["image"]}
             ref={image}
             src={props.imageSrc}
             draggable={false}
             alt={props.alt}
           />
-          <div class="map-pins-overlay">
+          <div class={styles["pins-overlay"]}>
             <For each={props.pins ?? []}>
               {(pin) => (
                 <>
                   {props.onActivatePin === undefined ? (
                     <img
-                      class="map-pin map-pin-marker"
-                      classList={{ obtained: pin.isObtained === true }}
+                      class={`${styles["pin"]} ${styles["marker"]} ${
+                        pin.isObtained === true ? styles["obtained"] : ""
+                      }`}
+                      data-map-pin
+                      data-obtained={pin.isObtained === true}
                       style={{
                         left: `${pin.x * 100}%`,
                         top: `${pin.y * 100}%`,
@@ -76,8 +78,11 @@ export function InteractiveMapCanvas<TPayload>(
                   ) : (
                     <button
                       type="button"
-                      class="map-pin"
-                      classList={{ obtained: pin.isObtained === true }}
+                      class={`${styles["pin"]} ${
+                        pin.isObtained === true ? styles["obtained"] : ""
+                      }`}
+                      data-map-pin
+                      data-obtained={pin.isObtained === true}
                       style={{
                         left: `${pin.x * 100}%`,
                         top: `${pin.y * 100}%`,

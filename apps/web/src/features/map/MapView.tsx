@@ -6,13 +6,14 @@ import { InfoModal } from "../progress/InfoModal.tsx";
 import type { ProgressItemData } from "../progress/progress-types.ts";
 import type { InteractiveMapPin } from "./InteractiveMapCanvas.tsx";
 import { InteractiveMapCanvas } from "./InteractiveMapCanvas.tsx";
-import { MapFiltersPanel } from "./MapFiltersPanel.tsx";
 import type { MapPinView } from "./map-selectors.ts";
 import {
   getMapCategories,
   getMapPins,
   resolveMapImageSrc,
 } from "./map-selectors.ts";
+import { MapFiltersPanel } from "./MapFiltersPanel.tsx";
+import styles from "./MapView.module.css";
 
 const mapOptions = [
   {
@@ -50,12 +51,20 @@ export function MapView() {
 
   return (
     <>
-      <section id="map-section" class="tab" data-testid="map-view">
-        <h2>Interactive Map</h2>
-        <div class="map-controls">
+      <section
+        id="map-section"
+        class={styles["page"]}
+        data-testid="map-view"
+        aria-labelledby="map-title"
+      >
+        <h2 id="map-title" class={styles["title"]}>
+          Interactive Map
+        </h2>
+        <div class={styles["controls"]}>
           <label for="map-act-select">Select Map:</label>
           <select
             id="map-act-select"
+            class={styles["select"]}
             aria-label="Select map act"
             value={selectedMapSrc()}
             onChange={(event) => {
