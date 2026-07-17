@@ -1417,6 +1417,7 @@ Verification:
 - CSS Module migration baseline: `pnpm --filter @silksong-git/web test` passed with 50 tests, `pnpm --filter @silksong-git/web build` passed, and 14 targeted headless-Chromium screenshots covered Static and Local Topbars, Progress, Semantic Diff, Map filters, Upload, and Raw Save at 800×600 and 1440×900
 - Legacy CSS cleanup: `pnpm --filter @silksong-git/web test` passed with 50 tests, `pnpm --filter @silksong-git/web build` passed, `pnpm exec prettier --check apps/web/public/assets/css/style.css` passed, and `git diff --check` passed
 - Banner CSS Module migration: `pnpm --filter @silksong-git/web test App.test.tsx` passed with 22 tests, the full Web suite passed with 50 tests, the Web production build passed, and Stylelint passed for the global and two banner stylesheets; Chromium checks at 800×600 and 1440×900 covered hidden, Normal, and Steel Soul states, with the Normal Topbar matching its migration baseline pixel-for-pixel
+- CSS Module lint coverage: a temporary invalid Module proved the previous `pnpm lint apps/web` path missed `src/**/*.css`; after expanding the shared Stylelint command, both `pnpm lint apps/web` and full `pnpm lint` passed while checking every first-party Web CSS file
 - local Web UI smoke test: pending
 
 Notes:
@@ -1437,6 +1438,7 @@ Notes:
 - CSS Module migration preparation captured the current rendered UI before changing style ownership. The screenshots are temporary local review artifacts rather than committed fixtures; they intentionally preserve existing compact-layout behavior instead of treating it as a new acceptance standard.
 - Removed 634 lines of confirmed-unreferenced Home/Cinematic, legacy Progress-container, Raw Save search, Map loading, and miscellaneous CSS from `apps/web/public/assets/css/style.css`, reducing it from 2,828 to 2,195 lines without migrating a component. Mixed selectors retained their active branches, including `.sidebar-links`, `main a`, `.info-link`, `.main-section-block`, `.grid`, and `.category-description`.
 - `ModeBanner` and `HistoricalSelectionBanner` now own separate CSS Modules. `id="modeBanner"` remains only as a DOM Interface, module state classes own hidden and Steel Soul presentation, and the corresponding global ID rules and mixed `SaveBanner.module.css` ownership were removed without changing the rendered Normal Topbar.
+- Full and `apps/web`-scoped lint now share one Stylelint target covering `apps/web/src/**/*.css` plus the remaining first-party global stylesheet. The CSS Module override recognizes `:global(...)` and defers isolated-file unknown-custom-property checks because theme tokens are declared by the global stylesheet; all other Stylelint rules remain active for Modules.
 
 CSS Module migration checklist:
 

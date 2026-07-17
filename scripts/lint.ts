@@ -8,6 +8,8 @@ import {
 } from "./lint/core-mapping-json.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
+const WEB_STYLELINT_COMMAND =
+  "stylelint ./apps/web/src/**/*.css ./apps/web/public/assets/css/style.css";
 
 process.chdir(REPO_ROOT);
 
@@ -45,7 +47,7 @@ function getLintCommands(
       "knip --treat-config-hints-as-errors",
 
       // Use stylelint to lint the CSS.
-      "stylelint ./apps/web/public/assets/css/style.css",
+      WEB_STYLELINT_COMMAND,
 
       // Ensure that the core mapping JSON files satisfy their schemas.
       ["check core mapping JSON schemas", checkCoreMappingJSONSchemas()],
@@ -114,7 +116,7 @@ function getScopedLintCommands(scope: string): readonly LintCommand[] {
       return [
         "eslint --cache --cache-location .eslintcache --max-warnings 0 apps/web",
         "prettier --log-level=warn --check apps/web",
-        "stylelint ./apps/web/public/assets/css/style.css",
+        WEB_STYLELINT_COMMAND,
       ];
     }
 
