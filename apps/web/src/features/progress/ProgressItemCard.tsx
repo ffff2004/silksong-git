@@ -4,9 +4,7 @@ import { assetUrl } from "../../app/asset-url.ts";
 import { usePreferencesStore } from "../../state/preferences-store.tsx";
 import { useProgressSnapshot } from "./progress-snapshot-context.tsx";
 import type { ProgressItemData } from "./progress-types.ts";
-import styles from "./ProgressSnapshotView.module.css";
-
-const diffChangedClass = styles["diffChanged"]!;
+import styles from "./ProgressItemCard.module.css";
 
 const romanActs = new Map([
   [1, "I"],
@@ -45,18 +43,27 @@ export function ProgressItemCard(props: ProgressItemCardProps) {
     shouldRevealIcon()
       ? resolveIconSrc(props.item.icon)
       : assetUrl("assets/icons/locked.png");
+  const status = () => semanticItem()?.status ?? "missing";
+  const spoilerState = () => {
+    if (isSpoilerRevealed()) {
+      return "revealed";
+    }
+
+    return shouldRevealIcon() ? "obtained" : "locked";
+  };
 
   return (
     <button
       type="button"
-      class="boss"
+      aria-label={props.item.label}
+      class={styles["card"]}
       classList={{
-        accepted: isAccepted(),
-        done: isDone(),
-        [diffChangedClass]: progressSnapshot.isChanged(props.item.id),
-        locked: !shouldRevealIcon(),
-        unlocked: isSpoilerRevealed(),
-        unobtainable:
+        [styles["accepted"]!]: isAccepted(),
+        [styles["diffChanged"]!]: progressSnapshot.isChanged(props.item.id),
+        [styles["done"]!]: isDone(),
+        [styles["locked"]!]: !shouldRevealIcon(),
+        [styles["spoilerRevealed"]!]: isSpoilerRevealed(),
+        [styles["unobtainable"]!]:
           props.item.unobtainable === true && progressSnapshot.hasSave(),
       }}
       data-flag={getFlagLabel(props.item)}
@@ -64,6 +71,9 @@ export function ProgressItemCard(props: ProgressItemCardProps) {
         progressSnapshot.isChanged(props.item.id) ? "true" : undefined
       }
       data-group={props.item.group}
+      data-progress-card
+      data-spoiler-state={spoilerState()}
+      data-status={status()}
       id={`progress-${props.item.id}`}
       onClick={() => {
         props.onOpenInfo(props.item);
@@ -72,16 +82,16 @@ export function ProgressItemCard(props: ProgressItemCardProps) {
       <Show
         when={props.item.type === "tool" && props.item.upgradeOf !== undefined}
       >
-        <span class="upgrade-icon" title="Upgrade of another tool">
+        <span class={styles["upgradeIcon"]} title="Upgrade of another tool">
           <i class="fa-solid fa-arrow-up" />
         </span>
       </Show>
-      <span class={`act-label act-${props.item.act ?? 1}`}>
+      <span class={styles["actLabel"]} data-act={props.item.act ?? 1}>
         ACT {romanActs.get(props.item.act ?? 1) ?? "I"}
       </span>
       <Show when={props.item.unobtainable === true}>
         <span
-          class="missable-icon unobtainable-icon"
+          class={`${styles["specialIcon"]} ${styles["unobtainableIcon"]}`}
           title="Mutually exclusive item - only one of these can be obtained"
         >
           <i class="fa-solid fa-code-branch" />
@@ -89,16 +99,16 @@ export function ProgressItemCard(props: ProgressItemCardProps) {
       </Show>
       <Show when={props.item.missable === true}>
         <span
-          class="missable-icon"
+          class={styles["specialIcon"]}
           title="Missable item - can be permanently lost"
         >
           !
         </span>
       </Show>
       <img src={iconSrc()} alt={props.item.label} />
-      <div class="title">{props.item.label}</div>
+      <div class={styles["title"]}>{props.item.label}</div>
       <Show when={props.item.type === "journal"}>
-        <span class="journal-counter">
+        <span class={styles["journalCounter"]}>
           {formatJournalCounter(props.item, semanticItem()?.value)}
         </span>
       </Show>

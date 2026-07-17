@@ -4,6 +4,7 @@ import { assetUrl } from "../../app/asset-url.ts";
 import type { InteractiveMapPin } from "../map/InteractiveMapCanvas.tsx";
 import { InteractiveMapCanvas } from "../map/InteractiveMapCanvas.tsx";
 import { resolveMapImageSrc } from "../map/map-selectors.ts";
+import styles from "./InfoModal.module.css";
 import type { ProgressItemData } from "./progress-types.ts";
 
 interface InfoModalProps {
@@ -17,17 +18,18 @@ export function InfoModal(props: InfoModalProps) {
       {(item) => (
         <div
           id="info-overlay"
-          class="overlay"
+          class={styles["overlay"]}
           onClick={(event) => {
             if (event.target === event.currentTarget) {
               props.onClose();
             }
           }}
         >
-          <div id="info-content" class="modal">
+          <div id="info-content" class={styles["panel"]}>
             <button
               id="closeInfoModal"
-              class="modal-close"
+              aria-label="Close item details"
+              class={styles["close"]}
               type="button"
               onClick={props.onClose}
             >
@@ -36,10 +38,10 @@ export function InfoModal(props: InfoModalProps) {
             <img
               src={resolveIconSrc(item().icon)}
               alt={item().label}
-              class="info-image"
+              class={styles["image"]}
             />
-            <h2 class="info-title">{item().label}</h2>
-            <p class="info-description">{item().description}</p>
+            <h2 class={styles["title"]}>{item().label}</h2>
+            <p class={styles["description"]}>{item().description}</p>
             <Show
               when={
                 item().type === "journal"
@@ -50,28 +52,30 @@ export function InfoModal(props: InfoModalProps) {
               <img
                 src={assetUrl("assets/ui/divider_journal.png")}
                 alt="divider"
-                class="journal-divider"
+                class={styles["journalDivider"]}
               />
-              <p class="hornet-description">{item().hornetDescription}</p>
+              <p class={styles["hornetDescription"]}>
+                {item().hornetDescription}
+              </p>
             </Show>
             <Show when={item().obtain !== undefined}>
-              <p class="info-extra">
+              <p class={styles["extra"]}>
                 <strong>Obtained:</strong> {item().obtain}
               </p>
             </Show>
             <Show when={item().cost !== undefined}>
-              <p class="info-extra">
+              <p class={styles["extra"]}>
                 <strong>Cost:</strong> {item().cost}
               </p>
             </Show>
             <Show when={item().use !== undefined}>
-              <p class="info-extra">
+              <p class={styles["extra"]}>
                 <strong>Use:</strong> {item().use}
               </p>
             </Show>
             <Show when={item().mapViewer}>
               {(mapViewer) => (
-                <div class="info-map-wrapper">
+                <div class={styles["mapWrapper"]}>
                   <InteractiveMapCanvas
                     alt={`${item().label} map location`}
                     focus={{
@@ -87,12 +91,12 @@ export function InfoModal(props: InfoModalProps) {
               )}
             </Show>
             <Show when={typeof item().link === "string" && item().link !== ""}>
-              <div class="info-link-wrapper">
+              <div class={styles["linkWrapper"]}>
                 <a
                   href={item().link}
                   target="_blank"
                   rel="noreferrer"
-                  class="info-link"
+                  class={styles["link"]}
                 >
                   More info
                 </a>

@@ -1,0 +1,115 @@
+.container {
+  z-index: 100;
+  padding: 1.2rem 1.4rem;
+  overflow-y: auto;
+  background: rgb(17 17 18 / 95%);
+  border-left: 2px solid rgb(197 100 50 / 40%);
+  box-shadow: -3px 0 10px rgb(0 0 0 / 45%);
+  backdrop-filter: blur(8px);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.section {
+  margin-bottom: 1.25rem;
+}
+
+.section > a,
+.item a {
+  /* Step 7 removes the broad `main a` override; these can then lose `!important`. */
+  color: var(--ink-2) !important;
+  text-shadow: none !important;
+}
+
+.section > a {
+  display: block;
+  padding: 0.3rem 0.5rem;
+  font-weight: bold;
+  font-family: "TrajanPro", serif;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    color 0.25s ease,
+    text-shadow 0.25s ease;
+}
+
+.item a {
+  display: block;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.9rem;
+  text-decoration: none;
+  border-radius: 6px;
+  transition:
+    color 0.25s ease,
+    background 0.25s ease;
+}
+
+.section > a:hover,
+.item a:hover {
+  color: var(--ink-1) !important;
+}
+
+.item a:hover {
+  background: rgb(255 153 51 / 5%);
+}
+
+.section > a[aria-current="location"],
+.section[data-open="true"] > a,
+.item a[aria-current="location"] {
+  color: #e3b47b !important;
+  text-shadow: 0 0 6px rgb(227 180 123 / 30%) !important;
+}
+
+.item a[aria-current="location"] {
+  background: rgb(197 100 50 / 10%);
+}
+
+.sublist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.4rem;
+  margin-left: 0.9rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid rgb(255 153 51 / 15%);
+  animation: fade-in 0.25s ease-in-out;
+}
+
+.sublist[hidden] {
+  display: none;
+}
+
+.count {
+  color: var(--ink-3);
+  font-size: 0.9em;
+}
+
+.container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.container::-webkit-scrollbar-thumb {
+  background-color: rgb(255 153 51 / 25%);
+  border-radius: 10px;
+}
+
+.container::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(255 153 51 / 50%);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

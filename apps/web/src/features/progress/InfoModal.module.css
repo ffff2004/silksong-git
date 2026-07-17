@@ -1,0 +1,112 @@
+.overlay {
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 65%);
+  transition: opacity 0.25s ease;
+}
+
+.panel {
+  position: relative;
+  width: 90%;
+  max-width: 480px;
+  padding: 30px;
+  color: #fff;
+  font-family: "TrajanPro-Regular", serif;
+  text-align: center;
+  background: #1a1a1a;
+  border: 1px solid #2c2c2c;
+  border-radius: 12px;
+  box-shadow: 0 0 30px rgb(0 0 0 / 50%);
+}
+
+.close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  color: #aaa;
+  font-size: 20px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.close:hover {
+  color: white;
+}
+
+.image {
+  display: block;
+  max-width: 72px;
+  max-height: 120px;
+  margin: 0 auto 18px;
+  object-fit: contain;
+}
+
+.title {
+  margin: 0 0 12px;
+  font-size: 1.4rem;
+  font-family: "TrajanPro-Bold", serif;
+  text-transform: uppercase;
+}
+
+.description {
+  margin-bottom: 16px;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.extra {
+  margin: 6px 0;
+  color: var(--ink-2);
+  font-size: 0.95rem;
+}
+
+.journalDivider {
+  display: block;
+  width: 70%;
+  margin: 1rem auto 0.75rem;
+  opacity: 0.85;
+}
+
+.hornetDescription {
+  color: var(--ink-2);
+  font-size: 0.9rem;
+  font-style: italic;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.mapWrapper {
+  position: relative;
+  width: 100%;
+  max-width: 700px;
+  margin: 1.5rem auto;
+  overflow: hidden;
+  text-align: center;
+  border-radius: 12px;
+  box-shadow: 0 0 15px rgb(0 0 0 / 40%);
+}
+
+.linkWrapper {
+  margin: 10px 0;
+}
+
+.link {
+  display: inline-block;
+  margin-top: 10px;
+  color: var(--accent);
+  font-weight: bold;
+  text-decoration: none;
+  transition:
+    color 0.2s ease,
+    text-shadow 0.2s ease;
+}
+
+.link:hover {
+  color: #e69b50;
+  text-shadow: 0 0 8px rgb(197 106 45 / 40%);
+}

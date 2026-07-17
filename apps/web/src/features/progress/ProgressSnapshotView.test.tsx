@@ -4,7 +4,7 @@ import {
   getBuiltinMappingData,
   parseDecodedSave,
 } from "@silksong-git/core";
-import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { PreferencesProvider } from "../../state/preferences-store.tsx";
@@ -31,9 +31,7 @@ describe("ProgressSnapshotView", () => {
 
     expect(document.querySelector("#completionValue")?.textContent).toBe("39%");
     expect(document.querySelector("#rosariesValue")?.textContent).toBe("800");
-    expect(
-      screen.getByText("Mask Shard #2").closest(".boss")?.classList,
-    ).toContain("done");
+    expect(getProgressCard("Mask Shard #2")?.dataset["status"]).toBe("done");
   });
 
   it("shows changed items by default and can reveal unchanged items", () => {
@@ -104,9 +102,9 @@ describe("ProgressSnapshotView", () => {
 });
 
 function getProgressCard(label: string): HTMLElement | undefined {
-  return [...document.querySelectorAll<HTMLElement>(".boss")].find(
-    (card) => card.querySelector(".title")?.textContent === label,
-  );
+  return [
+    ...document.querySelectorAll<HTMLElement>("[data-progress-card]"),
+  ].find((card) => card.getAttribute("aria-label") === label);
 }
 
 function getButtonByText(label: string): HTMLButtonElement | undefined {

@@ -41,7 +41,7 @@ export function ProgressSnapshotView(props: ProgressSnapshotViewProps) {
           class={`tab ${progressContentClass}`}
           data-testid="progress-view"
         >
-          <h2>All Progress</h2>
+          <h2 class={styles["pageHeading"]}>All Progress</h2>
           {props.presentation?.kind === "comparison" && (
             <div class={progressDiffToolbarClass}>
               <button
@@ -55,29 +55,29 @@ export function ProgressSnapshotView(props: ProgressSnapshotViewProps) {
               </button>
             </div>
           )}
-          <div id="main-stats" class="main-stats">
-            <div class="completion">
-              <span class="label">Completion:</span>
+          <div id="main-stats" class={styles["stats"]}>
+            <div>
+              <span class={styles["statsLabel"]}>Completion:</span>
               <span id="completionValue">
                 {summary()?.completionPercentage ?? 0}%
               </span>
             </div>
-            <div class="playtime">
-              <span class="label">Play Time:</span>
+            <div>
+              <span class={styles["statsLabel"]}>Play Time:</span>
               <span id="playtimeValue">
                 {formatPlayTime(summary()?.playTime ?? 0)}
               </span>
             </div>
-            <div class="rosaries">
-              <span class="label">Rosaries:</span>
+            <div>
+              <span class={styles["statsLabel"]}>Rosaries:</span>
               <span id="rosariesValue">{summary()?.rosaries ?? 0}</span>
             </div>
-            <div class="shards">
-              <span class="label">Shell Shards:</span>
+            <div>
+              <span class={styles["statsLabel"]}>Shell Shards:</span>
               <span id="shardsValue">{summary()?.shellShards ?? 0}</span>
             </div>
           </div>
-          <div id="allprogress-grid">
+          <div id="allprogress-grid" class={styles["sections"]}>
             <For each={sections}>
               {(section) => (
                 <ProgressSection
@@ -89,9 +89,13 @@ export function ProgressSnapshotView(props: ProgressSnapshotViewProps) {
               )}
             </For>
           </div>
-          <ProgressLegend />
+          <div class={styles["legendSlot"]}>
+            <ProgressLegend />
+          </div>
         </section>
-        <ProgressToc sections={sections} />
+        <div class={styles["tocSlot"]} data-progress-toc-slot>
+          <ProgressToc sections={sections} />
+        </div>
       </div>
       <InfoModal
         item={infoItem()}

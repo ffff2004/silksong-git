@@ -950,25 +950,23 @@ describe("Solid Web app routing", () => {
     });
 
     fireEvent.click(getRequiredElement("#show-only-missing"));
-    expect(container.querySelector(".boss.done")).toBeNull();
+    expect(
+      container.querySelector('[data-progress-card][data-status="done"]'),
+    ).toBeNull();
   });
 
   it("reveals undiscovered progress items when Show spoilers is enabled", () => {
     render(() => <App />);
 
-    const card = screen.getByText("Shining Needle").closest(".boss");
-    if (card === null) {
-      throw new Error("Expected Shining Needle card to exist.");
-    }
-
-    expect(card.classList.contains("locked")).toBe(true);
+    const card = screen.getByRole("button", { name: "Shining Needle" });
+    expect(card.dataset["spoilerState"]).toBe("locked");
     expect(card.querySelector("img")?.getAttribute("src")).toContain(
       "locked.png",
     );
 
     fireEvent.click(getRequiredElement("#show-spoilers"));
 
-    expect(card.classList.contains("locked")).toBe(false);
+    expect(card.dataset["spoilerState"]).toBe("revealed");
     expect(card.querySelector("img")?.getAttribute("src")).not.toContain(
       "locked.png",
     );
@@ -977,28 +975,43 @@ describe("Solid Web app routing", () => {
   it("keeps the progress TOC collapsible, counted, and synced to scroll", () => {
     render(() => <App />);
 
-    const categories = document.querySelectorAll(".toc-category");
+    const toc = screen.getByRole("navigation", { name: "Progress sections" });
+    const categories = toc.querySelectorAll("[data-toc-section]");
     expect(categories.length).toBeGreaterThan(1);
-    expect(document.querySelector(".toc-category.open")).toBeNull();
-    expect(document.querySelector(".toc-sublist:not(.hidden)")).toBeNull();
+    expect(
+      toc.querySelector('[data-toc-section][data-open="true"]'),
+    ).toBeNull();
+    expect(toc.querySelector("[data-toc-sublist]:not([hidden])")).toBeNull();
 
-    const firstCategory = getRequiredElement(".toc-category > a");
-    const firstCategoryItem = firstCategory.closest(".toc-category");
-    if (firstCategoryItem === null) {
+    const firstCategory =
+      categories[0]?.querySelector<HTMLAnchorElement>(":scope > a");
+    const firstCategoryItem = firstCategory?.closest("[data-toc-section]");
+    if (
+      firstCategory === undefined
+      || firstCategory === null
+      || firstCategoryItem === undefined
+      || firstCategoryItem === null
+    ) {
       throw new Error("Expected first TOC category to exist.");
     }
 
     fireEvent.click(firstCategory);
-    expect(firstCategoryItem.classList.contains("open")).toBe(true);
-    expect(firstCategoryItem.querySelector(".toc-sublist.hidden")).toBeNull();
+    expect(firstCategory.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      firstCategoryItem.querySelector<HTMLElement>(
+        ":scope > [data-toc-sublist]",
+      )?.hidden,
+    ).toBe(false);
 
     fireEvent.click(firstCategory);
-    expect(firstCategoryItem.classList.contains("open")).toBe(false);
+    expect(firstCategory.getAttribute("aria-expanded")).toBe("false");
     expect(
-      firstCategoryItem.querySelector(".toc-sublist.hidden"),
-    ).not.toBeNull();
+      firstCategoryItem.querySelector<HTMLElement>(
+        ":scope > [data-toc-sublist]",
+      )?.hidden,
+    ).toBe(true);
 
-    expect(document.querySelector(".toc-item a")?.textContent).toMatch(
+    expect(toc.querySelector(":scope [data-toc-item] a")?.textContent).toMatch(
       /\b\d+\/\d+\b/,
     );
 
@@ -1015,26 +1028,32 @@ describe("Solid Web app routing", () => {
       new MockIntersectionObserver(),
     );
 
-    const activeLink = document.querySelector(".toc-item a.active");
+    const activeLink = toc.querySelector(
+      ':scope [data-toc-item] a[aria-current="location"]',
+    );
     expect(activeLink?.getAttribute("href")).toBe(`#${targetHeading.id}`);
     expect(
-      activeLink?.closest(".toc-category")?.classList.contains("open"),
-    ).toBe(true);
-    expect(document.querySelectorAll(".toc-category.open").length).toBe(1);
+      activeLink?.closest<HTMLElement>("[data-toc-section]")?.dataset["open"],
+    ).toBe("true");
+    expect(
+      toc.querySelectorAll('[data-toc-section][data-open="true"]').length,
+    ).toBe(1);
   });
 
   it("keeps the progress legend in the progress view and persists its collapsed state", () => {
     const { unmount } = render(() => <App />);
 
-    const progressSection = getRequiredElement("#allprogress-section");
-    const legend = progressSection.querySelector(".progress-legend");
+    const legend = screen.getByRole("complementary", {
+      name: "Progress legend",
+    });
+    const toc = screen.getByRole("navigation", { name: "Progress sections" });
     expect(legend).not.toBeNull();
-    expect(
-      document.querySelector(".toc-container .progress-legend"),
-    ).toBeNull();
+    expect(toc.contains(legend)).toBe(false);
     expect(screen.getByText("Upgrade of another tool")).toBeDefined();
 
-    const collapseButton = getRequiredElement(".progress-legend-toggle");
+    const collapseButton = screen.getByRole("button", {
+      name: "Collapse legend",
+    });
     expect(collapseButton.getAttribute("aria-label")).toBe("Collapse legend");
     fireEvent.click(collapseButton);
     expect(screen.queryByText("Upgrade of another tool")).toBeNull();
@@ -1048,7 +1067,9 @@ describe("Solid Web app routing", () => {
 
     expect(screen.queryByText("Upgrade of another tool")).toBeNull();
     expect(
-      getRequiredElement(".progress-legend-toggle").getAttribute("aria-label"),
+      screen
+        .getByRole("button", { name: "Expand legend" })
+        .getAttribute("aria-label"),
     ).toBe("Expand legend");
   });
 
@@ -1241,9 +1262,9 @@ function getRequiredElement(selector: string): HTMLElement {
 }
 
 function getProgressCard(label: string): HTMLElement | undefined {
-  return [...document.querySelectorAll<HTMLElement>(".boss")].find(
-    (card) => card.querySelector(".title")?.textContent === label,
-  );
+  return [
+    ...document.querySelectorAll<HTMLElement>("[data-progress-card]"),
+  ].find((card) => card.getAttribute("aria-label") === label);
 }
 
 function createWireSemanticSnapshot() {

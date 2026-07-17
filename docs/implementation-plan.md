@@ -1420,6 +1420,7 @@ Verification:
 - CSS Module lint coverage: a temporary invalid Module proved the previous `pnpm lint apps/web` path missed `src/**/*.css`; after expanding the shared Stylelint command, both `pnpm lint apps/web` and full `pnpm lint` passed while checking every first-party Web CSS file
 - Leaf CSS Module migration: `CI=1 pnpm --filter @silksong-git/web test` passed with 51 tests, `CI=1 pnpm format` passed, and `CI=1 pnpm verify` passed; Chromium checks at 800×600 and 1440×900 covered Upload and Raw Save, with the 1440×900 Upload panel differing from its baseline by only 56 antialiased pixels
 - Map CSS Module migration: `CI=1 pnpm --filter @silksong-git/web test` passed with 51 tests, the Web production build passed, `CI=1 pnpm format` passed, and `CI=1 pnpm verify` passed; Chromium checks at 800×600 and 1440×900 covered collapsed and open filter states without clipping or layering regressions
+- Progress CSS Module migration: `CI=1 pnpm format` and `CI=1 pnpm verify` passed with 51 Web tests; Chromium checks at 800×600 and 1440×900 covered Progress, Legend/TOC, and InfoModal, and computed-style checks confirmed neutral, hover, and active TOC link states against the remaining global link override
 - local Web UI smoke test: pending
 
 Notes:
@@ -1443,6 +1444,7 @@ Notes:
 - Full and `apps/web`-scoped lint now share one Stylelint target covering `apps/web/src/**/*.css` plus the remaining first-party global stylesheet. The CSS Module override recognizes `:global(...)` and defers isolated-file unknown-custom-property checks because theme tokens are declared by the global stylesheet; all other Stylelint rules remain active for Modules.
 - `BackToTop`, `RawSaveView`, `UploadModal`, and `PreferenceControls` now own their feature styles. Visibility and expansion use native `hidden` plus semantic ARIA state, Raw Save leaves editor internals with `MonacoViewer.module.css`, and the still-global InfoModal overlay/panel rules were narrowed to its stable IDs until Step 5 migrates that component.
 - `InteractiveMapCanvas`, `MapFiltersPanel`, and `MapView` now own the Map cluster styles. Map pan/zoom and tests use stable `data-map-*` state instead of style classes, filter expansion uses `aria-expanded` and `hidden`, and InfoModal consumes only the canvas component's public props and types.
+- The Progress cards, sections, Legend, TOC, and InfoModal now own their styles and expose status, spoiler, diff, expansion, and current-location state through semantic attributes. Parent-owned Legend/TOC slots removed the last `:global(...)` bridge, so the corresponding Stylelint pseudo-class exemption was deleted; the unknown-custom-property override remains necessary until Step 7 moves global theme tokens.
 
 CSS Module migration checklist:
 
@@ -1460,14 +1462,14 @@ CSS Module migration checklist:
   - [x] Migrate `MapFiltersPanel`, including collapsed/open state, search, filter controls, and filter items; expose expansion through `aria-expanded`.
   - [x] Migrate `MapView` page layout and map selector controls.
   - [x] Keep `InfoModal` dependent only on the public `InteractiveMapCanvas` Interface, not its internal class names.
-- [ ] Step 5: migrate the Progress cluster in order.
-  - [ ] Migrate `ProgressItemCard`, moving card, item status, spoiler state, Act label, special icons, journal counter, and diff-change styles into its own Module.
-  - [ ] Replace test dependencies on `.boss`, `.done`, `.locked`, and related style classes with explicit `data-status`, `data-spoiler-state`, and existing semantic attributes; remove the `body.spoiler-on` side effect.
-  - [ ] Migrate `ProgressLegend`, preserving its existing `aria-expanded` Interface.
-  - [ ] Migrate `ProgressToc`, replacing global `open`, `active`, and `hidden` classes with module state plus `aria-expanded`, `aria-current`, and `hidden` behavior.
-  - [ ] Migrate `ProgressSection`, retaining heading IDs only for the TOC scroll Interface.
-  - [ ] Reduce `ProgressSnapshotView.module.css` to page-level layout, stats, and Diff toolbar ownership; remove its `:global(...)` selectors.
-  - [ ] Migrate `InfoModal`, including its item content, journal presentation, map wrapper, and link styles.
+- [x] Step 5: migrate the Progress cluster in order.
+  - [x] Migrate `ProgressItemCard`, moving card, item status, spoiler state, Act label, special icons, journal counter, and diff-change styles into its own Module.
+  - [x] Replace test dependencies on `.boss`, `.done`, `.locked`, and related style classes with explicit `data-status`, `data-spoiler-state`, and existing semantic attributes; remove the `body.spoiler-on` side effect.
+  - [x] Migrate `ProgressLegend`, preserving its existing `aria-expanded` Interface.
+  - [x] Migrate `ProgressToc`, replacing global `open`, `active`, and `hidden` classes with module state plus `aria-expanded`, `aria-current`, and `hidden` behavior.
+  - [x] Migrate `ProgressSection`, retaining heading IDs only for the TOC scroll Interface.
+  - [x] Reduce `ProgressSnapshotView.module.css` to page-level layout, stats, and Diff toolbar ownership; remove its `:global(...)` selectors.
+  - [x] Migrate `InfoModal`, including its item content, journal presentation, map wrapper, and link styles.
 - [ ] Step 6: migrate the application shell after its children are stable.
   - [ ] Migrate `Sidebar`, including responsive layout and active navigation state; expose route selection through link semantics such as `aria-current`.
   - [ ] Migrate `Topbar`, limiting it to primary-row, right-controls, and historical second-row layout without styling child internals.

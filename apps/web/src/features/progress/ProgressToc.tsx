@@ -17,6 +17,7 @@ import type {
   ProgressSectionData,
 } from "./progress-types.ts";
 import { toHeadingId } from "./ProgressSection.tsx";
+import styles from "./ProgressToc.module.css";
 
 interface ProgressTocProps {
   readonly sections: readonly ProgressSectionData[];
@@ -82,17 +83,23 @@ export function ProgressToc(props: ProgressTocProps) {
   });
 
   return (
-    <nav id="toc" class="toc-container">
-      <ul id="toc-list">
+    <nav id="toc" aria-label="Progress sections" class={styles["container"]}>
+      <ul id="toc-list" class={styles["list"]}>
         <For each={visibleSections()}>
           {(entry) => (
             <li
-              class="toc-category"
-              classList={{ open: openSectionId() === entry.sectionId }}
+              class={styles["section"]}
+              data-open={
+                openSectionId() === entry.sectionId ? "true" : undefined
+              }
+              data-toc-section
             >
               <a
                 href={`#${entry.sectionId}`}
-                classList={{ active: activeHeadingId() === entry.sectionId }}
+                aria-current={
+                  activeHeadingId() === entry.sectionId ? "location" : undefined
+                }
+                aria-expanded={openSectionId() === entry.sectionId}
                 onClick={(event) => {
                   event.preventDefault();
                   if (openSectionId() === entry.sectionId) {
@@ -108,17 +115,20 @@ export function ProgressToc(props: ProgressTocProps) {
                 {entry.title}
               </a>
               <ul
-                class="toc-sublist"
-                classList={{ hidden: openSectionId() !== entry.sectionId }}
+                class={styles["sublist"]}
+                data-toc-sublist
+                hidden={openSectionId() !== entry.sectionId}
               >
                 <For each={entry.categories}>
                   {(categoryEntry) => (
-                    <li class="toc-item">
+                    <li class={styles["item"]} data-toc-item>
                       <a
                         href={`#${categoryEntry.headingId}`}
-                        classList={{
-                          active: activeHeadingId() === categoryEntry.headingId,
-                        }}
+                        aria-current={
+                          activeHeadingId() === categoryEntry.headingId
+                            ? "location"
+                            : undefined
+                        }
                         onClick={(event) => {
                           event.preventDefault();
                           scrollToHeading(categoryEntry.headingId);
@@ -127,7 +137,7 @@ export function ProgressToc(props: ProgressTocProps) {
                         }}
                       >
                         {categoryEntry.view.category.label}
-                        <span class="category-count">
+                        <span class={styles["count"]}>
                           {" "}
                           {categoryEntry.view.obtained}/
                           {categoryEntry.view.total}

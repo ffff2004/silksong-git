@@ -1,7 +1,6 @@
 import { For, Show } from "solid-js";
 
 import { usePreferencesStore } from "../../state/preferences-store.tsx";
-import { ProgressItemCard } from "./ProgressItemCard.tsx";
 import {
   getProgressSectionTitle,
   getVisibleCategoryView,
@@ -11,6 +10,8 @@ import type {
   ProgressItemData,
   ProgressSectionData,
 } from "./progress-types.ts";
+import { ProgressItemCard } from "./ProgressItemCard.tsx";
+import styles from "./ProgressSection.module.css";
 
 interface ProgressSectionProps {
   readonly onOpenInfo: (item: ProgressItemData) => void;
@@ -39,24 +40,24 @@ export function ProgressSection(props: ProgressSectionProps) {
 
   return (
     <Show when={categoryViews().length > 0}>
-      <h2 class="category-header" id={toHeadingId(title())}>
+      <h2 class={styles["sectionHeading"]} id={toHeadingId(title())}>
         {title()}
       </h2>
       <For each={categoryViews()}>
         {(view) => (
-          <div class="main-section-block">
+          <div class={styles["category"]}>
             <h3
-              class="category-title"
+              class={styles["categoryHeading"]}
               id={toHeadingId(`${title()} ${view.category.label}`)}
             >
               {view.category.label}
-              <span class="category-count">
+              <span class={styles["count"]}>
                 {" "}
                 {view.obtained}/{view.total}
               </span>
             </h3>
-            <p class="category-description">{view.category.description}</p>
-            <div class="grid">
+            <p class={styles["description"]}>{view.category.description}</p>
+            <div class={styles["grid"]}>
               <For each={view.items}>
                 {(item) => (
                   <ProgressItemCard item={item} onOpenInfo={props.onOpenInfo} />

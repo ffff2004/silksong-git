@@ -1,6 +1,7 @@
 import { Show } from "solid-js";
 
 import { usePreferencesStore } from "../../state/preferences-store.tsx";
+import styles from "./ProgressLegend.module.css";
 
 export function ProgressLegend() {
   const preferences = usePreferencesStore();
@@ -9,25 +10,25 @@ export function ProgressLegend() {
   return (
     <aside
       aria-label="Progress legend"
-      class="progress-legend"
-      classList={{ collapsed: isCollapsed() }}
+      class={styles["legend"]}
+      classList={{ [styles["collapsed"]!]: isCollapsed() }}
     >
       <button
         type="button"
         aria-controls="progress-legend-content"
         aria-expanded={!isCollapsed()}
         aria-label={isCollapsed() ? "Expand legend" : "Collapse legend"}
-        class="progress-legend-toggle"
+        class={styles["toggle"]}
         onClick={() => {
           preferences.setProgressLegendCollapsed(!isCollapsed());
         }}
       >
         <i class="fa-solid fa-circle-info" />
-        <span class="progress-legend-toggle-label">Legend</span>
+        <span class={styles["toggleLabel"]}>Legend</span>
       </button>
       <Show when={!isCollapsed()}>
-        <div id="progress-legend-content" class="progress-legend-content">
-          <ul class="legend-list">
+        <div id="progress-legend-content" class={styles["content"]}>
+          <ul class={styles["list"]}>
             <li>
               <i class="fa-solid fa-arrow-up" /> Upgrade of another tool
             </li>
@@ -35,7 +36,7 @@ export function ProgressLegend() {
               <i class="fa-solid fa-code-branch" /> Mutually exclusive item
             </li>
             <li>
-              <span class="legend-missable">!</span> Missable item
+              <span class={styles["missable"]}>!</span> Missable item
             </li>
           </ul>
         </div>

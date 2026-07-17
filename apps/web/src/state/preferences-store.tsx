@@ -45,8 +45,6 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }) {
   });
 
   createEffect(() => {
-    document.body.classList.toggle("spoiler-on", !showSpoilers());
-
     if (!hydrated) {
       return;
     }

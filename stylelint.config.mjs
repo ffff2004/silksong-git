@@ -124,12 +124,6 @@ export default {
         // CSS Modules consume theme tokens declared by the global stylesheet, so Stylelint cannot
         // resolve those custom properties while linting each Module as an isolated file.
         "no-unknown-custom-properties": undefined,
-
-        // `:global(...)` is CSS Modules syntax for intentionally targeting a global class.
-        "selector-pseudo-class-no-unknown": [
-          true,
-          { ignorePseudoClasses: ["global"] },
-        ],
       },
       files: ["apps/web/src/**/*.module.css"],
     },

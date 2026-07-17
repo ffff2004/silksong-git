@@ -142,7 +142,9 @@ describe("Diff view", () => {
     expect(getRequiredElement("#main").style.marginRight).toBe("");
     expect(progressLayout.contains(progressView)).toBe(true);
     expect(
-      progressLayout.querySelector(":scope > .toc-container"),
+      progressLayout.querySelector(
+        ':scope > [data-progress-toc-slot] [aria-label="Progress sections"]',
+      ),
     ).not.toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Raw JSON" }));
