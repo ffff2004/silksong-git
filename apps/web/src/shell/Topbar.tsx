@@ -9,6 +9,7 @@ import { LocalConnectionDialog } from "../features/local-history/LocalConnection
 import { hasQueryParam } from "../features/local-history/url-utils.ts";
 import { useLocalHistoryStore } from "../state/local-history-store.tsx";
 import { useSaveStore } from "../state/save-store.tsx";
+import styles from "./Topbar.module.css";
 
 export function Topbar() {
   const localHistory = useLocalHistoryStore();
@@ -17,10 +18,14 @@ export function Topbar() {
   const location = useLocation();
 
   return (
-    <header class="topbar">
-      <div class="topbar-primary-row">
+    <header class={styles["topbar"]} data-app-topbar>
+      <div
+        class={styles["primaryRow"]}
+        role="group"
+        aria-label="Primary controls"
+      >
         <ModeBanner />
-        <div class="topbar-right">
+        <div class={styles["rightControls"]}>
           <PreferenceControls />
           <Show when={localHistory.connection().kind !== "connected"}>
             <SaveControls />
@@ -38,7 +43,9 @@ export function Topbar() {
           />
         </div>
       </div>
-      <HistoricalSelectionBanner />
+      <div class={styles["historicalRow"]}>
+        <HistoricalSelectionBanner />
+      </div>
     </header>
   );
 }

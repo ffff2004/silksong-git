@@ -3,40 +3,45 @@ import { Show } from "solid-js";
 
 import { assetUrl } from "../app/asset-url.ts";
 import { useLocalHistoryStore } from "../state/local-history-store.tsx";
+import styles from "./Sidebar.module.css";
 
 export function Sidebar() {
   const location = useLocation();
   const localHistory = useLocalHistoryStore();
-  const isActive = (path: string) => location.pathname === path;
+  const isActive = (path: string) =>
+    location.pathname === path
+    || (path === "/progress" && location.pathname === "/");
+
+  const currentPage = (path: string) => (isActive(path) ? "page" : undefined);
 
   return (
-    <aside class="sidebar">
+    <aside class={styles["sidebar"]}>
       <A href="/progress" id="logo-link">
-        <div class="sidebar-header">
+        <div class={styles["header"]}>
           <img
             src={assetUrl("assets/misc/favicon.png")}
-            class="logo-icon"
+            class={styles["logoIcon"]}
             width="64"
             height="64"
             alt="Silksong Git Logo"
           />
-          <div class="app-name">Silksong Git</div>
+          <div class={styles["appName"]}>Silksong Git</div>
         </div>
       </A>
-      <div class="sidebar-links">
+      <div class={styles["links"]}>
         <a
           href="https://hollowknight.wiki"
           target="_blank"
           rel="noreferrer"
-          class="sidebar-wiki-btn"
+          class={styles["wikiButton"]}
         >
           Wiki
         </a>
       </div>
-      <div class="sidebar-actions">
+      <div class={styles["actions"]}>
         <a
           href="https://github.com/ffff2004/silksong-git"
-          class="icon-btn"
+          class={styles["iconButton"]}
           title="GitHub Repository"
           target="_blank"
           rel="noreferrer"
@@ -44,53 +49,53 @@ export function Sidebar() {
           <i class="fab fa-github" />
         </a>
       </div>
-      <div class="sidebar-divider" />
-      <div class="sidebar-section">
+      <div class={styles["divider"]} />
+      <nav aria-label="Primary navigation">
         <A
           href="/progress"
-          class="sidebar-item"
-          classList={{ "is-active": isActive("/progress") }}
+          class={styles["item"]}
+          aria-current={currentPage("/progress")}
         >
           Progress
         </A>
         <A
           href="/map"
-          class="sidebar-item"
-          classList={{ "is-active": isActive("/map") }}
+          class={styles["item"]}
+          aria-current={currentPage("/map")}
         >
           Interactive Map
         </A>
         <A
           href="/raw-save"
-          class="sidebar-item"
-          classList={{ "is-active": isActive("/raw-save") }}
+          class={styles["item"]}
+          aria-current={currentPage("/raw-save")}
         >
           Raw Save Data
         </A>
         <Show when={localHistory.connection().kind === "connected"}>
           <A
             href="/history"
-            class="sidebar-item"
-            classList={{ "is-active": isActive("/history") }}
+            class={styles["item"]}
+            aria-current={currentPage("/history")}
           >
             History
           </A>
           <A
             href="/diff"
-            class="sidebar-item"
-            classList={{ "is-active": isActive("/diff") }}
+            class={styles["item"]}
+            aria-current={currentPage("/diff")}
           >
             Compare
           </A>
           <A
             href="/watcher"
-            class="sidebar-item"
-            classList={{ "is-active": isActive("/watcher") }}
+            class={styles["item"]}
+            aria-current={currentPage("/watcher")}
           >
             Watcher
           </A>
         </Show>
-      </div>
+      </nav>
     </aside>
   );
 }

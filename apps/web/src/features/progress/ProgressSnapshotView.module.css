@@ -20,6 +20,7 @@
 
 .tocSlot {
   position: sticky;
+  z-index: 100;
   top: 0;
   box-sizing: border-box;
   width: 100%;

@@ -95,9 +95,27 @@ describe("Solid Web app routing", () => {
     render(() => <App />);
 
     expect(await screen.findByTestId("progress-view")).toBeDefined();
+    const progressLink = screen.getByRole("link", { name: "Progress" });
+    expect(progressLink.getAttribute("href")).toBe("#/progress");
+    expect(progressLink.getAttribute("aria-current")).toBe("page");
     expect(
-      screen.getByRole("link", { name: "Progress" }).getAttribute("href"),
-    ).toBe("#/progress");
+      screen
+        .getByRole("link", { name: "Interactive Map" })
+        .hasAttribute("aria-current"),
+    ).toBe(false);
+    const primaryControls = screen.getByRole("group", {
+      name: "Primary controls",
+    });
+    expect(
+      within(primaryControls).getByRole("button", {
+        name: "Connect to Local History",
+      }),
+    ).toBeDefined();
+    expect(
+      within(
+        screen.getByRole("main", { name: "Application content" }),
+      ).getByTestId("progress-view"),
+    ).toBeDefined();
   });
 
   it("reveals Back to Top after scrolling and returns the main view to the top", async () => {

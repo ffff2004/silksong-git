@@ -1,0 +1,38 @@
+.topbar {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: #18191b;
+  border-bottom: 1px solid rgb(255 255 255 / 5%);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 4%);
+}
+
+.primaryRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--topbar-height);
+  padding: 0 14px;
+}
+
+.rightControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.historicalRow {
+  display: flex;
+  width: 100%;
+}
+
+.historicalRow:empty {
+  display: none;
+}

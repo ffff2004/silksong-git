@@ -1421,6 +1421,7 @@ Verification:
 - Leaf CSS Module migration: `CI=1 pnpm --filter @silksong-git/web test` passed with 51 tests, `CI=1 pnpm format` passed, and `CI=1 pnpm verify` passed; Chromium checks at 800×600 and 1440×900 covered Upload and Raw Save, with the 1440×900 Upload panel differing from its baseline by only 56 antialiased pixels
 - Map CSS Module migration: `CI=1 pnpm --filter @silksong-git/web test` passed with 51 tests, the Web production build passed, `CI=1 pnpm format` passed, and `CI=1 pnpm verify` passed; Chromium checks at 800×600 and 1440×900 covered collapsed and open filter states without clipping or layering regressions
 - Progress CSS Module migration: `CI=1 pnpm format` and `CI=1 pnpm verify` passed with 51 Web tests; Chromium checks at 800×600 and 1440×900 covered Progress, Legend/TOC, and InfoModal, and computed-style checks confirmed neutral, hover, and active TOC link states against the remaining global link override
+- Application shell CSS Module migration: `CI=1 pnpm format` and `CI=1 pnpm verify` passed with 51 Web tests; Chromium checks at 800×600 and 1440×900 covered Progress, Map, Raw Save, History, Diff, and Watcher, including compact Topbar sizing and TOC-over-content stacking
 - local Web UI smoke test: pending
 
 Notes:
@@ -1445,6 +1446,7 @@ Notes:
 - `BackToTop`, `RawSaveView`, `UploadModal`, and `PreferenceControls` now own their feature styles. Visibility and expansion use native `hidden` plus semantic ARIA state, Raw Save leaves editor internals with `MonacoViewer.module.css`, and the still-global InfoModal overlay/panel rules were narrowed to its stable IDs until Step 5 migrates that component.
 - `InteractiveMapCanvas`, `MapFiltersPanel`, and `MapView` now own the Map cluster styles. Map pan/zoom and tests use stable `data-map-*` state instead of style classes, filter expansion uses `aria-expanded` and `hidden`, and InfoModal consumes only the canvas component's public props and types.
 - The Progress cards, sections, Legend, TOC, and InfoModal now own their styles and expose status, spoiler, diff, expansion, and current-location state through semantic attributes. Parent-owned Legend/TOC slots removed the last `:global(...)` bridge, so the corresponding Stylelint pseudo-class exemption was deleted; the unknown-custom-property override remains necessary until Step 7 moves global theme tokens.
+- `Sidebar`, `Topbar`, and `AppShell` now own shell layout, navigation state, responsive spacing, and main scrolling. Sidebar selection uses `aria-current`, Topbar limits Module ownership to its rows/control layout, and a `data-app-topbar` transition preserves legacy compact child sizing until Step 7 consolidates buttons; the Progress TOC slot owns its z-index so compact content cannot paint above it.
 
 CSS Module migration checklist:
 
@@ -1470,10 +1472,10 @@ CSS Module migration checklist:
   - [x] Migrate `ProgressSection`, retaining heading IDs only for the TOC scroll Interface.
   - [x] Reduce `ProgressSnapshotView.module.css` to page-level layout, stats, and Diff toolbar ownership; remove its `:global(...)` selectors.
   - [x] Migrate `InfoModal`, including its item content, journal presentation, map wrapper, and link styles.
-- [ ] Step 6: migrate the application shell after its children are stable.
-  - [ ] Migrate `Sidebar`, including responsive layout and active navigation state; expose route selection through link semantics such as `aria-current`.
-  - [ ] Migrate `Topbar`, limiting it to primary-row, right-controls, and historical second-row layout without styling child internals.
-  - [ ] Migrate `AppShell`, including `main-wrapper`, `main`, scrollbars, and responsive layout; verify every route after removing global element-level layout rules.
+- [x] Step 6: migrate the application shell after its children are stable.
+  - [x] Migrate `Sidebar`, including responsive layout and active navigation state; expose route selection through link semantics such as `aria-current`.
+  - [x] Migrate `Topbar`, limiting it to primary-row, right-controls, and historical second-row layout without styling child internals.
+  - [x] Migrate `AppShell`, including `main-wrapper`, `main`, scrollbars, and responsive layout; verify every route after removing global element-level layout rules.
 - [ ] Step 7: consolidate real shared styles and close the global stylesheet.
   - [ ] Move shared primary, danger/reset, secondary, and small button variants into one `Button.module.css` without introducing a speculative component wrapper.
   - [ ] Compare Upload, Info, and Local Connection dialogs; extract only overlay/panel/close styles that demonstrably change together into a shared Dialog Module.
