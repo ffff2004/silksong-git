@@ -1360,29 +1360,6 @@ main::-webkit-scrollbar-thumb:hover {
   display: none !important;
 }
 
-#modeBanner.hidden {
-  opacity: 0;
-  pointer-events: none;
-}
-
-#modeBanner.steel {
-  background: #1a1b1c;
-  border: 1px solid #6e7680;
-  color: #ccd5db;
-  text-shadow:
-    0 0 6px #ccd5db,
-    0 0 12px #596066;
-}
-
-#modeBanner .mode-icon {
-  height: 20px;
-  width: 20px;
-  vertical-align: middle;
-  margin-right: 8px;
-  transform: translateY(-1px);
-  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.4));
-}
-
 .rawsave-container {
   padding: 20px 25px;
   color: var(--ink-2);
@@ -1925,32 +1902,6 @@ main::-webkit-scrollbar-thumb:hover {
     0 0 1px #000a;
   background: rgba(197, 106, 45, 0.08);
   border-radius: 30%;
-}
-
-#modeBanner {
-  position: absolute;
-  top: 9px;
-  left: 14px;
-  background: #181715;
-  border: 2px solid #8a6a3a;
-  color: #d7b98a;
-  font-family: "TrajanPro", serif;
-  font-size: 14px;
-  font-weight: bold;
-  letter-spacing: 1px;
-  padding: 4px 14px;
-  border-radius: 6px;
-  z-index: 10;
-  text-transform: uppercase;
-  white-space: nowrap;
-  pointer-events: none;
-  display: inline-block;
-  width: auto;
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
-}
-
-#modeBanner:empty {
-  display: none;
 }
 
 .category-header {

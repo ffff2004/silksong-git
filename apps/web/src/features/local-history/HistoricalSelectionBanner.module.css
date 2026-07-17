@@ -1,0 +1,15 @@
+.historical-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.45rem 0.85rem;
+  color: #d7b98a;
+  background: #181715;
+  border: 1px solid #8a6a3a;
+  gap: 1rem;
+}
+
+.historical-banner code {
+  color: #f2d8a7;
+}

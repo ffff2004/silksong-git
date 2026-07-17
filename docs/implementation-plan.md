@@ -1416,6 +1416,7 @@ Verification:
 - `pnpm verify`: passed after the Progress Legend/TOC overlap fix with 50 Web tests; full P6-T3 acceptance remains pending
 - CSS Module migration baseline: `pnpm --filter @silksong-git/web test` passed with 50 tests, `pnpm --filter @silksong-git/web build` passed, and 14 targeted headless-Chromium screenshots covered Static and Local Topbars, Progress, Semantic Diff, Map filters, Upload, and Raw Save at 800×600 and 1440×900
 - Legacy CSS cleanup: `pnpm --filter @silksong-git/web test` passed with 50 tests, `pnpm --filter @silksong-git/web build` passed, `pnpm exec prettier --check apps/web/public/assets/css/style.css` passed, and `git diff --check` passed
+- Banner CSS Module migration: `pnpm --filter @silksong-git/web test App.test.tsx` passed with 22 tests, the full Web suite passed with 50 tests, the Web production build passed, and Stylelint passed for the global and two banner stylesheets; Chromium checks at 800×600 and 1440×900 covered hidden, Normal, and Steel Soul states, with the Normal Topbar matching its migration baseline pixel-for-pixel
 - local Web UI smoke test: pending
 
 Notes:
@@ -1435,13 +1436,14 @@ Notes:
 - `AppShell` is width-neutral; `ProgressSnapshotView` owns its content/TOC grid, bottom-sticky Legend, and sticky TOC placement so both standalone Progress and embedded Semantic Diff render correctly without overlay overlap, while Raw JSON Diff uses the full route width and a shared explicitly sized Monaco frame.
 - CSS Module migration preparation captured the current rendered UI before changing style ownership. The screenshots are temporary local review artifacts rather than committed fixtures; they intentionally preserve existing compact-layout behavior instead of treating it as a new acceptance standard.
 - Removed 634 lines of confirmed-unreferenced Home/Cinematic, legacy Progress-container, Raw Save search, Map loading, and miscellaneous CSS from `apps/web/public/assets/css/style.css`, reducing it from 2,828 to 2,195 lines without migrating a component. Mixed selectors retained their active branches, including `.sidebar-links`, `main a`, `.info-link`, `.main-section-block`, `.grid`, and `.category-description`.
+- `ModeBanner` and `HistoricalSelectionBanner` now own separate CSS Modules. `id="modeBanner"` remains only as a DOM Interface, module state classes own hidden and Steel Soul presentation, and the corresponding global ID rules and mixed `SaveBanner.module.css` ownership were removed without changing the rendered Normal Topbar.
 
 CSS Module migration checklist:
 
-- [ ] Step 2: finish the partially modularized banner styles.
-  - [ ] Move `ModeBanner` base, `hidden`, `steel`, and icon styles into `ModeBanner.module.css`; use module state classes while retaining `id="modeBanner"` only as a DOM Interface.
-  - [ ] Give `HistoricalSelectionBanner` its own Module instead of sharing mixed ownership through `SaveBanner.module.css`.
-  - [ ] Remove the corresponding global `#modeBanner` rules and verify Static, Local, Normal, Steel Soul, and historical-selection Topbar states.
+- [x] Step 2: finish the partially modularized banner styles.
+  - [x] Move `ModeBanner` base, `hidden`, `steel`, and icon styles into `ModeBanner.module.css`; use module state classes while retaining `id="modeBanner"` only as a DOM Interface.
+  - [x] Give `HistoricalSelectionBanner` its own Module instead of sharing mixed ownership through `SaveBanner.module.css`.
+  - [x] Remove the corresponding global `#modeBanner` rules and verify Static, Local, Normal, Steel Soul, and historical-selection Topbar states.
 - [ ] Step 3: migrate independent leaf Modules in order.
   - [ ] Migrate `BackToTop`, expressing visibility through conditional rendering, `hidden`, or a module state class.
   - [ ] Migrate `RawSaveView` while keeping editor internals owned by `MonacoViewer.module.css`.

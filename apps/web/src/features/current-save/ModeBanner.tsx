@@ -2,7 +2,7 @@ import { Show } from "solid-js";
 
 import { assetUrl } from "../../app/asset-url.ts";
 import { useSaveStore } from "../../state/save-store.tsx";
-import styles from "../local-history/SaveBanner.module.css";
+import styles from "./ModeBanner.module.css";
 
 export function ModeBanner() {
   const saveStore = useSaveStore();
@@ -12,14 +12,17 @@ export function ModeBanner() {
     <div
       id="modeBanner"
       class={styles["mode-banner"]}
-      classList={{ hidden: !saveStore.hasSave(), steel: isSteelSoul() }}
+      classList={{
+        [styles["hidden"]!]: !saveStore.hasSave(),
+        [styles["steel"]!]: isSteelSoul(),
+      }}
     >
       <Show when={saveStore.hasSave()}>
         <Show when={isSteelSoul()} fallback="NORMAL SAVE LOADED">
           <img
             src={assetUrl("assets/icons/Steel_Soul_Icon.png")}
             alt="Steel Soul"
-            class="mode-icon"
+            class={styles["mode-icon"]}
           />{" "}
           STEEL SOUL SAVE LOADED
         </Show>
