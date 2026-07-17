@@ -1,0 +1,29 @@
+.button {
+  position: fixed;
+  right: 310px;
+  bottom: 40px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  transition:
+    opacity 0.3s,
+    transform 0.3s;
+}
+
+.button[hidden] {
+  display: none;
+}
+
+.button:hover {
+  transform: scale(1.1);
+}
+
+.button span {
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 0.9rem;
+}

@@ -3,6 +3,7 @@ import { useToastStore } from "../../state/toast-store.tsx";
 import { writeClipboardText } from "../../utils/clipboard.ts";
 import { MonacoJsonViewer } from "./MonacoJsonViewer.tsx";
 import { downloadRawSaveJson, getRawSaveJson } from "./raw-save-actions.ts";
+import styles from "./RawSaveView.module.css";
 
 export function RawSaveView() {
   const saveStore = useSaveStore();
@@ -33,14 +34,19 @@ export function RawSaveView() {
   };
 
   return (
-    <section id="rawsave-section" class="tab" data-testid="raw-save-view">
-      <div class="rawsave-container">
-        <div class="rawsave-header">
-          <h2>Raw Save Data</h2>
-          <div class="rawsave-actions">
+    <section
+      id="rawsave-section"
+      class="tab"
+      data-testid="raw-save-view"
+      aria-labelledby="raw-save-title"
+    >
+      <div class={styles["container"]}>
+        <div class={styles["header"]}>
+          <h2 id="raw-save-title">Raw Save Data</h2>
+          <div class={styles["actions"]}>
             <button
               id="raw-save-data-copy"
-              class="rawsave-btn"
+              class={styles["button"]}
               type="button"
               onClick={copyRawJson}
             >
@@ -48,7 +54,7 @@ export function RawSaveView() {
             </button>
             <button
               id="raw-save-json-data-download"
-              class="rawsave-btn"
+              class={styles["button"]}
               type="button"
               onClick={downloadRawJson}
             >

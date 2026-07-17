@@ -3,6 +3,7 @@ import { createSignal, Show } from "solid-js";
 import { useSaveStore } from "../../state/save-store.tsx";
 import { useToastStore } from "../../state/toast-store.tsx";
 import { writeClipboardText } from "../../utils/clipboard.ts";
+import styles from "./UploadModal.module.css";
 
 interface UploadModalProps {
   readonly isOpen: boolean;
@@ -58,7 +59,7 @@ export function UploadModal(props: UploadModalProps) {
     <Show when={props.isOpen}>
       <div
         id="uploadOverlay"
-        class="overlay"
+        class={styles["overlay"]}
         role="dialog"
         aria-modal="true"
         aria-labelledby="uploadTitle"
@@ -68,11 +69,11 @@ export function UploadModal(props: UploadModalProps) {
           }
         }}
       >
-        <div class="modal">
-          <div class="modal-header">
+        <div class={styles["panel"]}>
+          <div class={styles["header"]}>
             <h3 id="uploadTitle">Upload your save file</h3>
             <button
-              class="modal-close"
+              class={styles["close"]}
               id="closeUploadModal"
               type="button"
               aria-label="Close"
@@ -84,8 +85,10 @@ export function UploadModal(props: UploadModalProps) {
 
           <div
             id="dropzone"
-            class="dropzone"
-            classList={{ dragover: isDragOver() }}
+            class={styles["dropzone"]}
+            classList={{ [styles["dragover"]!]: isDragOver() }}
+            role="button"
+            aria-label="Choose a save file"
             tabindex="0"
             onClick={openFilePicker}
             onKeyDown={(event) => {
@@ -127,10 +130,10 @@ export function UploadModal(props: UploadModalProps) {
             }}
           />
 
-          <div class="help">
+          <div class={styles["help"]}>
             <h4>Need help finding your save?</h4>
-            <p class="muted">What do you play on?</p>
-            <div class="platforms">
+            <p class={styles["muted"]}>What do you play on?</p>
+            <div class={styles["platforms"]}>
               <PathPill
                 label="Mac"
                 path="~/Library/Application Support/unity.Team-Cherry.Silksong"
@@ -144,7 +147,7 @@ export function UploadModal(props: UploadModalProps) {
                 path="~/.config/unity3d/Team Cherry/Hollow Knight Silksong"
               />
               <a
-                class="pill"
+                class={styles["pill"]}
                 href="https://store.steampowered.com/account/remotestorageapp/?appid=1030300"
                 target="_blank"
                 rel="noreferrer"
@@ -164,7 +167,7 @@ export function UploadModal(props: UploadModalProps) {
   }) {
     return (
       <button
-        class="pill"
+        class={styles["pill"]}
         type="button"
         onClick={() => {
           copyPath(pillProps.path);

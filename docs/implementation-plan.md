@@ -1418,6 +1418,7 @@ Verification:
 - Legacy CSS cleanup: `pnpm --filter @silksong-git/web test` passed with 50 tests, `pnpm --filter @silksong-git/web build` passed, `pnpm exec prettier --check apps/web/public/assets/css/style.css` passed, and `git diff --check` passed
 - Banner CSS Module migration: `pnpm --filter @silksong-git/web test App.test.tsx` passed with 22 tests, the full Web suite passed with 50 tests, the Web production build passed, and Stylelint passed for the global and two banner stylesheets; Chromium checks at 800×600 and 1440×900 covered hidden, Normal, and Steel Soul states, with the Normal Topbar matching its migration baseline pixel-for-pixel
 - CSS Module lint coverage: a temporary invalid Module proved the previous `pnpm lint apps/web` path missed `src/**/*.css`; after expanding the shared Stylelint command, both `pnpm lint apps/web` and full `pnpm lint` passed while checking every first-party Web CSS file
+- Leaf CSS Module migration: `CI=1 pnpm --filter @silksong-git/web test` passed with 51 tests, `CI=1 pnpm format` passed, and `CI=1 pnpm verify` passed; Chromium checks at 800×600 and 1440×900 covered Upload and Raw Save, with the 1440×900 Upload panel differing from its baseline by only 56 antialiased pixels
 - local Web UI smoke test: pending
 
 Notes:
@@ -1439,6 +1440,7 @@ Notes:
 - Removed 634 lines of confirmed-unreferenced Home/Cinematic, legacy Progress-container, Raw Save search, Map loading, and miscellaneous CSS from `apps/web/public/assets/css/style.css`, reducing it from 2,828 to 2,195 lines without migrating a component. Mixed selectors retained their active branches, including `.sidebar-links`, `main a`, `.info-link`, `.main-section-block`, `.grid`, and `.category-description`.
 - `ModeBanner` and `HistoricalSelectionBanner` now own separate CSS Modules. `id="modeBanner"` remains only as a DOM Interface, module state classes own hidden and Steel Soul presentation, and the corresponding global ID rules and mixed `SaveBanner.module.css` ownership were removed without changing the rendered Normal Topbar.
 - Full and `apps/web`-scoped lint now share one Stylelint target covering `apps/web/src/**/*.css` plus the remaining first-party global stylesheet. The CSS Module override recognizes `:global(...)` and defers isolated-file unknown-custom-property checks because theme tokens are declared by the global stylesheet; all other Stylelint rules remain active for Modules.
+- `BackToTop`, `RawSaveView`, `UploadModal`, and `PreferenceControls` now own their feature styles. Visibility and expansion use native `hidden` plus semantic ARIA state, Raw Save leaves editor internals with `MonacoViewer.module.css`, and the still-global InfoModal overlay/panel rules were narrowed to its stable IDs until Step 5 migrates that component.
 
 CSS Module migration checklist:
 
@@ -1446,11 +1448,11 @@ CSS Module migration checklist:
   - [x] Move `ModeBanner` base, `hidden`, `steel`, and icon styles into `ModeBanner.module.css`; use module state classes while retaining `id="modeBanner"` only as a DOM Interface.
   - [x] Give `HistoricalSelectionBanner` its own Module instead of sharing mixed ownership through `SaveBanner.module.css`.
   - [x] Remove the corresponding global `#modeBanner` rules and verify Static, Local, Normal, Steel Soul, and historical-selection Topbar states.
-- [ ] Step 3: migrate independent leaf Modules in order.
-  - [ ] Migrate `BackToTop`, expressing visibility through conditional rendering, `hidden`, or a module state class.
-  - [ ] Migrate `RawSaveView` while keeping editor internals owned by `MonacoViewer.module.css`.
-  - [ ] Migrate `UploadModal`, including overlay, panel, dropzone, drag state, help, platforms, and pills; do not extract a shared Dialog Module yet.
-  - [ ] Migrate `PreferenceControls`, replacing global dropdown/toggle/checkbox styles and the global `.hidden` dependency with local state and `aria-expanded`/`hidden` behavior.
+- [x] Step 3: migrate independent leaf Modules in order.
+  - [x] Migrate `BackToTop`, expressing visibility through conditional rendering, `hidden`, or a module state class.
+  - [x] Migrate `RawSaveView` while keeping editor internals owned by `MonacoViewer.module.css`.
+  - [x] Migrate `UploadModal`, including overlay, panel, dropzone, drag state, help, platforms, and pills; do not extract a shared Dialog Module yet.
+  - [x] Migrate `PreferenceControls`, replacing global dropdown/toggle/checkbox styles and the global `.hidden` dependency with local state and `aria-expanded`/`hidden` behavior.
 - [ ] Step 4: migrate the Map cluster in dependency order.
   - [ ] Migrate `InteractiveMapCanvas`, including page/modal variants, stage, image, pins, markers, and obtained state; expose stable `data-variant` or semantic DOM state for tests.
   - [ ] Migrate `MapFiltersPanel`, including collapsed/open state, search, filter controls, and filter items; expose expansion through `aria-expanded`.

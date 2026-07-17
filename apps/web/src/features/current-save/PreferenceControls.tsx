@@ -1,6 +1,7 @@
 import { For, createSignal } from "solid-js";
 
 import { usePreferencesStore } from "../../state/preferences-store.tsx";
+import styles from "./PreferenceControls.module.css";
 
 const acts = [1, 2, 3] as const;
 
@@ -10,11 +11,13 @@ export function PreferenceControls() {
 
   return (
     <>
-      <div id="act-filter" class="dropdown">
+      <div id="act-filter" class={styles["dropdown"]}>
         <button
-          class="dropdown-toggle"
+          class={styles["dropdown-toggle"]}
           id="acts-dropdown-button"
           type="button"
+          aria-controls="acts-dropdown-menu"
+          aria-expanded={isActsOpen()}
           onClick={() => {
             setIsActsOpen(!isActsOpen());
           }}
@@ -24,8 +27,10 @@ export function PreferenceControls() {
         </button>
         <div
           id="acts-dropdown-menu"
-          class="dropdown-menu"
-          classList={{ hidden: !isActsOpen() }}
+          class={styles["dropdown-menu"]}
+          role="group"
+          aria-label="Act filters"
+          hidden={!isActsOpen()}
         >
           <For each={acts}>
             {(act) => (
@@ -50,7 +55,7 @@ export function PreferenceControls() {
           </For>
         </div>
       </div>
-      <label class="toggle">
+      <label class={styles["toggle"]}>
         <input
           type="checkbox"
           id="show-only-missing"

@@ -12,6 +12,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@solidjs/testing-library";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -97,6 +98,28 @@ describe("Solid Web app routing", () => {
     expect(
       screen.getByRole("link", { name: "Progress" }).getAttribute("href"),
     ).toBe("#/progress");
+  });
+
+  it("reveals Back to Top after scrolling and returns the main view to the top", async () => {
+    render(() => <App />);
+    await screen.findByTestId("progress-view");
+
+    const main = getRequiredElement("#main");
+    const backToTop = getRequiredElement("#back-to-top");
+    const scrollTo = vi.fn();
+    Object.defineProperty(main, "scrollTo", {
+      configurable: true,
+      value: scrollTo,
+    });
+
+    expect(backToTop.getAttribute("aria-label")).toBe("Back to Top");
+    expect(backToTop.hidden).toBe(true);
+    setReadonlyNumberProperty(main, "scrollTop", 301);
+    fireEvent.scroll(main);
+    expect(backToTop.hidden).toBe(false);
+
+    fireEvent.click(backToTop);
+    expect(scrollTo).toHaveBeenCalledWith({ behavior: "instant", top: 0 });
   });
 
   it("keeps Local-only URLs behind a connection-required state", async () => {
@@ -901,7 +924,13 @@ describe("Solid Web app routing", () => {
     const { container } = render(() => <App />);
 
     expect(screen.getByText("Base Needle")).toBeDefined();
-    fireEvent.click(getRequiredElement("#acts-dropdown-button"));
+    const actsButton = getRequiredElement("#acts-dropdown-button");
+    const actsMenu = getRequiredElement("#acts-dropdown-menu");
+    expect(actsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(actsMenu.hidden).toBe(true);
+    fireEvent.click(actsButton);
+    expect(actsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(actsMenu.hidden).toBe(false);
     fireEvent.click(getRequiredElement('#acts-dropdown-menu input[value="2"]'));
     fireEvent.click(getRequiredElement('#acts-dropdown-menu input[value="3"]'));
 
@@ -1040,6 +1069,7 @@ describe("Solid Web app routing", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "Raw Save Data" }));
     expect(await screen.findByTestId("raw-save-view")).toBeDefined();
+    expect(screen.getByRole("region", { name: "Raw Save Data" })).toBeDefined();
     expect(screen.getByTestId("raw-save-fallback").textContent).toContain(
       "completionPercentage",
     );
@@ -1126,18 +1156,26 @@ describe("Solid Web app routing", () => {
     expect(transform.scale).toBeCloseTo(0.495);
   });
 
-  it("resets upload platform pill styling for both links and buttons", () => {
-    const pillRule = getCssRuleBody(".pill");
-    const pillHoverRule = getCssRuleBody(".pill:hover");
+  it("exposes upload choices through an accessible dialog", () => {
+    render(() => <App />);
+    fireEvent.click(screen.getByRole("button", { name: "Upload save" }));
 
-    expect(pillRule).toContain("appearance: none;");
-    expect(pillRule).toContain("box-sizing: content-box;");
-    expect(pillRule).toContain("color: var(--accent);");
-    expect(pillHoverRule).toContain("background: #2a2a2a;");
-    expect(pillHoverRule).toContain("color: #e69b50;");
-    expect(pillHoverRule).toContain(
-      "text-shadow: 0 0 8px rgba(197, 106, 45, 0.4);",
-    );
+    const dialog = screen.getByRole("dialog", {
+      name: "Upload your save file",
+    });
+    const dialogQueries = within(dialog);
+
+    expect(
+      dialogQueries.getByRole("button", { name: "Choose a save file" }),
+    ).toBeDefined();
+    expect(dialogQueries.getByRole("button", { name: "Mac" })).toBeDefined();
+    expect(
+      dialogQueries.getByRole("button", { name: "Windows" }),
+    ).toBeDefined();
+    expect(dialogQueries.getByRole("button", { name: "Linux" })).toBeDefined();
+    expect(
+      dialogQueries.getByRole("link", { name: "Steam Cloud" }),
+    ).toBeDefined();
   });
 
   it("lets button-rendered controls inherit the page font", () => {
@@ -1296,7 +1334,12 @@ function escapeRegExp(value: string): string {
 
 function setReadonlyNumberProperty(
   object: object,
-  property: "clientHeight" | "clientWidth" | "naturalHeight" | "naturalWidth",
+  property:
+    | "clientHeight"
+    | "clientWidth"
+    | "naturalHeight"
+    | "naturalWidth"
+    | "scrollTop",
   value: number,
 ) {
   Object.defineProperty(object, property, { configurable: true, value });
