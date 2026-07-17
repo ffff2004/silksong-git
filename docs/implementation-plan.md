@@ -1414,6 +1414,8 @@ Verification:
 - Chromium CDP layout probe at 800×600 and 1440×900: passed with no Progress Legend/TOC overlap
 - `pnpm format`: passed after the Progress Legend/TOC overlap fix
 - `pnpm verify`: passed after the Progress Legend/TOC overlap fix with 50 Web tests; full P6-T3 acceptance remains pending
+- CSS Module migration baseline: `pnpm --filter @silksong-git/web test` passed with 50 tests, `pnpm --filter @silksong-git/web build` passed, and 14 targeted headless-Chromium screenshots covered Static and Local Topbars, Progress, Semantic Diff, Map filters, Upload, and Raw Save at 800×600 and 1440×900
+- Legacy CSS cleanup: `pnpm --filter @silksong-git/web test` passed with 50 tests, `pnpm --filter @silksong-git/web build` passed, `pnpm exec prettier --check apps/web/public/assets/css/style.css` passed, and `git diff --check` passed
 - local Web UI smoke test: pending
 
 Notes:
@@ -1431,6 +1433,8 @@ Notes:
 - Manual Checkpoint response validation uses a wire union rather than a `status`-discriminated union because both unchanged and minimum-interval results intentionally share `status: "skipped"`; the public DTO and HTTP response shapes remain unchanged.
 - History-to-Diff navigation previously left canonical `from` and `to` refs out of the form because `DiffView` read `globalThis.location.hash` before the browser hash synchronized during a HashRouter transition; reading the Router-owned `location.search` fixes both inputs while keeping the URL contract unchanged.
 - `AppShell` is width-neutral; `ProgressSnapshotView` owns its content/TOC grid, bottom-sticky Legend, and sticky TOC placement so both standalone Progress and embedded Semantic Diff render correctly without overlay overlap, while Raw JSON Diff uses the full route width and a shared explicitly sized Monaco frame.
+- CSS Module migration preparation captured the current rendered UI before changing style ownership. The screenshots are temporary local review artifacts rather than committed fixtures; they intentionally preserve existing compact-layout behavior instead of treating it as a new acceptance standard.
+- Removed 634 lines of confirmed-unreferenced Home/Cinematic, legacy Progress-container, Raw Save search, Map loading, and miscellaneous CSS from `apps/web/public/assets/css/style.css`, reducing it from 2,828 to 2,195 lines without migrating a component. Mixed selectors retained their active branches, including `.sidebar-links`, `main a`, `.info-link`, `.main-section-block`, `.grid`, and `.category-description`.
 
 TDD vertical slices:
 
