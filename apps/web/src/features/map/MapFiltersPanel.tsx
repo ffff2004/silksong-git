@@ -1,5 +1,6 @@
 import { For } from "solid-js";
 
+import buttonStyles from "../../ui/Button.module.css";
 import { formatMapCategory } from "./map-selectors.ts";
 import styles from "./MapFiltersPanel.module.css";
 
@@ -59,7 +60,7 @@ export function MapFiltersPanel(props: MapFiltersPanelProps) {
         <div class={styles["filter-controls"]}>
           <button
             id="show-all-filters"
-            class={styles["small-button"]}
+            class={buttonStyles["small"]}
             type="button"
             onClick={() => {
               props.onSetAllCategories(true);
@@ -69,7 +70,7 @@ export function MapFiltersPanel(props: MapFiltersPanelProps) {
           </button>
           <button
             id="hide-all-filters"
-            class={styles["small-button"]}
+            class={buttonStyles["small"]}
             type="button"
             onClick={() => {
               props.onSetAllCategories(false);

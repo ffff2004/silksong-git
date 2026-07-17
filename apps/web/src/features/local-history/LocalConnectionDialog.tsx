@@ -1,6 +1,9 @@
 import { Show, createSignal } from "solid-js";
+import { Portal } from "solid-js/web";
 
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
+import buttonStyles from "../../ui/Button.module.css";
+import dialogStyles from "../../ui/Dialog.module.css";
 import type { LocalHistoryClientError } from "./local-history-client.ts";
 import styles from "./LocalConnectionDialog.module.css";
 
@@ -57,7 +60,7 @@ export function LocalConnectionDialog(props: LocalConnectionDialogProps) {
         when={localHistory.connection().kind === "connected"}
         fallback={
           <button
-            class="btn-primary"
+            class={`${buttonStyles["primary"]} ${buttonStyles["compact"]}`}
             id="connect-local-history"
             type="button"
             onClick={() => {
@@ -79,7 +82,7 @@ export function LocalConnectionDialog(props: LocalConnectionDialogProps) {
             : "Local History stale"}
         </span>
         <button
-          class="btn-reset"
+          class={buttonStyles["danger"]}
           id="disconnect-local-history"
           type="button"
           onClick={() => {
@@ -91,90 +94,98 @@ export function LocalConnectionDialog(props: LocalConnectionDialogProps) {
       </Show>
 
       <Show when={isOpen()}>
-        <div
-          class={styles["overlay"]}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="local-history-dialog-title"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              close();
-            }
-          }}
-        >
-          <form
-            class={styles["dialog"]}
-            onSubmit={(event) => {
-              connect(event).catch((error: unknown) => {
-                console.error(
-                  "[local-history] Unexpected connection error:",
-                  error,
-                );
-              });
+        <Portal>
+          <div
+            class={`${dialogStyles["overlay"]} ${styles["overlay"]}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="local-history-dialog-title"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                close();
+              }
             }}
           >
-            <div class={styles["header"]}>
-              <h2 id="local-history-dialog-title">Connect to Local History</h2>
-              <button
-                class={styles["close"]}
-                type="button"
-                aria-label="Close"
-                onClick={close}
-              >
-                X
-              </button>
-            </div>
-            <label class={styles["field"]}>
-              Endpoint
-              <input
-                id="local-history-endpoint"
-                type="url"
-                value={endpoint()}
-                required
-                autocomplete="url"
-                onInput={(event) => {
-                  setEndpoint(event.currentTarget.value);
-                }}
-              />
-            </label>
-            <label class={styles["field"]}>
-              Bearer token
-              <input
-                id="local-history-token"
-                type="password"
-                value={token()}
-                required
-                autocomplete="off"
-                onInput={(event) => {
-                  setToken(event.currentTarget.value);
-                }}
-              />
-            </label>
-            <p class={styles["help"]}>
-              Credentials stay in this page session only.
-            </p>
-            <Show when={connectionError()}>
-              {(error) => (
-                <p class={styles["error"]} role="alert">
-                  {formatError(error())}
-                </p>
-              )}
-            </Show>
-            <div class={styles["actions"]}>
-              <button class="btn-reset" type="button" onClick={close}>
-                Cancel
-              </button>
-              <button
-                class="btn-primary"
-                id="local-history-connect"
-                type="submit"
-                disabled={isConnecting()}
-              >
-                {isConnecting() ? "Connecting…" : "Connect"}
-              </button>
-            </div>
-          </form>
-        </div>
+            <form
+              class={styles["dialog"]}
+              onSubmit={(event) => {
+                connect(event).catch((error: unknown) => {
+                  console.error(
+                    "[local-history] Unexpected connection error:",
+                    error,
+                  );
+                });
+              }}
+            >
+              <div class={styles["header"]}>
+                <h2 id="local-history-dialog-title">
+                  Connect to Local History
+                </h2>
+                <button
+                  class={styles["close"]}
+                  type="button"
+                  aria-label="Close"
+                  onClick={close}
+                >
+                  X
+                </button>
+              </div>
+              <label class={styles["field"]}>
+                Endpoint
+                <input
+                  id="local-history-endpoint"
+                  type="url"
+                  value={endpoint()}
+                  required
+                  autocomplete="url"
+                  onInput={(event) => {
+                    setEndpoint(event.currentTarget.value);
+                  }}
+                />
+              </label>
+              <label class={styles["field"]}>
+                Bearer token
+                <input
+                  id="local-history-token"
+                  type="password"
+                  value={token()}
+                  required
+                  autocomplete="off"
+                  onInput={(event) => {
+                    setToken(event.currentTarget.value);
+                  }}
+                />
+              </label>
+              <p class={styles["help"]}>
+                Credentials stay in this page session only.
+              </p>
+              <Show when={connectionError()}>
+                {(error) => (
+                  <p class={styles["error"]} role="alert">
+                    {formatError(error())}
+                  </p>
+                )}
+              </Show>
+              <div class={styles["actions"]}>
+                <button
+                  class={buttonStyles["secondary"]}
+                  type="button"
+                  onClick={close}
+                >
+                  Cancel
+                </button>
+                <button
+                  class={buttonStyles["primary"]}
+                  id="local-history-connect"
+                  type="submit"
+                  disabled={isConnecting()}
+                >
+                  {isConnecting() ? "Connecting…" : "Connect"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </Portal>
       </Show>
     </div>
   );

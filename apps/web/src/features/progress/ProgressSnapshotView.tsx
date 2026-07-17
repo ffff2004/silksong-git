@@ -1,6 +1,8 @@
 import type { SemanticSnapshot } from "@silksong-git/core";
 import { For, createSignal } from "solid-js";
 
+import buttonStyles from "../../ui/Button.module.css";
+import viewStyles from "../../ui/View.module.css";
 import { formatPlayTime } from "../../utils/format.ts";
 import { InfoModal } from "./InfoModal.tsx";
 import { getProgressSections } from "./progress-selectors.ts";
@@ -38,14 +40,14 @@ export function ProgressSnapshotView(props: ProgressSnapshotViewProps) {
       <div class={progressLayoutClass} data-testid="progress-layout">
         <section
           id="allprogress-section"
-          class={`tab ${progressContentClass}`}
+          class={`${viewStyles["view"]} ${progressContentClass}`}
           data-testid="progress-view"
         >
           <h2 class={styles["pageHeading"]}>All Progress</h2>
           {props.presentation?.kind === "comparison" && (
             <div class={progressDiffToolbarClass}>
               <button
-                class="btn-reset"
+                class={buttonStyles["secondary"]}
                 type="button"
                 onClick={() => {
                   setShowUnchanged((value) => !value);

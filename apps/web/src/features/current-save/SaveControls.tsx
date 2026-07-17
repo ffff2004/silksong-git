@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 
 import { useSaveStore } from "../../state/save-store.tsx";
 import { useToastStore } from "../../state/toast-store.tsx";
+import buttonStyles from "../../ui/Button.module.css";
 import { UploadModal } from "./UploadModal.tsx";
 
 export function SaveControls() {
@@ -13,7 +14,7 @@ export function SaveControls() {
     <>
       <button
         id="upload-save"
-        class="btn-primary"
+        class={`${buttonStyles["primary"]} ${buttonStyles["compact"]}`}
         type="button"
         onClick={() => {
           setIsUploadOpen(true);
@@ -23,7 +24,7 @@ export function SaveControls() {
       </button>
       <button
         id="clearDataBtn"
-        class="btn-reset"
+        class={buttonStyles["danger"]}
         type="button"
         title="Reset all data"
         onClick={() => {

@@ -20,9 +20,8 @@
 
 .section > a,
 .item a {
-  /* Step 7 removes the broad `main a` override; these can then lose `!important`. */
-  color: var(--ink-2) !important;
-  text-shadow: none !important;
+  color: var(--ink-2);
+  text-shadow: none;
 }
 
 .section > a {
@@ -51,7 +50,7 @@
 
 .section > a:hover,
 .item a:hover {
-  color: var(--ink-1) !important;
+  color: var(--ink-1);
 }
 
 .item a:hover {
@@ -61,8 +60,8 @@
 .section > a[aria-current="location"],
 .section[data-open="true"] > a,
 .item a[aria-current="location"] {
-  color: #e3b47b !important;
-  text-shadow: 0 0 6px rgb(227 180 123 / 30%) !important;
+  color: #e3b47b;
+  text-shadow: 0 0 6px rgb(227 180 123 / 30%);
 }
 
 .item a[aria-current="location"] {

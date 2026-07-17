@@ -8,8 +8,7 @@ import {
 } from "./lint/core-mapping-json.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
-const WEB_STYLELINT_COMMAND =
-  "stylelint ./apps/web/src/**/*.css ./apps/web/public/assets/css/style.css";
+const WEB_STYLELINT_COMMAND = "stylelint ./apps/web/src/**/*.css";
 
 process.chdir(REPO_ROOT);
 

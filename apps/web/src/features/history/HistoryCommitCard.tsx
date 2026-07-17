@@ -1,6 +1,8 @@
 import { For, Show } from "solid-js";
 
 import type { LocalHttpObservationHistoryResult } from "@silksong-git/history/http-wire";
+import buttonStyles from "../../ui/Button.module.css";
+import styles from "./HistoryView.module.css";
 import type { HistoryEventGroup } from "./history-events-query.ts";
 
 type ObservationEntry = LocalHttpObservationHistoryResult["entries"][number];
@@ -34,7 +36,7 @@ export function HistoryCommitCard(props: {
   return (
     <Show when={commit()}>
       {(selectedCommit) => (
-        <article class="history-card" data-testid="history-commit-card">
+        <article data-testid="history-commit-card">
           <header>
             <strong>{selectedCommit().shortRef}</strong>
             <time>{selectedCommit().committedAt}</time>
@@ -46,7 +48,7 @@ export function HistoryCommitCard(props: {
           </p>
           <Show when={summary()} fallback={<p>Summary unavailable.</p>}>
             {(metrics) => (
-              <dl class="save-summary-metrics">
+              <dl>
                 <div>
                   <dt>Completion</dt>
                   <dd>{metrics().completionPercentage ?? 0}%</dd>
@@ -66,23 +68,31 @@ export function HistoryCommitCard(props: {
               </dl>
             )}
           </Show>
-          <div class="history-actions">
+          <div class={styles["actions"]}>
             <a
-              class="btn-primary"
+              class={buttonStyles["primary"]}
               href={`${currentSavePath()}?commit=${encodeURIComponent(selectedCommit().ref)}`}
             >
               {currentSavePath() === "/progress"
                 ? "View Progress"
                 : "View Raw Save"}
             </a>
-            <button class="btn-reset" type="button" onClick={props.onExport}>
+            <button
+              class={buttonStyles["secondary"]}
+              type="button"
+              onClick={props.onExport}
+            >
               Export
             </button>
-            <button class="btn-reset" type="button" onClick={props.onRestore}>
+            <button
+              class={buttonStyles["danger"]}
+              type="button"
+              onClick={props.onRestore}
+            >
               Restore
             </button>
             <button
-              class="btn-reset"
+              class={buttonStyles["secondary"]}
               type="button"
               onClick={() => {
                 props.onCompare(selectedCommit().ref);

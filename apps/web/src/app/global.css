@@ -1,0 +1,82 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap");
+
+@font-face {
+  font-family: "TrajanPro";
+  src: url("/assets/fonts/TrajanPro-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "TrajanPro";
+  src: url("/assets/fonts/TrajanPro-Bold.otf") format("opentype");
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --bg-1: #0f0f10;
+  --bg-2: #171819;
+  --bg-3: #1f2022;
+  --ink-1: #f2f2f3;
+  --ink-2: #cfcfd3;
+  --ink-3: #9aa0a6;
+  --stroke: #2a2b2e;
+  --stroke-soft: #242527;
+  --accent: #c56a2d;
+  --radius-lg: 12px;
+  --radius-sm: 10px;
+  --space-1: 8px;
+  --space-2: 12px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --topbar-height: 44px;
+  --banner-height: 36px;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-family: "TrajanPro", serif;
+  cursor:
+    url("/assets/misc/Cursor_32px.png") 8 8,
+    auto;
+  background: var(--bg-1);
+}
+
+button {
+  font: inherit;
+}
+
+a,
+button {
+  cursor:
+    url("/assets/misc/Cursor_32px.png") 8 8,
+    pointer;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  transition:
+    color 0.2s ease,
+    text-shadow 0.2s ease;
+}
+
+a:hover {
+  color: #e69b50;
+  text-shadow: 0 0 8px rgb(197 106 45 / 40%);
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}

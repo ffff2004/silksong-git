@@ -1,13 +1,18 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import { createEffect, createSignal, For, onMount, Show } from "solid-js";
+import { Portal } from "solid-js/web";
 
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
+import buttonStyles from "../../ui/Button.module.css";
+import dialogStyles from "../../ui/Dialog.module.css";
+import viewStyles from "../../ui/View.module.css";
 import { LocalHistoryClientError } from "../local-history/local-history-client.ts";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
 import type { HistoryEventFilters } from "./history-events-query.ts";
 import { createHistoryEventsQuery } from "./history-events-query.ts";
 import { createHistoryObservationsQuery } from "./history-observations-query.ts";
 import { HistoryCommitCard } from "./HistoryCommitCard.tsx";
+import styles from "./HistoryView.module.css";
 
 const eventTypes = [
   "itemStatusChanged",
@@ -148,12 +153,11 @@ function HistoryView() {
   }
 
   return (
-    <section class="tab local-history-view" data-testid="history-view">
-      <h2>History</h2>
-      <div class="local-history-tabs" role="tablist" aria-label="History view">
+    <section class={viewStyles["view"]} data-testid="history-view">
+      <h2 class={viewStyles["heading"]}>History</h2>
+      <div class={styles["tabs"]} role="tablist" aria-label="History view">
         <button
-          class="btn-reset"
-          classList={{ active: view() === "events" }}
+          class={buttonStyles["secondary"]}
           type="button"
           role="tab"
           aria-selected={view() === "events"}
@@ -172,8 +176,7 @@ function HistoryView() {
           Events
         </button>
         <button
-          class="btn-reset"
-          classList={{ active: view() === "observations" }}
+          class={buttonStyles["secondary"]}
           type="button"
           role="tab"
           aria-selected={view() === "observations"}
@@ -191,7 +194,6 @@ function HistoryView() {
         </button>
       </div>
       <form
-        class="history-search"
         onSubmit={(event) => {
           event.preventDefault();
           const params = new URLSearchParams(location.search);
@@ -286,7 +288,7 @@ function HistoryView() {
           />
           Include filtered events
         </label>
-        <button class="btn-primary" type="submit">
+        <button class={buttonStyles["primary"]} type="submit">
           Search
         </button>
       </form>
@@ -323,7 +325,7 @@ function HistoryView() {
       </Show>
       <Show when={view() === "events" && eventsQuery.hasMore()}>
         <button
-          class="btn-reset"
+          class={buttonStyles["secondary"]}
           type="button"
           disabled={eventsQuery.isLoading() || observationsQuery.isLoading()}
           onClick={() => {
@@ -361,7 +363,7 @@ function HistoryView() {
       </Show>
       <Show when={view() === "observations" && observationsQuery.hasMore()}>
         <button
-          class="btn-reset"
+          class={buttonStyles["secondary"]}
           type="button"
           disabled={eventsQuery.isLoading() || observationsQuery.isLoading()}
           onClick={() => {
@@ -474,49 +476,61 @@ function RestoreDialog(props: {
   };
 
   return (
-    <div
-      class="modal-overlay"
-      data-testid="restore-dialog"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div class="modal-content">
-        <h3>Restore {props.commit}?</h3>
-        <p>This writes the selected Encoded Save to the Watched Save.</p>
-        <Show when={message()}>{(value) => <p role="alert">{value()}</p>}</Show>
-        <button class="btn-reset" type="button" onClick={props.onClose}>
-          Cancel
-        </button>
-        <button
-          class="btn-primary"
-          type="button"
-          disabled={isSubmitting()}
-          onClick={() => {
-            restore().catch((error_: unknown) => {
-              setMessage(
-                error_ instanceof Error ? error_.message : "Restore failed.",
-              );
-            });
-          }}
-        >
-          {isSubmitting() ? "Restoring…" : "Confirm Restore"}
-        </button>
-        <Show when={requiresMissingConfirmation()}>
-          <button
-            class="btn-primary"
-            type="button"
-            disabled={isSubmitting()}
-            onClick={() => {
-              restore(true).catch((error_: unknown) => {
-                setMessage(getRestoreErrorMessage(error_));
-              });
-            }}
-          >
-            Restore Missing Watched Save
-          </button>
-        </Show>
+    <Portal>
+      <div
+        class={dialogStyles["overlay"]}
+        data-testid="restore-dialog"
+        role="dialog"
+        aria-modal="true"
+      >
+        <div class={styles["restorePanel"]}>
+          <h3>Restore {props.commit}?</h3>
+          <p>This writes the selected Encoded Save to the Watched Save.</p>
+          <Show when={message()}>
+            {(value) => <p role="alert">{value()}</p>}
+          </Show>
+          <div class={styles["restoreActions"]}>
+            <button
+              class={buttonStyles["secondary"]}
+              type="button"
+              onClick={props.onClose}
+            >
+              Cancel
+            </button>
+            <button
+              class={buttonStyles["danger"]}
+              type="button"
+              disabled={isSubmitting()}
+              onClick={() => {
+                restore().catch((error_: unknown) => {
+                  setMessage(
+                    error_ instanceof Error
+                      ? error_.message
+                      : "Restore failed.",
+                  );
+                });
+              }}
+            >
+              {isSubmitting() ? "Restoring…" : "Confirm Restore"}
+            </button>
+            <Show when={requiresMissingConfirmation()}>
+              <button
+                class={buttonStyles["danger"]}
+                type="button"
+                disabled={isSubmitting()}
+                onClick={() => {
+                  restore(true).catch((error_: unknown) => {
+                    setMessage(getRestoreErrorMessage(error_));
+                  });
+                }}
+              >
+                Restore Missing Watched Save
+              </button>
+            </Show>
+          </div>
+        </div>
       </div>
-    </div>
+    </Portal>
   );
 }
 

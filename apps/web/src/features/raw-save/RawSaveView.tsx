@@ -1,5 +1,6 @@
 import { useSaveStore } from "../../state/save-store.tsx";
 import { useToastStore } from "../../state/toast-store.tsx";
+import viewStyles from "../../ui/View.module.css";
 import { writeClipboardText } from "../../utils/clipboard.ts";
 import { MonacoJsonViewer } from "./MonacoJsonViewer.tsx";
 import { downloadRawSaveJson, getRawSaveJson } from "./raw-save-actions.ts";
@@ -36,7 +37,7 @@ export function RawSaveView() {
   return (
     <section
       id="rawsave-section"
-      class="tab"
+      class={viewStyles["view"]}
       data-testid="raw-save-view"
       aria-labelledby="raw-save-title"
     >

@@ -1,0 +1,32 @@
+.tabs,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.tabs {
+  margin-bottom: 1rem;
+}
+
+.actions {
+  margin: 0.75rem 0;
+}
+
+.restorePanel {
+  width: min(460px, 92vw);
+  padding: 20px;
+  color: #eee;
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  box-shadow: 0 12px 42px rgb(0 0 0 / 55%);
+}
+
+.restoreActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}

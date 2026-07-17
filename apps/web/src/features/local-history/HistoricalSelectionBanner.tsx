@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from "@solidjs/router";
 import { Show } from "solid-js";
 
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
+import buttonStyles from "../../ui/Button.module.css";
 import styles from "./HistoricalSelectionBanner.module.css";
 import { getQueryParam } from "./url-utils.ts";
 
@@ -52,7 +53,7 @@ export function HistoricalSelectionBanner() {
           <span>A newer latest save is available.</span>
         </Show>
         <button
-          class="btn-reset"
+          class={buttonStyles["secondary"]}
           id="back-to-latest"
           type="button"
           onClick={() => {

@@ -1,12 +1,6 @@
 .overlay {
-  position: fixed;
   z-index: 999;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: rgb(0 0 0 / 65%);
-  transition: opacity 0.25s ease;
 }
 
 .panel {
@@ -21,21 +15,6 @@
   border: 1px solid #2c2c2c;
   border-radius: 12px;
   box-shadow: 0 0 30px rgb(0 0 0 / 50%);
-}
-
-.close {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  color: #aaa;
-  font-size: 20px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-}
-
-.close:hover {
-  color: white;
 }
 
 .image {

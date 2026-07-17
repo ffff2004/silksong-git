@@ -1422,6 +1422,7 @@ Verification:
 - Map CSS Module migration: `CI=1 pnpm --filter @silksong-git/web test` passed with 51 tests, the Web production build passed, `CI=1 pnpm format` passed, and `CI=1 pnpm verify` passed; Chromium checks at 800×600 and 1440×900 covered collapsed and open filter states without clipping or layering regressions
 - Progress CSS Module migration: `CI=1 pnpm format` and `CI=1 pnpm verify` passed with 51 Web tests; Chromium checks at 800×600 and 1440×900 covered Progress, Legend/TOC, and InfoModal, and computed-style checks confirmed neutral, hover, and active TOC link states against the remaining global link override
 - Application shell CSS Module migration: `CI=1 pnpm format` and `CI=1 pnpm verify` passed with 51 Web tests; Chromium checks at 800×600 and 1440×900 covered Progress, Map, Raw Save, History, Diff, and Watcher, including compact Topbar sizing and TOC-over-content stacking
+- CSS Module migration closeout: `CI=1 pnpm format` and `CI=1 pnpm verify` passed with 50 Web tests; Chromium checks at 800×600 and 1440×900 covered Progress, Semantic Diff, Map, Upload, Raw Save, Static/Local Topbars, and connection/info/dialog layering, and residue scans found no `:global(...)`, transitional `data-app-topbar`, legacy button classes, or public `style.css` references
 - local Web UI smoke test: pending
 
 Notes:
@@ -1447,6 +1448,7 @@ Notes:
 - `InteractiveMapCanvas`, `MapFiltersPanel`, and `MapView` now own the Map cluster styles. Map pan/zoom and tests use stable `data-map-*` state instead of style classes, filter expansion uses `aria-expanded` and `hidden`, and InfoModal consumes only the canvas component's public props and types.
 - The Progress cards, sections, Legend, TOC, and InfoModal now own their styles and expose status, spoiler, diff, expansion, and current-location state through semantic attributes. Parent-owned Legend/TOC slots removed the last `:global(...)` bridge, so the corresponding Stylelint pseudo-class exemption was deleted; the unknown-custom-property override remains necessary until Step 7 moves global theme tokens.
 - `Sidebar`, `Topbar`, and `AppShell` now own shell layout, navigation state, responsive spacing, and main scrolling. Sidebar selection uses `aria-current`, Topbar limits Module ownership to its rows/control layout, and a `data-app-topbar` transition preserves legacy compact child sizing until Step 7 consolidates buttons; the Progress TOC slot owns its z-index so compact content cannot paint above it.
+- Shared button, dialog, and view declarations now live in CSS Modules, while `app/global.css` contains only fonts, theme tokens, document reset, and minimal element defaults. Dialog overlays render through a Portal above the complete shell, the public stylesheet and its HTML link are deleted, and Stylelint retains unknown-custom-property validation by referencing the real global token source without CSS Module rule exemptions.
 
 CSS Module migration checklist:
 
@@ -1476,15 +1478,15 @@ CSS Module migration checklist:
   - [x] Migrate `Sidebar`, including responsive layout and active navigation state; expose route selection through link semantics such as `aria-current`.
   - [x] Migrate `Topbar`, limiting it to primary-row, right-controls, and historical second-row layout without styling child internals.
   - [x] Migrate `AppShell`, including `main-wrapper`, `main`, scrollbars, and responsive layout; verify every route after removing global element-level layout rules.
-- [ ] Step 7: consolidate real shared styles and close the global stylesheet.
-  - [ ] Move shared primary, danger/reset, secondary, and small button variants into one `Button.module.css` without introducing a speculative component wrapper.
-  - [ ] Compare Upload, Info, and Local Connection dialogs; extract only overlay/panel/close styles that demonstrably change together into a shared Dialog Module.
-  - [ ] Move the remaining fonts, theme tokens, `html`/`body` reset, cursor, `button { font: inherit }`, and minimal element defaults into `apps/web/src/app/global.css`, imported by `main.tsx`.
-  - [ ] Remove the public `style.css` link and delete the global `.hidden`, feature ID selectors, broad `main a !important` overrides, feature descendant selectors, and all migrated class rules.
-- [ ] Close out the migration.
-  - [ ] Run the narrow Web tests after every vertical slice, then run `pnpm format` and `pnpm verify` before commit.
-  - [ ] Repeat the 800×600 and 1440×900 Chromium checks for Progress, Semantic Diff, Map, Upload, Raw Save, Static/Local Topbars, and dialog layering against the migration baseline.
-  - [ ] Confirm tests use semantic DOM Interfaces rather than CSS Module hashes and that no feature or shell style remains in the global stylesheet.
+- [x] Step 7: consolidate real shared styles and close the global stylesheet.
+  - [x] Move shared primary, danger/reset, secondary, and small button variants into one `Button.module.css` without introducing a speculative component wrapper.
+  - [x] Compare Upload, Info, and Local Connection dialogs; extract only overlay/panel/close styles that demonstrably change together into a shared Dialog Module.
+  - [x] Move the remaining fonts, theme tokens, `html`/`body` reset, cursor, `button { font: inherit }`, and minimal element defaults into `apps/web/src/app/global.css`, imported by `main.tsx`.
+  - [x] Remove the public `style.css` link and delete the global `.hidden`, feature ID selectors, broad `main a !important` overrides, feature descendant selectors, and all migrated class rules.
+- [x] Close out the migration.
+  - [x] Run the narrow Web tests after every vertical slice, then run `pnpm format` and `pnpm verify` before commit.
+  - [x] Repeat the 800×600 and 1440×900 Chromium checks for Progress, Semantic Diff, Map, Upload, Raw Save, Static/Local Topbars, and dialog layering against the migration baseline.
+  - [x] Confirm tests use semantic DOM Interfaces rather than CSS Module hashes and that no feature or shell style remains in the global stylesheet.
 
 TDD vertical slices:
 

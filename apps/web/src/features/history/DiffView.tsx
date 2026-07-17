@@ -3,9 +3,12 @@ import { createSignal, onMount, Show } from "solid-js";
 
 import type { LocalHttpDiffResult } from "@silksong-git/history/http-wire";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
+import buttonStyles from "../../ui/Button.module.css";
+import viewStyles from "../../ui/View.module.css";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
 import { ProgressSnapshotView } from "../progress/ProgressSnapshotView.tsx";
 import { MonacoJsonDiffViewer } from "../raw-save/MonacoJsonDiffViewer.tsx";
+import historyStyles from "./HistoryView.module.css";
 
 export function DiffRoute() {
   return (
@@ -119,8 +122,8 @@ function DiffView() {
   };
 
   return (
-    <section class="tab" data-testid="diff-view">
-      <h2>Compare Saves</h2>
+    <section class={viewStyles["view"]} data-testid="diff-view">
+      <h2 class={viewStyles["heading"]}>Compare Saves</h2>
       <form onSubmit={handleSubmit}>
         <label>
           From{" "}
@@ -142,7 +145,7 @@ function DiffView() {
             }}
           />
         </label>
-        <button class="btn-primary" type="submit">
+        <button class={buttonStyles["primary"]} type="submit">
           Compare
         </button>
       </form>
@@ -154,10 +157,13 @@ function DiffView() {
           || rawError() !== undefined
         }
       >
-        <div class="local-history-tabs" role="tablist" aria-label="Diff view">
+        <div
+          class={historyStyles["tabs"]}
+          role="tablist"
+          aria-label="Diff view"
+        >
           <button
-            class="btn-reset"
-            classList={{ active: view() === "semantic" }}
+            class={buttonStyles["secondary"]}
             type="button"
             role="tab"
             aria-selected={view() === "semantic"}
@@ -168,8 +174,7 @@ function DiffView() {
             Semantic
           </button>
           <button
-            class="btn-reset"
-            classList={{ active: view() === "raw" }}
+            class={buttonStyles["secondary"]}
             type="button"
             role="tab"
             aria-selected={view() === "raw"}

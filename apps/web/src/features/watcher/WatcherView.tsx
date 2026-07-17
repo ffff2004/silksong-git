@@ -5,6 +5,8 @@ import type {
   LocalHttpWatcherStatus,
 } from "@silksong-git/history/http-wire";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
+import buttonStyles from "../../ui/Button.module.css";
+import viewStyles from "../../ui/View.module.css";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
 
 export function WatcherRoute() {
@@ -31,8 +33,8 @@ function WatcherView() {
   };
 
   return (
-    <section class="tab" data-testid="watcher-view">
-      <h2>Watcher</h2>
+    <section class={viewStyles["view"]} data-testid="watcher-view">
+      <h2 class={viewStyles["heading"]}>Watcher</h2>
       <Show when={status()} fallback={<p>Watcher status unavailable.</p>}>
         {(value) => (
           <dl>
@@ -121,7 +123,11 @@ function WatcherView() {
           />
           Allow unchanged save
         </label>
-        <button type="submit" disabled={checkpointPending()}>
+        <button
+          class={buttonStyles["primary"]}
+          type="submit"
+          disabled={checkpointPending()}
+        >
           {checkpointPending() ? "Creating checkpoint…" : "Create checkpoint"}
         </button>
       </form>

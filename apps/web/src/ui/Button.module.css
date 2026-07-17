@@ -1,0 +1,93 @@
+.primary,
+.danger,
+.secondary,
+.small {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-weight: 600;
+  font-family: "TrajanPro", serif;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.primary {
+  padding: 8px 14px;
+  color: #fff;
+  text-decoration: none;
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.primary:hover {
+  color: #fff;
+  background: #a95b22;
+  box-shadow: 0 0 12px rgb(197 106 45 / 40%);
+}
+
+.danger {
+  height: 32px;
+  padding: 6px 12px;
+  color: #ff4d4d;
+  font-size: 0.85rem;
+  background: rgb(255 77 77 / 10%);
+  border: 1px solid rgb(255 77 77 / 30%);
+  border-radius: 8px;
+}
+
+.danger:hover {
+  color: #fff;
+  background: #ff4d4d;
+  box-shadow: 0 0 10px rgb(255 77 77 / 40%);
+}
+
+.secondary,
+.small {
+  color: var(--ink-2);
+  background: var(--bg-3);
+  border: 1px solid var(--stroke);
+}
+
+.secondary {
+  height: 32px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+}
+
+.small {
+  flex: 1;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border-radius: 4px;
+}
+
+.secondary:hover,
+.secondary[aria-selected="true"],
+.small:hover {
+  color: var(--ink-1);
+  background: var(--stroke);
+  border-color: var(--ink-3);
+}
+
+.compact {
+  height: 32px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+
+.primary:disabled,
+.danger:disabled,
+.secondary:disabled,
+.small:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}

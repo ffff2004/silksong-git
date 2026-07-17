@@ -14,7 +14,6 @@ import {
   waitFor,
   within,
 } from "@solidjs/testing-library";
-import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import decodedSave from "../test-fixtures/mask-shard-2-collected-rosaries-save.decoded.json";
@@ -1241,12 +1240,6 @@ describe("Solid Web app routing", () => {
       dialogQueries.getByRole("link", { name: "Steam Cloud" }),
     ).toBeDefined();
   });
-
-  it("lets button-rendered controls inherit the page font", () => {
-    const buttonRule = getCssRuleBody("button");
-
-    expect(buttonRule).toContain("font: inherit;");
-  });
 });
 
 function getRequiredFileInput(): HTMLInputElement {
@@ -1365,19 +1358,6 @@ function requestUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
-function getCssRuleBody(selector: string): string {
-  const stylesheet = readFileSync("public/assets/css/style.css", "utf8");
-  const rulePattern = new RegExp(
-    String.raw`${escapeRegExp(selector)}\s*\{([^}]*)\}`,
-  );
-  const match = rulePattern.exec(stylesheet);
-  if (match?.[1] === undefined) {
-    throw new Error(`Expected ${selector} CSS rule to exist.`);
-  }
-
-  return match[1];
-}
-
 function createIntersectionEntry(target: Element): IntersectionObserverEntry {
   const rect = target.getBoundingClientRect();
 
@@ -1390,10 +1370,6 @@ function createIntersectionEntry(target: Element): IntersectionObserverEntry {
     target,
     time: 0,
   };
-}
-
-function escapeRegExp(value: string): string {
-  return value.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
 }
 
 function setReadonlyNumberProperty(

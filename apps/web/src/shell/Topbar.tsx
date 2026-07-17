@@ -18,7 +18,7 @@ export function Topbar() {
   const location = useLocation();
 
   return (
-    <header class={styles["topbar"]} data-app-topbar>
+    <header class={styles["topbar"]}>
       <div
         class={styles["primaryRow"]}
         role="group"
