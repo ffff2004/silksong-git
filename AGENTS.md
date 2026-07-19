@@ -18,17 +18,25 @@ This repository uses a single-context domain documentation layout. See `docs/age
 
 ## Documentation Map
 
-Use these documents as the working entry points:
+Start with `docs/README.md`. It maps each kind of project knowledge to its
+authoritative source and records the compatibility boundaries during the
+documentation architecture migration.
+
+The current authoritative documents remain:
 
 | Document                                    | Purpose                                                        | Update When                                                                                                 |
 | ------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `docs/save-history-design.md`               | Implementation map for the planned save-history fork.          | Architecture or implementation guidance changes.                                                            |
-| `docs/implementation-plan.md`               | Task backlog, phase order, dependencies, and progress tracker. | Task status, dependencies, acceptance criteria, or verification results change.                             |
+| `docs/README.md`                            | Documentation navigation and authority map.                    | A document role, authority boundary, or migration status changes.                                           |
+| `docs/save-history-design.md`               | Implementation map for the planned save-history fork.          | Architecture or implementation guidance changes during migration.                                           |
+| `docs/implementation-plan.md`               | Task backlog, phase order, dependencies, and progress tracker. | Task status, dependencies, acceptance criteria, or verification results change during migration.            |
 | `CONTEXT.md`                                | Domain vocabulary. Use these terms consistently.               | A domain term is settled or renamed.                                                                        |
-| `docs/adr/`                                 | Accepted decisions and rationale.                              | A hard-to-reverse design decision is accepted.                                                              |
+| `docs/adr/README.md`                        | Index of accepted decisions and rationale.                     | An ADR is accepted, superseded, or replaced.                                                                |
 | `docs/current-design-reference/overview.md` | Current Web app overview and preserved static behavior.        | Current Web UI behavior or package location is clarified or corrected; not for future architecture changes. |
 
-Before architecture, refactor, CLI, history, or semantic-mapping work, read `docs/save-history-design.md`, `CONTEXT.md`, and the relevant ADRs. Read current-design references when extracting or preserving current behavior.
+Before architecture, refactor, CLI, history, or semantic-mapping work, read
+`docs/README.md`, `CONTEXT.md`, and the relevant ADRs, then follow the current
+authority link for the area. Read current-design references when extracting or
+preserving current behavior.
 
 Do not duplicate large parts of these documents into new files. Link to them and update the authoritative document when decisions change.
 
