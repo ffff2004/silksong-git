@@ -2,7 +2,7 @@
 
 import type { Plugin } from "vite";
 import solid from "vite-plugin-solid";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 const BASE_PATH = process.env["BASE_PATH"] ?? "/silksong-git/";
 
@@ -30,6 +30,7 @@ export default defineConfig(({ mode }) => ({
   ],
   test: {
     environment: "jsdom",
+    exclude: [...configDefaults.exclude, "src/**/*.browser.test.tsx"],
     setupFiles: "./src/test/setup-local-storage.ts",
   },
   build: {

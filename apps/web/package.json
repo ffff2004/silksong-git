@@ -8,7 +8,9 @@
     "format": "tsx ../../scripts/format.ts apps/web",
     "lint": "tsx ../../scripts/lint.ts apps/web",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "pnpm run test:unit && pnpm run test:browser",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "@monaco-editor/loader": "1.7.0",
@@ -21,7 +23,9 @@
   },
   "devDependencies": {
     "@solidjs/testing-library": "^0.8.10",
+    "@vitest/browser-playwright": "4.1.10",
     "jsdom": "^29.1.1",
+    "playwright": "1.61.1",
     "vite": "8.1.0",
     "vite-plugin-solid": "^2.11.12",
     "vitest": "^4.1.10"

@@ -99,6 +99,7 @@ export default defineConfig(
     rules: {
       // Tests often use small helper classes and queue-like fixtures.
       "@typescript-eslint/require-await": "off",
+      "complete/require-variadic-function-argument": "off",
       "max-classes-per-file": "off",
       "unicorn/no-array-front-mutation": "off",
     },

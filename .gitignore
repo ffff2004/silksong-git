@@ -166,4 +166,5 @@ Thumbs.db
 # Ignore local build artifacts
 /apps/web/public/assets/scenes/desktop.ini
 /apps/web/public/assets/scenes/*.tmp
+/apps/web/test-results/
 /docs/generated/local-http-api.openapi.json

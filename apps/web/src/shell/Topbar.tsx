@@ -25,7 +25,11 @@ export function Topbar() {
         aria-label="Primary controls"
       >
         <ModeBanner />
-        <div class={styles["rightControls"]}>
+        <div
+          class={styles["rightControls"]}
+          role="group"
+          aria-label="Save and preference controls"
+        >
           <PreferenceControls />
           <Show when={localHistory.connection().kind !== "connected"}>
             <SaveControls />
