@@ -1,16 +1,27 @@
 # Roadmap
 
-> **Migration status:** compatibility stub.
+This page is the low-resolution entry point for active delivery. GitHub owns
+changing ticket state, claims, acceptance criteria, and blocking edges; this
+page links to those records without copying them.
 
-## Current Authority
+## Current Initiative
 
-[`implementation-plan.md`](implementation-plan.md) remains the authoritative
-phase, task, dependency, acceptance, and verification tracker until active work
-has been migrated to GitHub specs and tickets.
+- [Documentation architecture refactor spec](https://github.com/ffff2004/silksong-git/issues/1)
+- [Save History delivery migration](https://github.com/ffff2004/silksong-git/issues/3)
 
-## Intended Responsibility
+## Frontier
 
-This document will remain a low-resolution navigation page. It will link to the
-current initiative, active spec, milestone, and tracker frontier without
-copying ticket state, blocking edges, acceptance criteria, or verification
-logs.
+- [Documentation migration tickets that are open, unclaimed, and not blocked](https://github.com/ffff2004/silksong-git/issues?q=is%3Aissue%20is%3Aopen%20parent-issue%3Affff2004%2Fsilksong-git%231%20no%3Aassignee%20-is%3Ablocked)
+- [Save History delivery tickets that are open, unclaimed, and not blocked](https://github.com/ffff2004/silksong-git/issues?q=is%3Aissue%20is%3Aopen%20parent-issue%3Affff2004%2Fsilksong-git%233%20no%3Aassignee%20-is%3Ablocked)
+
+An agent claims a ticket by assigning it before implementation. GitHub's native
+sub-issue and blocked-by relationships are canonical; issue number order does
+not imply execution order.
+
+## Compatibility Record
+
+[`implementation-plan.md`](implementation-plan.md) remains available as the
+migration-era execution record until the final documentation contract ticket
+retires it as an authority. Completed phases are not recreated as retrospective
+issues. Any unfinished delivery slice or actionable follow-up belongs in the
+tracker.
