@@ -2,6 +2,20 @@
 
 This file is the working entry point for AI agents and maintainers. `README.md` is user-facing and should not be treated as the architecture source of truth.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The tracker uses the canonical triage label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses a single-context domain documentation layout. See `docs/agents/domain.md`.
+
 ## Documentation Map
 
 Use these documents as the working entry points:
