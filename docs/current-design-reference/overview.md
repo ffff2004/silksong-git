@@ -1,14 +1,25 @@
-# Current Web App Overview
+# Pre-Solid Web App Overview Compatibility Source
 
-This document describes the current Web UI. It is reference material for refactoring, not the future save-history architecture. For the planned architecture, read `../save-history-design.md`; for detailed save-to-semantic mapping, read `save-to-semantic.md`.
+> **Legacy warning:** Despite this directory's historical name, this document
+> describes the pre-Solid Web UI and must not be used as current architecture.
+> Read the [current Web architecture](../architecture/web.md) for the live Solid
+> runtime and the [classified legacy overview](../legacy/web-before-solid/overview.md)
+> for the preserved compatibility summary.
 
-## Overview
+This source is retained temporarily so the final documentation-contract ticket
+can verify the migration before retiring old paths. Its paths, rendering model,
+and present-tense statements below are a historical snapshot, not descriptions
+of the current codebase. For detailed pre-Solid save-to-semantic mapping, read
+`save-to-semantic.md`.
+
+## Historical Overview
 
 Silksong Git is a browser-based web application that analyzes and visualizes save files from _Hollow Knight: Silksong_. It decodes encrypted `.dat` files locally in the browser, extracts progression data, and displays it in an interactive interface. All operations occur locally, ensuring privacy and data safety.
 
-## Architecture
+## Historical Architecture
 
-The project is entirely client-side, structured as follows:
+At the time captured by this reference, the Web UI was entirely client-side and
+had the following structure:
 
 ```txt
 silksong-git/
@@ -29,7 +40,7 @@ silksong-git/
 └── docs/                 # Documentation
 ```
 
-## Data Flow
+## Historical Data Flow
 
 ### File Upload
 

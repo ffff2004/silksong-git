@@ -1,14 +1,24 @@
-# Current Save to Semantic Mapping Reference
+# Pre-Solid Save-to-Semantic Mapping Compatibility Source
 
-This document describes the current Web UI's save decoding and semantic mapping path. It is reference material for extracting `packages/core`, not the future architecture design. For the planned save-history architecture, read `../save-history-design.md`; for the current Web app overview, read `overview.md`.
+> **Legacy warning:** Despite this directory's historical name, this document
+> describes the removed pre-Solid decoding, mapping, and DOM-rendering path. It
+> must not be used as current architecture or current semantic behavior. Read
+> the [Semantic Core architecture](../architecture/semantic-core.md) for current
+> behavior and the
+> [classified legacy mapping reference](../legacy/web-before-solid/save-to-semantic.md)
+> for the preserved compatibility summary.
 
-This document describes how `<save>.dat` in Silksong Git is decoded, parsed, and semantically mapped into the `done`, `accepted`, `locked`, `unobtainable`, and related states shown in the user interface.
+This source is retained temporarily so the final documentation-contract ticket
+can verify the migration before retiring old paths. The functions, paths, and
+present-tense statements below form a historical snapshot of how `<save>.dat`
+was decoded, parsed, semantically mapped, and rendered before the Solid and Core
+extractions; they do not describe the live pipeline.
 
 After the P2 workspace migration, old `src/...` references in this document correspond to `apps/web/src/...` unless a path explicitly says otherwise.
 
-## Overview
+## Historical Pipeline Overview
 
-The overall pipeline is:
+The pre-Solid pipeline was:
 
 ```txt
 <save>.dat
