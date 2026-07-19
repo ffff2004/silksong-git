@@ -12,19 +12,25 @@
 .primaryRow {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   box-sizing: border-box;
   width: 100%;
-  height: var(--topbar-height);
-  padding: 0 14px;
+  min-height: var(--topbar-height);
+  height: auto;
+  padding: 6px 14px;
+  gap: 14px;
 }
 
 .rightControls {
   display: flex;
+  flex: 1 1 max-content;
   flex-wrap: wrap;
   gap: 14px;
   align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
   margin-left: auto;
 }
 

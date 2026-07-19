@@ -1,12 +1,16 @@
 .wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   margin-left: 220px;
+  overflow: hidden;
 }
 
 .main {
   z-index: 3;
+  flex: 1;
   box-sizing: border-box;
-  height: calc(100vh - var(--topbar-height));
-  min-height: calc(100vh - var(--topbar-height));
+  min-height: 0;
   padding: var(--topbar-height) 24px 24px;
   overflow-y: auto;
   color: var(--ink-2);
@@ -41,8 +45,6 @@
 @media (width <= 1000px) {
   .wrapper {
     flex: 1;
-    height: 100vh;
     margin-left: 220px;
-    overflow-y: auto;
   }
 }
