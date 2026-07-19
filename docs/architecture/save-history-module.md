@@ -1,21 +1,162 @@
 # Save History Module Architecture
 
-> **Migration status:** compatibility stub.
-
-## Current Authority
-
-Read the Data Ownership, Repository Layout, Observation Flow, Capture Policy,
-History Module Interface, and Restore Safety sections of
-[`save-history-design.md`](../save-history-design.md), the relevant
-[ADRs](../adr/README.md), and the public
+The Save History Module owns durable local history for one Watched Save. It
+turns stable save-file reads into canonical Git Raw Save Observations, maintains
+a rebuildable SQLite Semantic Read Model, and exposes repository workflows
+through the package-root
 [`@silksong-git/history` Interface](../../packages/history/src/index.ts).
+Callers must not depend on its Git commands, SQLite tables, repository layout
+helpers, or lock implementation.
 
-## Intended Responsibility
+The one-repository-per-save boundary follows
+[ADR-0005](../adr/0005-single-save-history-repository.md), and the small public
+Interface and behavior-test boundary follow
+[ADR-0013](../adr/0013-history-module-interface-and-testing.md). Exact callable
+types remain in the package export rather than being duplicated here.
 
-This document will describe one Save History Repository per Watched Save, Git
-Raw Save Observations, the rebuildable SQLite Semantic Read Model, observation
-and Capture Policy semantics, `write.lock`, query/diff/search/save-state/export
-workflows, and restore safety.
+## Boundary and Ownership
 
-The Local History Watch Process is a caller and orchestrator of these behaviors.
-Its scheduling and process lifecycle belong in the dedicated runtime document.
+History owns the persistence rules and adapters behind its public Interface:
+
+| Resource                              | History ownership and authority                                                                                                                                                                                                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Save History Repository               | One local Git repository represents one Watched Save. History initializes it, resolves commits, and writes Raw Save Observations. Git is the canonical raw history and restore source.                                                                                                |
+| Encoded Save artifact                 | The committed `save.dat` bytes are the canonical artifact for export and restore.                                                                                                                                                                                                     |
+| Decoded Save and Observation Metadata | Each Raw Save Observation also commits the decoded payload and metadata needed for inspection, provenance, and later semantic rebuilds. These are raw observation artifacts, not semantic truth.                                                                                      |
+| Project Config                        | Repository-scoped config records the Watched Save path, Capture Policy, Display Semantic Event Filters, and restore defaults. History reads it when executing repository behavior. Effective Config precedence is defined by [ADR-0004](../adr/0004-config-scopes-and-precedence.md). |
+| Semantic Read Model                   | History derives Semantic Snapshots, Semantic Events, observation lookup data, and semantic Version Stamps into SQLite, then applies Project Config display filters when querying. It is query authority but is rebuildable from Git, so it is not a restore source.                   |
+| `write.lock`                          | History uses this short-lived repository lock to serialize Git and SQLite mutations for observations and rebuilds, and the full in-place restore transaction. Offline Commands and the watch process share this lock instead of creating separate write paths.                        |
+| `watch.lock`                          | History implements the repository-scoped singleton lock held by a Local History Watch Process. Its acquisition, lifetime, and release belong to the [watch-process lifecycle](local-history-watch-process.md), not to an observation transaction.                                     |
+
+The repository currently tracks the Project Config and current observation's
+Encoded Save, Decoded Save, and Observation Metadata. The SQLite read model and
+both locks are ignored runtime artifacts. The accepted artifact split is
+recorded in [ADR-0001](../adr/0001-save-history-artifacts.md) and
+[ADR-0006](../adr/0006-save-history-repository-layout.md); their concrete
+filenames and the SQLite schema remain internal implementation details.
+
+History consumes the
+[`@silksong-git/core` Interface](../../packages/core/src/index.ts) for decoding,
+schema recognition, Semantic Snapshot creation, and semantic diffing. Core does
+not know about repositories or SQLite. CLI and HTTP adapters call History's
+package-root Interface rather than running Git, querying tables, or applying
+restore rules themselves.
+
+## Observation Transaction
+
+`observeSave` is the public single-observation transaction used by both a
+watch-triggered observation and a Manual Checkpoint. Under `write.lock`, History
+reads the Watched Save path from Project Config and returns one of three
+outcomes:
+
+- `committed` means History wrote a Raw Save Observation to Git. If Core
+  recognizes the Save Schema Version, History also appends the Semantic
+  Snapshot and resulting Semantic Events to SQLite. If the schema is
+  unrecognized, the Git observation is still canonical and its semantic update
+  is unavailable until a future rebuild supports it. A read-model failure can
+  likewise leave a committed raw observation with semantic data unavailable.
+- `skipped` means Git and SQLite were not changed. Current reasons are unchanged
+  Encoded Save bytes or the Minimum Commit Interval. A Manual Checkpoint bypasses
+  the interval and commits unchanged bytes only when the caller explicitly
+  allows that behavior.
+- `watcherError` means no Raw Save Observation was committed because History
+  could not read or decode the candidate save. The same result shape is returned
+  to a Manual Checkpoint caller even though no watcher scheduling is involved.
+
+A decoded but unrecognized shape is therefore a committed
+Unrecognized Schema Observation, while a decode failure is a non-committed
+error, as required by
+[ADR-0016](../adr/0016-commit-unrecognized-schema-observations.md). Display
+Semantic Event Filters never decide whether an observation enters Git and do
+not delete derived events from SQLite.
+
+This transaction does not own file-event debounce, stability probes,
+single-flight dirty-bit handling, deferred observation timers, process status,
+or shutdown. When a Minimum Commit Interval skip includes a next-allowed time,
+the caller may use it as scheduling input; the
+[Local History Watch Process](local-history-watch-process.md) owns that
+orchestration and calls `observeSave` again at the appropriate time.
+
+## Public Read and Maintenance Workflows
+
+These workflows are public History behavior. Their result DTOs and errors are
+owned by the live package-root Interface, while integration behavior is covered
+by the
+[`@silksong-git/history` behavior tests](../../packages/history/src/index.test.ts).
+
+### History, diff, and search
+
+- `queryHistory` pages Semantic Events in an explicit order and returns each
+  event with its commits, Raw Save Observation context, after-Snapshot summary,
+  and visibility metadata.
+- `queryRawObservations` independently pages raw observations with an optional
+  Semantic Snapshot summary. An Unrecognized Schema Observation has no semantic
+  summary.
+- `diffCommits` resolves two observation commits and returns their Semantic
+  Snapshots and the Semantic Events between them.
+- `searchSemanticEvents` searches through structured semantic fields and also
+  supports the CLI's free-text convenience. Structured fields are the stable
+  programmatic search seam.
+
+History, raw-observation, and search pagination use opaque cursors. Display
+Semantic Event Filters apply to semantic history, diff, and search at query
+time; callers can explicitly include filtered events and inspect why they are
+hidden by default. Raw Save Observation history is independent of semantic
+visibility.
+
+### Save State and export
+
+`getSaveState` resolves `latest` or a supplied commit ref once, then reads the
+observation's artifacts at that immutable commit. An empty repository is a
+normal result. An Unrecognized Schema Observation remains inspectable as a
+Decoded Save with no Semantic Snapshot; a recognized observation whose
+snapshot is unavailable reports the missing read model rather than remapping
+silently.
+
+`readEncodedSave` is the export behavior: it returns the exact committed
+Encoded Save bytes, their hash, commit identity, and a safe suggested filename.
+It does not write a Restore Target. HTTP download headers and CLI presentation
+belong to their adapters, not to History.
+
+### Rebuild
+
+`rebuildSemanticReadModel` recreates SQLite semantic state from Git Raw Save
+Observations using the current Core interpretation and built-in Mapping Data.
+It preserves unrecognized observations as raw history without inventing
+snapshots or events for them, reports rebuild counts, and holds `write.lock`
+while replacing the read model. Project Config Display Semantic Event Filters
+apply later at query time; rebuild never rewrites canonical Git history.
+
+### Restore
+
+`restoreEncodedSave` reads the selected commit's exact Encoded Save artifact.
+An explicit Restore Target is the safe default and is not overwritten unless
+the caller explicitly requests overwrite. In-place restore instead resolves the
+Watched Save from Project Config, requires the public confirmation value,
+creates a byte-for-byte backup when the file exists, writes and verifies the
+selected bytes, and holds `write.lock` for the transaction.
+
+The public in-place target also accepts an expected-current precondition. The
+HTTP adapter requires it so History can reject a stale or unexpectedly present
+Watched Save before backup or overwrite; the current explicit CLI confirmation
+workflow may omit it. Restore itself does not create a Raw Save Observation.
+Detailed safety decisions are recorded in
+[ADR-0007](../adr/0007-restore-requires-explicit-target-or-in-place-confirmation.md)
+and the Local History HTTP refinement in
+[ADR-0018](../adr/0018-secure-versioned-local-http-adapter.md).
+
+## Caller and Process Boundary
+
+The Local History Watch Process is a caller and orchestrator of this Module's
+observation and query behavior. It owns a watch subscription, process-level
+failure handling, optional local HTTP listener, and `watch.lock` lifetime, but
+it does not implement a second Git, SQLite, observation, export, or restore
+path. Manual checkpoints and Offline Commands call the same History Interface
+and serialize mutations through `write.lock` without starting another watcher.
+
+The HTTP adapter is likewise an adapter over public History behavior. Its exact
+authentication, request, response, compatibility, and download contracts live
+in the [Local HTTP API Reference](../reference/local-http-api.md), not in this
+Module document. Process startup, observation scheduling, and graceful shutdown
+live in the
+[Local History Watch Process architecture](local-history-watch-process.md).
