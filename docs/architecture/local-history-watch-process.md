@@ -20,9 +20,9 @@ time. Startup acquires the repository's `watch.lock` before attaching the watch
 backend. The process holds that lock until its shutdown cleanup releases it. A
 conflicting lock stops a second process before it starts watching. The lock
 contains diagnostics, but the current implementation does not automatically
-decide that an existing lock is stale or remove it. Shutdown waits for active
-filesystem-change work, but has a known exception for an already-started
-deferred observation described under [Current Implementation Gaps](#current-implementation-gaps).
+decide that an existing lock is stale or remove it. Shutdown waits for every
+already-started observation path, including deferred work, before releasing
+this lock.
 
 The two repository locks have different scopes:
 
@@ -51,53 +51,55 @@ event. Failure to acquire process ownership or start either component aborts
 startup and releases resources already acquired.
 
 The backend is attached before the initial observation, so a change during
-startup is not missed by attaching too late. The current implementation then
-performs a startup observation directly. It does not yet run the stability
-probe required by the intended design before that startup read; startup
-stability must not be treated as a current guarantee.
+startup is not missed by attaching too late. The initial observation then runs
+the same bounded stability probe as every other candidate read before History
+reads the Watched Save. Startup does not apply the real-change debounce: it is
+already an explicit process-start observation.
 
 ## Event-to-Observation Scheduling
 
 A filesystem event is a scheduling signal, not a Raw Save Observation and not
-a commit boundary. Current change handling follows this sequence:
+a commit boundary. One process-owned scheduling state machine accepts startup,
+filesystem-change, and deferred-observation requests. It keeps at most one
+active stability-probe/observation path and one pending timed opportunity.
 
-1. If no change pass is active, the process starts one. Further filesystem
-   events during that pass set a dirty bit rather than starting concurrent
-   change observations.
-2. The pass waits until the Watched Save has the same size and modification
-   time across bounded probes. An inability to stat the file or reach stability
-   produces a non-committed Watcher Error for that pass.
-3. Once stable, the process acquires History's short-lived `write.lock` and
+1. Startup begins a stability probe immediately, without a real-change
+   debounce.
+2. A real filesystem event records the latest event time and schedules the
+   candidate read after `debounceWriteMs`. Further events before that time
+   replace the pending time, giving real changes trailing-debounce semantics.
+3. An active probe or observation is never joined by a second path. A later
+   event instead remains pending and is considered when the active path
+   completes.
+4. Every chosen opportunity waits until the Watched Save has the same size and
+   modification time across bounded probes. An inability to stat the file or
+   reach stability produces a non-committed Watcher Error for that opportunity.
+5. Once stable, the process acquires History's short-lived `write.lock` and
    invokes the shared observation path with the startup Project Config snapshot
-   and watcher trigger.
-4. History returns `committed`, `skipped`, or `watcherError`. The process emits
-   an observation event, updates its coarse status, and schedules follow-up
-   work when required.
-5. If the dirty bit was set, one more pass probes and reads the then-current
-   Watched Save. This repeats serially while changes keep arriving.
+   and watcher trigger. History then returns `committed`, `skipped`, or
+   `watcherError`, and the process emits an observation event and updates its
+   coarse status.
 
-The process never treats event payload bytes as authoritative: each pass reads
-the current stable Watched Save through History. This single-flight dirty-bit
-loop coalesces bursts while preserving a later pass for a change that arrives
-during active work.
-
-The configured `debounceWriteMs` is exposed in the startup event and watcher
-status, but the current runtime does not yet delay real file events by that
-duration. Debounced change scheduling is therefore not a current capability.
+The process never treats event payload bytes as authoritative: every
+opportunity reads the current stable Watched Save through History. The
+single-flight scheduler therefore coalesces bursts while preserving a later
+opportunity for a change that arrives during active work.
 
 ### Deferred observations
 
 When History skips a watcher observation because of the Minimum Commit
-Interval, it supplies the next allowed time. The process keeps at most one
-deferred timer. When that timer fires, it probes the current Watched Save for
-stability and starts an observation with cause `deferred`; it does not reuse
-bytes from the earlier event. If the bytes have returned to the last committed
-state, History can skip that later observation as unchanged.
+Interval, it supplies the next allowed time. The scheduler retains one deferred
+opportunity for that time. Its observation has cause `deferred`, probes the
+current Watched Save for stability, and never reuses bytes from the earlier
+event. If the bytes have returned to the last committed state, History can skip
+that later observation as unchanged.
 
-The deferred timer is separate from the filesystem-change dirty-bit loop.
-Their stability work can overlap, but all mutations still serialize through
-`write.lock`. The current implementation does not merge later filesystem
-events into, or reschedule, an already pending deferred timer.
+Later filesystem events merge into that same deferred opportunity. The eventual
+read runs no earlier than both the minimum-interval time and the latest real
+change's debounce deadline, so it uses the final current file state without
+starting a parallel probe or repository writer. A deferred opportunity with no
+later event runs at the supplied next-allowed time without an additional
+debounce.
 
 ## Observation Outcomes and Failures
 
@@ -160,34 +162,18 @@ remains outside the process.
 ## Graceful Shutdown
 
 Shutdown is idempotent and emits `stopping` before cleanup and `stopped` after
-the watch lock is released. The current ordering is:
+the watch lock is released. Its ordering is:
 
-1. mark the process stopped and cancel its pending deferred timer;
+1. mark the scheduler stopped, reject new events, and cancel every timed
+   opportunity that has not started;
 2. when HTTP is enabled, stop accepting new HTTP connections and wait for
    active handlers to finish;
 3. stop the file watch subscription so no new change work is accepted;
-4. wait for the active filesystem-change loop, including any observation that
-   loop already started inside History, to finish;
+4. wait for the one active observation path, including a stability probe or
+   History observation that began as startup, change, or deferred work, to
+   finish;
 5. release `watch.lock` and emit `stopped`.
 
-The process does not hard-cancel work in the filesystem-change loop that may be
-mutating Git, SQLite, or the Watched Save. A stability probe running in that
-loop is likewise awaited. A pending deferred timer is cancelled, but an
-already-started deferred stability probe or observation is not tracked or
-awaited by shutdown. Consequently, that work can continue after `watch.lock`
-is released and `stopped` is emitted. Waiting for all active observation work
-before releasing resources remains the lifecycle target in
-[ADR-0018](../adr/0018-secure-versioned-local-http-adapter.md), not a guarantee
-of the current runtime.
-
-## Current Implementation Gaps
-
-The previous design describes scheduling and shutdown guarantees that the live
-runtime does not currently provide: applying `debounceWriteMs` to real file
-changes, stability-probing the startup observation, and waiting for an
-already-started deferred observation before releasing process resources. It
-also describes merging later events into a pending deferred opportunity, while
-the current deferred timer remains independent of the change loop. These are
-implementation gaps, not current architecture guarantees. Their implementation
-and verification are tracked by
-[#16](https://github.com/ffff2004/silksong-git/issues/16).
+The process does not hard-cancel started stability probes or work that may be
+mutating Git, SQLite, or the Watched Save. It waits for that path before
+releasing resources, while cancelling only opportunities that have not begun.

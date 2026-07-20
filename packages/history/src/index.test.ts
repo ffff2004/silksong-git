@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { createHash } from "node:crypto";
 import {
   copyFile,
   mkdir,
@@ -225,16 +226,90 @@ class TestWatchScheduler implements WatchScheduler {
   }
 }
 
-function createFailOnceFileStabilityProbe(): FileStabilityProbe {
-  let shouldFail = true;
+interface BlockingStabilityProbe extends FileStabilityProbe {
+  readonly checkCount: number;
+  readonly activeCheckCount: number;
+  readonly maximumActiveCheckCount: number;
+  blockNextCheck: () => {
+    readonly waitForCheck: () => Promise<void>;
+    readonly release: () => void;
+  };
+}
+
+function createBlockingStabilityProbe(): BlockingStabilityProbe {
+  let checkCount = 0;
+  let activeCheckCount = 0;
+  let maximumActiveCheckCount = 0;
+  let nextGate:
+    | {
+        readonly checkStarted: PromiseWithResolvers<undefined>;
+        readonly stable: PromiseWithResolvers<undefined>;
+      }
+    | undefined;
+
+  return {
+    get checkCount() {
+      return checkCount;
+    },
+    get activeCheckCount() {
+      return activeCheckCount;
+    },
+    get maximumActiveCheckCount() {
+      return maximumActiveCheckCount;
+    },
+    blockNextCheck() {
+      const gate = {
+        checkStarted: Promise.withResolvers<undefined>(),
+        stable: Promise.withResolvers<undefined>(),
+      };
+
+      nextGate = gate;
+
+      return {
+        waitForCheck: async () => {
+          await gate.checkStarted.promise;
+        },
+        release: () => {
+          gate.stable.resolve(undefined);
+        },
+      };
+    },
+    async waitForStableFile() {
+      checkCount++;
+      activeCheckCount++;
+      maximumActiveCheckCount = Math.max(
+        maximumActiveCheckCount,
+        activeCheckCount,
+      );
+      const gate = nextGate;
+      nextGate = undefined;
+      const stable =
+        gate === undefined ? Promise.resolve(undefined) : gate.stable.promise;
+
+      if (gate !== undefined) {
+        gate.checkStarted.resolve(undefined);
+      }
+
+      try {
+        await stable;
+      } finally {
+        activeCheckCount--;
+      }
+    },
+  };
+}
+
+function createFailOnceFileStabilityProbe(failOnCheck = 1): FileStabilityProbe {
+  let checkCount = 0;
 
   return {
     waitForStableFile: async () => {
-      if (!shouldFail) {
+      checkCount++;
+
+      if (checkCount !== failOnCheck) {
         return;
       }
 
-      shouldFail = false;
       throw new Error("Watched Save did not become stable.");
     },
   };
@@ -296,6 +371,33 @@ function createSequencedFileStabilityProbe(): SequencedFileStabilityProbe {
 
       await stable.promise;
     },
+  };
+}
+
+async function startWatchProcessWithSequencedStartupStability(
+  input: Parameters<typeof startLocalHistoryWatchProcess>[0],
+  fileStabilityProbe: SequencedFileStabilityProbe,
+): Promise<{
+  readonly process: Awaited<ReturnType<typeof startLocalHistoryWatchProcess>>;
+  readonly startupStabilityCheckCount: number;
+}> {
+  const start = startLocalHistoryWatchProcess(input);
+  const first = await Promise.race([
+    fileStabilityProbe
+      .waitForCheckCount(1)
+      .then(() => ({ type: "stabilityCheck" as const })),
+    start.then((process) => ({ type: "process" as const, process })),
+  ]);
+
+  if (first.type === "process") {
+    return { process: first.process, startupStabilityCheckCount: 0 };
+  }
+
+  fileStabilityProbe.markStable();
+
+  return {
+    process: await start,
+    startupStabilityCheckCount: 1,
   };
 }
 
@@ -942,6 +1044,57 @@ test("startLocalHistoryWatchProcess emits started and performs a startup observa
   await process.stop();
 });
 
+test("startLocalHistoryWatchProcess waits for file stability before its startup observation", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watchEventSource = new TestWatchEventSource();
+  const fileStabilityProbe = createSequencedFileStabilityProbe();
+  const events: LocalHistoryWatchProcessEvent[] = [];
+  const start = startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    fileStabilityProbe,
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  const first = await Promise.race([
+    fileStabilityProbe
+      .waitForCheckCount(1)
+      .then(() => ({ type: "stabilityCheck" as const })),
+    start.then((process) => ({ type: "process" as const, process })),
+  ]);
+
+  if (first.type === "process") {
+    await first.process.stop();
+    assert.fail("startup observation must begin with a stability check");
+  }
+
+  assert.equal(
+    events.some(
+      (event) => event.type === "observation" && event.cause === "startup",
+    ),
+    false,
+  );
+
+  fileStabilityProbe.markStable();
+  const process = await start;
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  assert.deepEqual(fileStabilityProbe.checkedPaths, [repo.watchedSavePath]);
+  assert.equal(
+    events.some(
+      (event) => event.type === "observation" && event.cause === "startup",
+    ),
+    true,
+  );
+  await process.stop();
+});
+
 test("startLocalHistoryWatchProcess atomically starts authenticated HTTP on a dynamic port", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
@@ -1119,7 +1272,9 @@ test("Local History Watch Process is a singleton per Save History Repository", a
 });
 
 test("Local History Watch Process observes file-change events", async (t) => {
-  const repo = await createHistoryRepo(t);
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: { debounceWriteMs: 0 },
+  });
   const watchEventSource = new TestWatchEventSource();
   const events: LocalHistoryWatchProcessEvent[] = [];
   const process = await startLocalHistoryWatchProcess({
@@ -1172,7 +1327,9 @@ test("Local History Watch Process observes file-change events", async (t) => {
 });
 
 test("Local History Watch Process waits for file stability before observing changes", async (t) => {
-  const repo = await createHistoryRepo(t);
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: { debounceWriteMs: 0 },
+  });
   const watchEventSource = new TestWatchEventSource();
   const fileStabilityProbe = createSequencedFileStabilityProbe();
   const events: LocalHistoryWatchProcessEvent[] = [];
@@ -1185,7 +1342,11 @@ test("Local History Watch Process waits for file stability before observing chan
     },
     now: () => new Date("2026-06-30T12:00:00.000Z"),
   };
-  const process = await startLocalHistoryWatchProcess(processInput);
+  const { process, startupStabilityCheckCount } =
+    await startWatchProcessWithSequencedStartupStability(
+      processInput,
+      fileStabilityProbe,
+    );
 
   t.after(async () => {
     await process.stop();
@@ -1193,9 +1354,15 @@ test("Local History Watch Process waits for file stability before observing chan
 
   await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
   const change = watchEventSource.emitChange();
-  await fileStabilityProbe.waitForCheckCount(1);
+  await fileStabilityProbe.waitForCheckCount(startupStabilityCheckCount + 1);
 
-  assert.deepEqual(fileStabilityProbe.checkedPaths, [repo.watchedSavePath]);
+  assert.deepEqual(
+    fileStabilityProbe.checkedPaths,
+    Array.from(
+      { length: startupStabilityCheckCount + 1 },
+      () => repo.watchedSavePath,
+    ),
+  );
   assert.equal(
     events.some(
       (event) => event.type === "observation" && event.cause === "change",
@@ -1221,13 +1388,15 @@ test("Local History Watch Process waits for file stability before observing chan
 });
 
 test("Local History Watch Process reports stability timeout as a nonfatal Watcher Error", async (t) => {
-  const repo = await createHistoryRepo(t);
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: { debounceWriteMs: 0 },
+  });
   const watchEventSource = new TestWatchEventSource();
   const events: LocalHistoryWatchProcessEvent[] = [];
   const process = await startLocalHistoryWatchProcess({
     repoPath: repo.repoPath,
     watchEventSource,
-    fileStabilityProbe: createFailOnceFileStabilityProbe(),
+    fileStabilityProbe: createFailOnceFileStabilityProbe(2),
     onEvent: (event) => {
       events.push(event);
     },
@@ -1273,19 +1442,25 @@ test("Local History Watch Process reports stability timeout as a nonfatal Watche
 });
 
 test("Local History Watch Process coalesces change events while an observation is running", async (t) => {
-  const repo = await createHistoryRepo(t);
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: { debounceWriteMs: 0 },
+  });
   const watchEventSource = new TestWatchEventSource();
   const fileStabilityProbe = createSequencedFileStabilityProbe();
   const events: LocalHistoryWatchProcessEvent[] = [];
-  const process = await startLocalHistoryWatchProcess({
-    repoPath: repo.repoPath,
-    watchEventSource,
-    fileStabilityProbe,
-    onEvent: (event) => {
-      events.push(event);
-    },
-    now: () => new Date("2026-06-30T12:00:00.000Z"),
-  });
+  const { process, startupStabilityCheckCount } =
+    await startWatchProcessWithSequencedStartupStability(
+      {
+        repoPath: repo.repoPath,
+        watchEventSource,
+        fileStabilityProbe,
+        onEvent: (event) => {
+          events.push(event);
+        },
+        now: () => new Date("2026-06-30T12:00:00.000Z"),
+      },
+      fileStabilityProbe,
+    );
 
   t.after(async () => {
     await process.stop();
@@ -1293,7 +1468,7 @@ test("Local History Watch Process coalesces change events while an observation i
 
   await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
   const firstChange = watchEventSource.emitChange();
-  await fileStabilityProbe.waitForCheckCount(1);
+  await fileStabilityProbe.waitForCheckCount(startupStabilityCheckCount + 1);
 
   await copyFile(
     maskShard2CollectedRosariesEncodedSavePath,
@@ -1301,10 +1476,16 @@ test("Local History Watch Process coalesces change events while an observation i
   );
   const secondChange = watchEventSource.emitChange();
 
-  assert.deepEqual(fileStabilityProbe.checkedPaths, [repo.watchedSavePath]);
+  assert.deepEqual(
+    fileStabilityProbe.checkedPaths,
+    Array.from(
+      { length: startupStabilityCheckCount + 1 },
+      () => repo.watchedSavePath,
+    ),
+  );
 
   fileStabilityProbe.markStable();
-  await fileStabilityProbe.waitForCheckCount(2);
+  await fileStabilityProbe.waitForCheckCount(startupStabilityCheckCount + 2);
   fileStabilityProbe.markStable();
   await Promise.all([firstChange, secondChange]);
 
@@ -1326,6 +1507,7 @@ test("Local History Watch Process coalesces change events while an observation i
 test("Local History Watch Process schedules a deferred observation after a minimum-interval skip", async (t) => {
   const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
     capturePolicy: {
+      debounceWriteMs: 0,
       minCommitIntervalMs: 60 * 1000,
     },
   });
@@ -1333,29 +1515,30 @@ test("Local History Watch Process schedules a deferred observation after a minim
   const watchScheduler = new TestWatchScheduler();
   const fileStabilityProbe = createSequencedFileStabilityProbe();
   const events: LocalHistoryWatchProcessEvent[] = [];
-  const observedTimes = [
-    new Date("2026-06-30T12:00:00.000Z"),
-    new Date("2026-06-30T12:00:10.000Z"),
-    new Date("2026-06-30T12:01:00.000Z"),
-  ];
-  const process = await startLocalHistoryWatchProcess({
-    repoPath: repo.repoPath,
-    watchEventSource,
-    watchScheduler,
-    fileStabilityProbe,
-    onEvent: (event) => {
-      events.push(event);
-    },
-    now: () => observedTimes.shift() ?? new Date("2026-06-30T12:01:00.000Z"),
-  });
+  let now = new Date("2026-06-30T12:00:00.000Z");
+  const { process, startupStabilityCheckCount } =
+    await startWatchProcessWithSequencedStartupStability(
+      {
+        repoPath: repo.repoPath,
+        watchEventSource,
+        watchScheduler,
+        fileStabilityProbe,
+        onEvent: (event) => {
+          events.push(event);
+        },
+        now: () => now,
+      },
+      fileStabilityProbe,
+    );
 
   t.after(async () => {
     await process.stop();
   });
 
+  now = new Date("2026-06-30T12:00:10.000Z");
   await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
   const change = watchEventSource.emitChange();
-  await fileStabilityProbe.waitForCheckCount(1);
+  await fileStabilityProbe.waitForCheckCount(startupStabilityCheckCount + 1);
   fileStabilityProbe.markStable();
   await change;
 
@@ -1372,9 +1555,10 @@ test("Local History Watch Process schedules a deferred observation after a minim
     maskShard2CollectedRosariesEncodedSavePath,
     repo.watchedSavePath,
   );
+  now = new Date("2026-06-30T12:01:00.000Z");
   const deferred = scheduledDeferred.run();
 
-  await fileStabilityProbe.waitForCheckCount(2);
+  await fileStabilityProbe.waitForCheckCount(startupStabilityCheckCount + 2);
   fileStabilityProbe.markStable();
   await deferred;
 
@@ -1393,15 +1577,293 @@ test("Local History Watch Process schedules a deferred observation after a minim
     deferredObservation.result.observation.observedAt,
     "2026-06-30T12:01:00.000Z",
   );
-  assert.deepEqual(fileStabilityProbe.checkedPaths, [
-    repo.watchedSavePath,
-    repo.watchedSavePath,
-  ]);
+  assert.deepEqual(
+    fileStabilityProbe.checkedPaths,
+    Array.from(
+      { length: startupStabilityCheckCount + 2 },
+      () => repo.watchedSavePath,
+    ),
+  );
   await process.stop();
 });
 
+test("Local History Watch Process applies debounce before probing a real file change", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: { debounceWriteMs: 500 },
+  });
+  const watchEventSource = new TestWatchEventSource();
+  const watchScheduler = new TestWatchScheduler();
+  const events: LocalHistoryWatchProcessEvent[] = [];
+  let stabilityCheckCount = 0;
+  let now = new Date("2026-06-30T12:00:00.000Z");
+  const process = await startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    watchScheduler,
+    fileStabilityProbe: {
+      waitForStableFile: async () => {
+        stabilityCheckCount++;
+      },
+    },
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => now,
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  await watchEventSource.emitChange();
+
+  assert.equal(stabilityCheckCount, 1);
+  assert.equal(
+    events.some(
+      (event) => event.type === "observation" && event.cause === "change",
+    ),
+    false,
+  );
+  assert.equal(watchScheduler.scheduled.length, 1);
+  const [debouncedChange] = watchScheduler.scheduled;
+
+  assert.ok(debouncedChange !== undefined);
+  assert.equal(debouncedChange.runAt.toISOString(), "2026-06-30T12:00:00.500Z");
+
+  now = new Date("2026-06-30T12:00:00.500Z");
+  await debouncedChange.run();
+
+  assert.equal(stabilityCheckCount, 2);
+  assert.equal(
+    events.filter(
+      (event) => event.type === "observation" && event.cause === "change",
+    ).length,
+    1,
+  );
+  await process.stop();
+});
+
+test("Local History Watch Process merges later changes into one deferred observation", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: {
+      debounceWriteMs: 500,
+      minCommitIntervalMs: 60 * 1000,
+    },
+  });
+  const watchEventSource = new TestWatchEventSource();
+  const watchScheduler = new TestWatchScheduler();
+  const events: LocalHistoryWatchProcessEvent[] = [];
+  const fileStabilityProbe = createBlockingStabilityProbe();
+  let now = new Date("2026-06-30T12:00:00.000Z");
+  const process = await startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    watchScheduler,
+    fileStabilityProbe,
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => now,
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  now = new Date("2026-06-30T12:00:10.000Z");
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  await watchEventSource.emitChange();
+
+  const [firstDebouncedChange] = watchScheduler.scheduled;
+
+  assert.ok(firstDebouncedChange !== undefined);
+  assert.equal(
+    firstDebouncedChange.runAt.toISOString(),
+    "2026-06-30T12:00:10.500Z",
+  );
+
+  now = new Date("2026-06-30T12:00:10.500Z");
+  await firstDebouncedChange.run();
+
+  assert.equal(
+    events.filter(
+      (event) => event.type === "observation" && event.cause === "change",
+    ).length,
+    1,
+  );
+
+  now = new Date("2026-06-30T12:00:20.000Z");
+  await copyFile(
+    maskShard2CollectedRosariesEncodedSavePath,
+    repo.watchedSavePath,
+  );
+  await watchEventSource.emitChange();
+
+  assert.equal(fileStabilityProbe.checkCount, 2);
+  assert.equal(fileStabilityProbe.activeCheckCount, 0);
+
+  assert.equal(
+    events.filter(
+      (event) => event.type === "observation" && event.cause === "change",
+    ).length,
+    1,
+  );
+
+  const pendingDeferred = watchScheduler.scheduled.filter(
+    (scheduled) =>
+      !scheduled.canceled
+      && scheduled.runAt.toISOString() === "2026-06-30T12:01:00.000Z",
+  );
+
+  assert.equal(pendingDeferred.length, 1);
+  const [deferredTask] = pendingDeferred;
+
+  assert.ok(deferredTask !== undefined);
+  now = new Date("2026-06-30T12:01:00.000Z");
+  const deferredProbe = fileStabilityProbe.blockNextCheck();
+  const deferred = deferredTask.run();
+
+  await deferredProbe.waitForCheck();
+  assert.equal(fileStabilityProbe.activeCheckCount, 1);
+  assert.equal(fileStabilityProbe.maximumActiveCheckCount, 1);
+  deferredProbe.release();
+  await deferred;
+
+  const deferredObservation = events.find(
+    (
+      event,
+    ): event is Extract<
+      LocalHistoryWatchProcessEvent,
+      { type: "observation" }
+    > => event.type === "observation" && event.cause === "deferred",
+  );
+
+  assert.ok(deferredObservation !== undefined);
+  assert.equal(deferredObservation.result.status, "committed");
+  const expectedHash = createHash("sha256")
+    .update(await readFile(maskShard2CollectedRosariesEncodedSavePath))
+    .digest("hex");
+
+  assert.equal(
+    deferredObservation.result.observation.encodedSha256,
+    expectedHash,
+  );
+  await process.stop();
+});
+
+test("Local History Watch Process cancels a deferred observation that has not started", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: { debounceWriteMs: 0, minCommitIntervalMs: 60 * 1000 },
+  });
+  const watchEventSource = new TestWatchEventSource();
+  const watchScheduler = new TestWatchScheduler();
+  const events: LocalHistoryWatchProcessEvent[] = [];
+  const process = await startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    watchScheduler,
+    fileStabilityProbe: { waitForStableFile: async () => undefined },
+    onEvent: (event) => {
+      events.push(event);
+    },
+    now: () => new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  await watchEventSource.emitChange();
+
+  const [deferredTask] = watchScheduler.scheduled;
+
+  assert.ok(deferredTask !== undefined);
+  await process.stop();
+
+  assert.equal(deferredTask.canceled, true);
+  await deferredTask.run();
+  assert.equal(
+    events.some(
+      (event) => event.type === "observation" && event.cause === "deferred",
+    ),
+    false,
+  );
+});
+
+test("Local History Watch Process waits for an active deferred observation before releasing watch ownership", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: { debounceWriteMs: 0, minCommitIntervalMs: 60 * 1000 },
+  });
+  const watchEventSource = new TestWatchEventSource();
+  const watchScheduler = new TestWatchScheduler();
+  const fileStabilityProbe = createBlockingStabilityProbe();
+  let now = new Date("2026-06-30T12:00:00.000Z");
+  const process = await startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    watchEventSource,
+    watchScheduler,
+    fileStabilityProbe,
+    now: () => now,
+  });
+
+  t.after(async () => {
+    await process.stop();
+  });
+
+  const changeProbe = fileStabilityProbe.blockNextCheck();
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const change = watchEventSource.emitChange();
+  await changeProbe.waitForCheck();
+  changeProbe.release();
+  await change;
+
+  const [deferredTask] = watchScheduler.scheduled;
+
+  assert.ok(deferredTask !== undefined);
+  const deferredProbe = fileStabilityProbe.blockNextCheck();
+  now = new Date("2026-06-30T12:01:00.000Z");
+  const deferred = deferredTask.run();
+  await deferredProbe.waitForCheck();
+
+  const stop = process.stop();
+  const competingStart = await startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    watchEventSource: new TestWatchEventSource(),
+    fileStabilityProbe: { waitForStableFile: async () => undefined },
+  }).then(
+    (nextProcess) => ({ type: "started" as const, nextProcess }),
+    (error: unknown) => ({ type: "rejected" as const, error }),
+  );
+
+  deferredProbe.release();
+  await Promise.all([deferred, stop]);
+
+  if (competingStart.type === "started") {
+    await competingStart.nextProcess.stop();
+    assert.fail(
+      "watch ownership must remain held while deferred work is active",
+    );
+  }
+
+  assert.ok(
+    competingStart.error instanceof LocalHistoryWatchProcessAlreadyRunningError,
+  );
+
+  const nextProcess = await startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    watchEventSource: new TestWatchEventSource(),
+    fileStabilityProbe: { waitForStableFile: async () => undefined },
+  });
+
+  await nextProcess.stop();
+});
+
 test("Local History Watch Process reports save read failures as nonfatal Watcher Errors", async (t) => {
-  const repo = await createHistoryRepo(t);
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: { debounceWriteMs: 0 },
+  });
   const watchEventSource = new TestWatchEventSource();
   const events: LocalHistoryWatchProcessEvent[] = [];
   const process = await startLocalHistoryWatchProcess({

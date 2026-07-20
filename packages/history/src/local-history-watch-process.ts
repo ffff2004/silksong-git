@@ -13,7 +13,6 @@ import type {
   FileStabilityProbe,
   LocalHistoryWatchProcess,
   ObserveSaveResult,
-  ScheduledWatchTask,
   StartLocalHistoryWatchProcessInput,
   WatchEventSource,
   WatchEventSourceStartInput,
@@ -21,6 +20,7 @@ import type {
   WatchScheduler,
 } from "./types.ts";
 import { acquireWatchLock } from "./watch-lock.ts";
+import { createWatchObservationCoordinator } from "./watch-observation-coordinator.ts";
 import { withHistoryWriteLock } from "./write-lock.ts";
 
 export async function startLocalHistoryWatchProcess(
@@ -41,11 +41,6 @@ export async function startLocalHistoryWatchProcess(
   let subscription: WatchEventSubscription | undefined;
   let httpServer: ServerType | undefined;
   let http: LocalHistoryWatchProcess["http"];
-  let changeLoop: Promise<void> | undefined;
-  let deferredObservationTask: ScheduledWatchTask | undefined;
-  const changeState = {
-    dirty: false,
-  };
   let stopped = false;
   const startedAt = now.toISOString();
   let activity: "idle" | "pending" | "observing" = "idle";
@@ -53,6 +48,21 @@ export async function startLocalHistoryWatchProcess(
   let lastObservation: ReturnType<
     LocalHistoryWatchProcess["getWatcherStatus"]
   >["lastObservation"];
+  const observationCoordinator = createWatchObservationCoordinator({
+    watchedSavePath: config.watchedSavePath,
+    debounceWriteMs: config.capturePolicy.debounceWriteMs,
+    fileStabilityProbe,
+    watchScheduler,
+    now: () => input.now?.() ?? new Date(),
+    observe: observeAndEmit,
+    complete: completeObservation,
+    setActivity: (nextActivity) => {
+      activity = nextActivity;
+    },
+    onUnexpectedError: (error) => {
+      handleFatalWatchBackendError(error).catch(() => undefined);
+    },
+  });
 
   try {
     await startAndObserve();
@@ -73,11 +83,11 @@ export async function startLocalHistoryWatchProcess(
       ...(http !== undefined && { http }),
     });
 
-    await observeAndEmit("startup", now);
+    await observationCoordinator.start();
   }
 
   async function cleanUpFailedStart() {
-    deferredObservationTask?.cancel();
+    await observationCoordinator.stop();
 
     if (subscription !== undefined) {
       await subscription.stop();
@@ -94,7 +104,7 @@ export async function startLocalHistoryWatchProcess(
     subscription = await watchEventSource.start({
       watchedSavePath: config.watchedSavePath,
       onChange: async () => {
-        await handleChangeEvent();
+        await observationCoordinator.notifyChange();
       },
       onError: async (error) => {
         await handleFatalWatchBackendError(error);
@@ -182,8 +192,7 @@ export async function startLocalHistoryWatchProcess(
       type: "stopping",
       repoPath: input.repoPath,
     });
-    deferredObservationTask?.cancel();
-    deferredObservationTask = undefined;
+    const observationStop = observationCoordinator.stop();
     if (httpServer !== undefined) {
       await closeHttpServer(httpServer);
       httpServer = undefined;
@@ -192,7 +201,7 @@ export async function startLocalHistoryWatchProcess(
       await subscription.stop();
     }
 
-    await changeLoop;
+    await observationStop;
 
     await watchLock.release();
     emit({
@@ -202,11 +211,10 @@ export async function startLocalHistoryWatchProcess(
   }
 
   async function observeAndEmit(
-    cause: "startup" | "change" | "deferred",
+    _cause: "startup" | "change" | "deferred",
     observedAt: Date,
   ): Promise<ObserveSaveResult> {
-    activity = "observing";
-    const result = await withHistoryWriteLock(
+    return await withHistoryWriteLock(
       input.repoPath,
       async () =>
         await observeSaveUsingConfig({
@@ -216,85 +224,6 @@ export async function startLocalHistoryWatchProcess(
           trigger: "watcher",
         }),
     );
-
-    completeObservation(cause, result, observedAt);
-
-    scheduleDeferredObservation(result);
-
-    return result;
-  }
-
-  function scheduleDeferredObservation(result: ObserveSaveResult) {
-    if (
-      result.status !== "skipped"
-      || result.reason !== "minimumCommitInterval"
-      || deferredObservationTask !== undefined
-      || stopped
-    ) {
-      return;
-    }
-
-    deferredObservationTask = watchScheduler.scheduleAt(
-      new Date(result.nextAllowedAt),
-      async () => {
-        deferredObservationTask = undefined;
-
-        if (!stopped) {
-          await observeStableFile("deferred");
-        }
-      },
-    );
-    activity = "pending";
-  }
-
-  async function handleChangeEvent() {
-    if (changeLoop !== undefined) {
-      changeState.dirty = true;
-      return;
-    }
-
-    changeLoop = runChangeLoop();
-
-    try {
-      await changeLoop;
-    } finally {
-      changeLoop = undefined;
-    }
-  }
-
-  async function runChangeLoop() {
-    changeState.dirty = false;
-    await observeStableFile("change");
-
-    if (isChangeDirty()) {
-      await runChangeLoop();
-    }
-  }
-
-  function isChangeDirty(): boolean {
-    return changeState.dirty;
-  }
-
-  async function observeStableFile(cause: "change" | "deferred") {
-    activity = "pending";
-    try {
-      await fileStabilityProbe.waitForStableFile(config.watchedSavePath);
-    } catch (error) {
-      completeObservation(
-        cause,
-        {
-          status: "watcherError",
-          error: {
-            message: getErrorMessage(error),
-            reason: "stabilityTimeout",
-          },
-        },
-        input.now?.() ?? new Date(),
-      );
-      return;
-    }
-
-    await observeAndEmit(cause, input.now?.() ?? new Date());
   }
 
   function completeObservation(
