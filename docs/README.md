@@ -6,19 +6,20 @@ delivery state, and preserved legacy behavior.
 
 ## Authority Map
 
-| Knowledge                                  | Authority                                                                                                                                                     |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Domain vocabulary                          | [`CONTEXT.md`](../CONTEXT.md)                                                                                                                                 |
-| Accepted decisions and rationale           | Individual [ADRs](adr/README.md)                                                                                                                              |
-| Current system and Module architecture     | [Architecture documents](#architecture)                                                                                                                       |
-| Public TypeScript Interfaces               | Package-root [`@silksong-git/core`](../packages/core/src/index.ts) and [`@silksong-git/history`](../packages/history/src/index.ts) exports and behavior tests |
-| CLI syntax, safety, and error behavior     | [CLI Reference](reference/cli.md), implementation, and behavior tests                                                                                         |
-| Local HTTP protocol                        | Runtime schemas, generated OpenAPI, and the [Local HTTP API Reference](reference/local-http-api.md)                                                           |
-| Current delivery state, blockers, claims   | GitHub specs and tickets, governed by the [issue tracker rules](agents/issue-tracker.md)                                                                      |
-| Explicitly rejected project enhancements   | `.out-of-scope/`, governed by the [issue tracker rules](agents/issue-tracker.md#project-level-rejected-enhancements)                                          |
-| Implementation and verification history    | Commits, pull requests, and CI                                                                                                                                |
-| Preserved pre-Solid Web behavior           | [Legacy Web references](legacy/web-before-solid/overview.md)                                                                                                  |
-| Agent tracker and domain-consumption rules | [`agents/`](agents/)                                                                                                                                          |
+| Knowledge                                     | Authority                                                                                                                                                     | Update When                                                     |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Documentation navigation and authority rules  | This document                                                                                                                                                 | A document role or authority boundary changes.                  |
+| Domain vocabulary                             | [`CONTEXT.md`](../CONTEXT.md)                                                                                                                                 | A domain term is settled or renamed.                            |
+| Accepted decisions and rationale              | Individual [ADRs](adr/README.md)                                                                                                                              | A decision is accepted, superseded, or replaced.                |
+| Current system and Module architecture        | [Architecture documents](#architecture)                                                                                                                       | Implemented architecture or one of its boundaries changes.      |
+| Public TypeScript Interfaces and behavior     | Package-root [`@silksong-git/core`](../packages/core/src/index.ts) and [`@silksong-git/history`](../packages/history/src/index.ts) exports and behavior tests | A callable contract or its behavior changes.                    |
+| CLI syntax, safety, and error behavior        | [CLI Reference](reference/cli.md), implementation, and behavior tests                                                                                         | User-facing CLI behavior changes.                               |
+| Local HTTP protocol                           | Runtime schemas, generated OpenAPI, and the [Local HTTP API Reference](reference/local-http-api.md)                                                           | Wire behavior or its executable contract changes.               |
+| Intended outcomes and changing delivery state | GitHub specs and tickets, governed by the [issue tracker rules](agents/issue-tracker.md)                                                                      | Scope, acceptance, dependencies, claims, or state changes.      |
+| Explicitly rejected project enhancements      | `.out-of-scope/`, governed by the [issue tracker rules](agents/issue-tracker.md#project-level-rejected-enhancements)                                          | A rejection is accepted, clarified, or reconsidered.            |
+| Implementation and verification history       | Commits, pull requests, and CI                                                                                                                                | A change is implemented or verified.                            |
+| Preserved pre-Solid Web behavior              | [Legacy Web references](legacy/web-before-solid/overview.md)                                                                                                  | Historical evidence is clarified or reclassified.               |
+| Agent tracker and domain-consumption rules    | [`agents/`](agents/)                                                                                                                                          | Agent workflow, tracker, triage, or domain-consumption changes. |
 
 ## Architecture
 
@@ -61,26 +62,9 @@ documentation links to tracker queries without copying task status or logs.
 - [Pre-Solid Web overview](legacy/web-before-solid/overview.md)
 - [Pre-Solid save-to-semantic mapping](legacy/web-before-solid/save-to-semantic.md)
 
-## Classification Rules
-
-Store each fact according to the question it answers:
-
-| Question                                              | Owner                                   |
-| ----------------------------------------------------- | --------------------------------------- |
-| What does this domain term mean?                      | `CONTEXT.md`                            |
-| How is the current system divided and constrained?    | Architecture                            |
-| Why was a durable decision accepted?                  | ADR                                     |
-| What is the exact callable or wire contract?          | Code, generated contract, and Reference |
-| What user outcome should a future change deliver?     | GitHub spec                             |
-| What can an agent implement now, and what blocks it?  | GitHub ticket                           |
-| What enhancement has the project explicitly rejected? | `.out-of-scope/<concept>.md`            |
-| What happened during implementation and validation?   | Pull request, CI, and Git history       |
-| What old behavior must a migration preserve?          | Legacy reference                        |
-
-Link to an authoritative source instead of restating its details.
-
 ## Maintenance Rules
 
+- Link to an authoritative source instead of restating its details.
 - Architecture documents describe implemented ownership and invariants; future
   outcomes belong in tracker specs or tickets.
 - Do not copy full TypeScript types, HTTP schemas, SQLite layouts, test logs, or

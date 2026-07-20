@@ -30,28 +30,16 @@ This repository uses a
 
 ## Documentation Map
 
-Start with the [documentation map](docs/README.md). It maps each kind of project
-knowledge to its authoritative source.
-
-The current authoritative sources are:
-
-| Source                             | Owns                                                  | Update When                                                     |
-| ---------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------- |
-| [`docs/README.md`](docs/README.md) | Documentation navigation and authority map.           | A document role or authority boundary changes.                  |
-| [`CONTEXT.md`](CONTEXT.md)         | Domain vocabulary.                                    | A domain term is settled or renamed.                            |
-| `docs/architecture/`               | Current system and Module ownership and invariants.   | Implemented architecture or a current boundary changes.         |
-| `docs/adr/`                        | Accepted decisions and rationale.                     | A decision is accepted, superseded, or replaced.                |
-| `docs/reference/`                  | CLI and Local HTTP user/integration contracts.        | User-facing or wire behavior changes.                           |
-| Package-root exports and tests     | Exact public TypeScript Interfaces and behavior.      | A callable contract or its behavior changes.                    |
-| GitHub specs and tickets           | Intended outcomes, active work, blockers, and claims. | Scope, acceptance, dependencies, or execution state changes.    |
-| `docs/legacy/`                     | Preserved historical behavior and migration evidence. | Historical compatibility evidence is clarified or reclassified. |
+Start with the [documentation map](docs/README.md). It owns the classification,
+authority, and update rules for every kind of project knowledge.
 
 Before architecture, refactor, CLI, history, or semantic-mapping work, read
 `docs/README.md`, `CONTEXT.md`, and the relevant ADRs, then follow the current
 authority link for the area. Read legacy references only when preserving or
 explaining historical behavior.
 
-Do not duplicate large parts of these documents into new files. Link to them and update the authoritative document when decisions change.
+Do not duplicate authoritative content into new files. Link to it and update the
+owning source when durable knowledge changes.
 
 ## Execution Tracking
 
