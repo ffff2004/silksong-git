@@ -6,7 +6,9 @@ Object grouping reduces the amount of implicit knowledge a user must remember. A
 
 This keeps the first release focused on the core save-history workflow without committing to an interactive TUI, a broader multi-save workspace, or a general-purpose command tree before those workflows prove necessary. The grouping should follow the domain language in `CONTEXT.md` rather than internal package names such as `core`, `history`, or `read-model`.
 
-The concrete first-version subcommands and flags are specified in `docs/save-history-design.md`. That document owns the implementation map for command syntax, error behavior, and test slices; this ADR owns the durable scope decision and contract limits.
+The current command syntax and user-visible behavior belong to the
+[CLI Reference](../reference/cli.md), implementation, and behavior tests. This
+ADR owns the durable scope decision and contract limits.
 
 Machine-readable JSON output is part of the CLI contract where a command supports it. Human-readable text output can evolve as long as it remains readable, because it is for interactive use rather than automation.
 

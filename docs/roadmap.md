@@ -4,7 +4,7 @@ This page is the low-resolution entry point for active delivery. GitHub owns
 changing ticket state, claims, acceptance criteria, and blocking edges; this
 page links to those records without copying them.
 
-## Current Initiative
+## Initiative Trackers
 
 - [Documentation architecture refactor spec](https://github.com/ffff2004/silksong-git/issues/1)
 - [Save History delivery migration](https://github.com/ffff2004/silksong-git/issues/3)
@@ -18,10 +18,8 @@ An agent claims a ticket by assigning it before implementation. GitHub's native
 sub-issue and blocked-by relationships are canonical; issue number order does
 not imply execution order.
 
-## Compatibility Record
+## Historical Evidence
 
-[`implementation-plan.md`](implementation-plan.md) remains available as the
-migration-era execution record until the final documentation contract ticket
-retires it as an authority. Completed phases are not recreated as retrospective
-issues. Any unfinished delivery slice or actionable follow-up belongs in the
-tracker.
+Completed delivery and verification evidence belongs to commits, pull requests,
+CI, and closed issues. It is not duplicated as a repository backlog. Any
+unfinished delivery slice or actionable follow-up belongs in the tracker.

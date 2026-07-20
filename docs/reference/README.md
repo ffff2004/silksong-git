@@ -4,7 +4,7 @@ Reference documentation explains precise user-facing and integration contracts.
 Architecture documents describe ownership and invariants instead of repeating
 these details.
 
-## Compatibility Entries
+## References
 
 - [CLI Reference](cli.md)
 - [Local HTTP API Reference](local-http-api.md)

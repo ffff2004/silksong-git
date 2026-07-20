@@ -6,52 +6,61 @@ This file is the working entry point for AI agents and maintainers. `README.md` 
 
 ### Issue tracker
 
-Issues and specs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+Issues and specs are tracked in GitHub Issues. See the
+[issue tracker rules](docs/agents/issue-tracker.md).
 
 ### Triage labels
 
-The tracker uses the canonical triage label vocabulary. See `docs/agents/triage-labels.md`.
+The tracker uses the canonical
+[triage label vocabulary](docs/agents/triage-labels.md).
 
 ### Domain docs
 
-This repository uses a single-context domain documentation layout. See `docs/agents/domain.md`.
+This repository uses a
+[single-context domain documentation layout](docs/agents/domain.md).
 
 ## Documentation Map
 
-Start with `docs/README.md`. It maps each kind of project knowledge to its
-authoritative source and records the compatibility boundaries during the
-documentation architecture migration.
+Start with the [documentation map](docs/README.md). It maps each kind of project
+knowledge to its authoritative source.
 
-The current authoritative documents remain:
+The current authoritative sources are:
 
-| Document                                    | Purpose                                                        | Update When                                                                                                 |
-| ------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `docs/README.md`                            | Documentation navigation and authority map.                    | A document role, authority boundary, or migration status changes.                                           |
-| `docs/save-history-design.md`               | Implementation map for the planned save-history fork.          | Architecture or implementation guidance changes during migration.                                           |
-| `docs/implementation-plan.md`               | Task backlog, phase order, dependencies, and progress tracker. | Task status, dependencies, acceptance criteria, or verification results change during migration.            |
-| `CONTEXT.md`                                | Domain vocabulary. Use these terms consistently.               | A domain term is settled or renamed.                                                                        |
-| `docs/adr/README.md`                        | Index of accepted decisions and rationale.                     | An ADR is accepted, superseded, or replaced.                                                                |
-| `docs/current-design-reference/overview.md` | Current Web app overview and preserved static behavior.        | Current Web UI behavior or package location is clarified or corrected; not for future architecture changes. |
+| Source                             | Owns                                                  | Update When                                                     |
+| ---------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------- |
+| [`docs/README.md`](docs/README.md) | Documentation navigation and authority map.           | A document role or authority boundary changes.                  |
+| [`CONTEXT.md`](CONTEXT.md)         | Domain vocabulary.                                    | A domain term is settled or renamed.                            |
+| `docs/architecture/`               | Current system and Module ownership and invariants.   | Implemented architecture or a current boundary changes.         |
+| `docs/adr/`                        | Accepted decisions and rationale.                     | A decision is accepted, superseded, or replaced.                |
+| `docs/reference/`                  | CLI and Local HTTP user/integration contracts.        | User-facing or wire behavior changes.                           |
+| Package-root exports and tests     | Exact public TypeScript Interfaces and behavior.      | A callable contract or its behavior changes.                    |
+| GitHub specs and tickets           | Intended outcomes, active work, blockers, and claims. | Scope, acceptance, dependencies, or execution state changes.    |
+| `docs/legacy/`                     | Preserved historical behavior and migration evidence. | Historical compatibility evidence is clarified or reclassified. |
 
 Before architecture, refactor, CLI, history, or semantic-mapping work, read
 `docs/README.md`, `CONTEXT.md`, and the relevant ADRs, then follow the current
-authority link for the area. Read current-design references when extracting or
-preserving current behavior.
+authority link for the area. Read legacy references only when preserving or
+explaining historical behavior.
 
 Do not duplicate large parts of these documents into new files. Link to them and update the authoritative document when decisions change.
 
 ## Execution Tracking
 
-Use `docs/implementation-plan.md` as the task backlog and progress tracker.
+Use GitHub Issues as the task backlog and progress tracker. Start from the
+[Roadmap](docs/roadmap.md) and follow the
+[issue tracker rules](docs/agents/issue-tracker.md).
 
 Before starting implementation work:
 
-- Read the current phase and task status in `docs/implementation-plan.md`.
-- Pick a task whose dependencies are complete.
+- Fetch the ticket, comments, labels, assignee, and blocking relationships.
+- Pick an open, unassigned task whose dependencies are complete, then claim it.
 - Keep the task's owned files and acceptance criteria in mind.
-- When the task is done, update its status and verification results in `docs/implementation-plan.md`.
+- When the task is done, record durable changes in the repository and update
+  the ticket's checklist, verification evidence, and state.
 
-Do not rely on chat history for project state. If progress, dependencies, or task status changes, record it in `docs/implementation-plan.md`.
+Do not rely on chat history for project state. Record changing delivery state
+in GitHub; commits, pull requests, and CI own implementation and verification
+history.
 
 ## Architecture Guardrails
 
