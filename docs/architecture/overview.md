@@ -122,9 +122,9 @@ duplicated here.
 The current Local HTTP Adapter's compatibility metadata still reads Project
 Config through a History-internal reader rather than a public package
 Interface. This is a current deviation from the guardrail above, not an
-accepted architecture boundary; the
-[remaining-knowledge classification ticket](https://github.com/ffff2004/silksong-git/issues/11)
-owns its disposition.
+accepted architecture boundary. Moving that read behind the public History
+Interface is tracked by
+[#15](https://github.com/ffff2004/silksong-git/issues/15).
 
 ## Future Boundary
 

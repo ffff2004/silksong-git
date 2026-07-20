@@ -188,7 +188,6 @@ changes, stability-probing the startup observation, and waiting for an
 already-started deferred observation before releasing process resources. It
 also describes merging later events into a pending deferred opportunity, while
 the current deferred timer remains independent of the change loop. These are
-implementation gaps, not current architecture guarantees. The documentation
-migration's
-[classification ticket](https://github.com/ffff2004/silksong-git/issues/11)
-owns their disposition.
+implementation gaps, not current architecture guarantees. Their implementation
+and verification are tracked by
+[#16](https://github.com/ffff2004/silksong-git/issues/16).

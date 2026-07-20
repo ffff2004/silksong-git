@@ -138,6 +138,6 @@ guarantees:
   Data entry in addition to the current item identity and Decoded Save sources.
 
 These questions must be resolved through ADRs or tracker work before this
-document describes them as architecture. The documentation migration's
-[classification ticket](https://github.com/ffff2004/silksong-git/issues/11)
-owns disposition of unassigned questions from the previous design document.
+document describes them as architecture. They are deferred ideas, not accepted
+delivery commitments or project-level rejections; create tracker work only
+after a concrete user outcome is accepted.
