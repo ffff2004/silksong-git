@@ -140,6 +140,6 @@ pnpm verify
 
 If satisfying the linter would conflict with the design or degrade code quality, pause the work and report.
 
-If only `*.md` files changed, `pnpm verify` may be skipped; run `pnpm format <changed-markdown-files...>` so formatting is limited to the modified files.
+If only `*.md` files changed, `pnpm verify` may be skipped; run `pnpm format` instead.
 
 If validation fails because of unrelated local files or pre-existing issues, report the exact failing paths and checks.
