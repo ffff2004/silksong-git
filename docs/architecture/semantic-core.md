@@ -122,22 +122,3 @@ Events for it. The Save History Module's decision to preserve that Raw Save
 Observation for a future rebuild is defined by
 [ADR-0016](../adr/0016-commit-unrecognized-schema-observations.md); it is not a
 Core persistence responsibility.
-
-## Unresolved Future Mapping Work
-
-The following are future design or implementation questions, not current Core
-guarantees:
-
-- selecting parsers and Mapping Data for more than the currently recognized
-  Save Schema Version;
-- deriving game and distribution provenance during parsing rather than
-  receiving it from a caller;
-- defining Mapping Data versioning and upgrade compatibility beyond the
-  current built-in version string; and
-- deciding whether Source References need a first-class pointer to a Mapping
-  Data entry in addition to the current item identity and Decoded Save sources.
-
-These questions must be resolved through ADRs or tracker work before this
-document describes them as architecture. They are deferred ideas, not accepted
-delivery commitments or project-level rejections; create tracker work only
-after a concrete user outcome is accepted.

@@ -41,10 +41,10 @@ different purposes:
 | Save History Repository (Git) | History tracks Project Config alongside each observation's Encoded Save, Decoded Save, and Observation Metadata.                        | Canonical raw history and the source for byte-for-byte restore. |
 | SQLite Semantic Read Model    | History derives Semantic Snapshots, Semantic Events, Display Semantic Event Filter metadata, and semantic Version Stamps from Git data. | Rebuildable query data, not canonical history.                  |
 
-History rebuilds the read model from Git through Core under the current parser,
-Mapping Data, and Project Config. Capture Policy decides which stable raw
-observations enter Git; Display Semantic Event Filters affect query visibility
-only. See
+History rebuilds the read model from Git through Core using the current parser
+and built-in Mapping Data. Capture Policy decides which stable raw observations
+enter Git; Project Config supplies Display Semantic Event Filters, which History
+applies later when querying the rebuilt model. See
 [ADR-0001](../adr/0001-save-history-artifacts.md),
 [ADR-0005](../adr/0005-single-save-history-repository.md), and
 [ADR-0006](../adr/0006-save-history-repository-layout.md).
@@ -125,10 +125,3 @@ Interface. This is a current deviation from the guardrail above, not an
 accepted architecture boundary. Moving that read behind the public History
 Interface is tracked by
 [#15](https://github.com/ffff2004/silksong-git/issues/15).
-
-## Future Boundary
-
-The planned CLI `ui open` workflow may open or serve the existing frontend, but
-it must remain separate from History persistence and must not create another
-watcher or writer. Track implementation and verification status through the
-[Roadmap](../roadmap.md), not this architecture document.

@@ -29,8 +29,8 @@ silksong-git watch start [--repo <history-repo>] [--jsonl] [--http] [--port <por
 ```
 
 Commander also supplies `-h, --help` on the program, groups, and commands.
-There is currently no `ui open` command or CLI export command. The future UI
-boundary is described in the [System Architecture Overview](../architecture/overview.md#future-boundary).
+There is currently no `ui open` command or CLI export command. Delivery work
+that changes the command set is tracked through the [Roadmap](../roadmap.md).
 
 ## Repository Context
 

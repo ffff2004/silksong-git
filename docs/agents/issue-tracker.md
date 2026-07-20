@@ -36,6 +36,19 @@ Create a GitHub issue in `ffff2004/silksong-git`.
 
 Run `gh issue view <number> -R ffff2004/silksong-git --comments`.
 
+## Project-level rejected enhancements
+
+Use `.out-of-scope/<concept>.md` as the durable owner for an enhancement the
+project has explicitly decided not to support. Create the directory lazily when
+the first rejection is accepted, keep one concept per file, and record the
+rejected outcome, the reason, and links to relevant requests or decisions.
+
+Do not use this directory for deferred work, rejected implementation approaches,
+bugs, or behavior the project already supports. A spec's `Out of Scope` section
+applies only to that effort, and a Wayfinder map's `Out of Scope` section applies
+only to that destination. If the project reconsiders a rejected enhancement,
+remove its file before returning the outcome to tracker planning or triage.
+
 ## Wayfinding operations
 
 Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.

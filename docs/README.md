@@ -15,6 +15,7 @@ delivery state, and preserved legacy behavior.
 | CLI syntax, safety, and error behavior     | [CLI Reference](reference/cli.md), implementation, and behavior tests                                                                                         |
 | Local HTTP protocol                        | Runtime schemas, generated OpenAPI, and the [Local HTTP API Reference](reference/local-http-api.md)                                                           |
 | Current delivery state, blockers, claims   | GitHub specs and tickets, linked through the [Roadmap](roadmap.md)                                                                                            |
+| Explicitly rejected project enhancements   | `.out-of-scope/`, governed by the [issue tracker rules](agents/issue-tracker.md#project-level-rejected-enhancements)                                          |
 | Implementation and verification history    | Commits, pull requests, and CI                                                                                                                                |
 | Preserved pre-Solid Web behavior           | [Legacy Web references](legacy/web-before-solid/overview.md)                                                                                                  |
 | Agent tracker and domain-consumption rules | [`agents/`](agents/)                                                                                                                                          |
@@ -63,16 +64,17 @@ documentation links to tracker queries without copying task status or logs.
 
 Store each fact according to the question it answers:
 
-| Question                                             | Owner                                   |
-| ---------------------------------------------------- | --------------------------------------- |
-| What does this domain term mean?                     | `CONTEXT.md`                            |
-| How is the current system divided and constrained?   | Architecture                            |
-| Why was a durable decision accepted?                 | ADR                                     |
-| What is the exact callable or wire contract?         | Code, generated contract, and Reference |
-| What user outcome should a future change deliver?    | GitHub spec                             |
-| What can an agent implement now, and what blocks it? | GitHub ticket                           |
-| What happened during implementation and validation?  | Pull request, CI, and Git history       |
-| What old behavior must a migration preserve?         | Legacy reference                        |
+| Question                                              | Owner                                   |
+| ----------------------------------------------------- | --------------------------------------- |
+| What does this domain term mean?                      | `CONTEXT.md`                            |
+| How is the current system divided and constrained?    | Architecture                            |
+| Why was a durable decision accepted?                  | ADR                                     |
+| What is the exact callable or wire contract?          | Code, generated contract, and Reference |
+| What user outcome should a future change deliver?     | GitHub spec                             |
+| What can an agent implement now, and what blocks it?  | GitHub ticket                           |
+| What enhancement has the project explicitly rejected? | `.out-of-scope/<concept>.md`            |
+| What happened during implementation and validation?   | Pull request, CI, and Git history       |
+| What old behavior must a migration preserve?          | Legacy reference                        |
 
 Link to an authoritative source instead of restating its details.
 

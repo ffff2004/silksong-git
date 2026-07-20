@@ -12,16 +12,24 @@ _Avoid_: Raw save, binary save
 The raw JSON/raw object produced by decoding an Encoded Save, before semantic mapping is applied. It is useful for debugging and rebuilding semantic artifacts, but is not the canonical restore source.
 _Avoid_: Semantic JSON, UI state
 
+**Mapping Data**:
+Definitions that name recognized items and describe how the Semantic Core derives their state from a Decoded Save when creating a Semantic Snapshot.
+_Avoid_: Project Config, Semantic Snapshot, UI data
+
 **Semantic Snapshot**:
-The full set of recognized user-meaningful item, boss, quest, journal, scene, and progress states derived from a Decoded Save and the tracker's mapping data at one point in time. It covers the same item data used by the Web UI plus selected Save Summary Metrics, and belongs to the Semantic Read Model, not the canonical Git history.
+The full set of recognized user-meaningful item, boss, quest, journal, scene, and progress states derived from a Decoded Save and the tracker's Mapping Data at one point in time. It covers the same item data used by the Web UI plus selected Save Summary Metrics, and belongs to the Semantic Read Model, not the canonical Git history.
 _Avoid_: Raw JSON, UI state
+
+**Save State**:
+The current inspection value composed of a Decoded Save and, when available, its Semantic Snapshot. In Local History workflows it is fixed to either the latest or a selected Raw Save Observation.
+_Avoid_: Save Store, Raw Save Observation, Semantic Snapshot
 
 **Save Summary Metric**:
 A high-level value from the Decoded Save that summarizes the whole save rather than one mapped item, such as completion percentage, play time, rosaries, shell shards, or permadeath mode. Save Summary Metrics use semantic names rather than raw Decoded Save field names.
 _Avoid_: Semantic item, raw field diff
 
 **Semantic Event**:
-A meaningful item-level state transition between two Semantic Snapshots, such as obtaining an item, defeating a boss, accepting or completing a quest, or reaching a required progress threshold. It is not a raw field diff, though it may include Source References back to the Decoded Save and mapping data that produced it.
+A meaningful item-level state transition between two Semantic Snapshots, such as obtaining an item, defeating a boss, accepting or completing a quest, or reaching a required progress threshold. It is not a raw field diff, though it may include Source References back to the Decoded Save and Mapping Data that produced it.
 _Avoid_: File diff, raw diff
 
 **Regression Event**:
@@ -29,7 +37,7 @@ A Semantic Event where a user-meaningful state moves backward, such as `done` to
 _Avoid_: Error, invalid event
 
 **Source Reference**:
-A pointer from a Semantic Event or Semantic Snapshot item back to the Decoded Save fields and mapping data entries that produced it.
+A pointer from a Semantic Event or Semantic Snapshot item back to the Decoded Save fields and Mapping Data entries that produced it.
 _Avoid_: Event, raw diff
 
 **Raw Save Observation**:
@@ -57,7 +65,7 @@ A user-requested Raw Save Observation of the current Watched Save, intended for 
 _Avoid_: Restore point, save copy
 
 **Version Stamp**:
-A recorded version or hash that explains which game, distribution build, save schema, platform, decoder, mapping data, semantic core, and effective config produced a Decoded Save, Semantic Snapshot, or Semantic Event.
+A recorded version or hash that explains which game, distribution build, save schema, platform, decoder, Mapping Data, semantic core, and effective config produced a Decoded Save, Semantic Snapshot, or Semantic Event.
 _Avoid_: Display label
 
 **Save Schema Version**:
