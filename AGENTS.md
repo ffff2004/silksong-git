@@ -19,6 +19,15 @@ The tracker uses the canonical
 This repository uses a
 [single-context domain documentation layout](docs/agents/domain.md).
 
+## Work Intake
+
+- Use `triage` for an incoming or uncertain request.
+- Use `wayfinder` when the destination is large and the route is unclear.
+- Use `to-spec`, then `to-tickets`, when the outcome is clear but implementation
+  requires multiple agent sessions.
+- For a small maintainer-approved feature or reproducible bug, create one
+  executable ticket directly.
+
 ## Documentation Map
 
 Start with the [documentation map](docs/README.md). It maps each kind of project
@@ -46,9 +55,8 @@ Do not duplicate large parts of these documents into new files. Link to them and
 
 ## Execution Tracking
 
-Use GitHub Issues as the task backlog and progress tracker. Start from the
-[Roadmap](docs/roadmap.md) and follow the
-[issue tracker rules](docs/agents/issue-tracker.md).
+Use GitHub Issues as the task backlog and progress tracker. Start from the global
+frontier and follow the [issue tracker rules](docs/agents/issue-tracker.md).
 
 Before starting implementation work:
 
@@ -57,6 +65,11 @@ Before starting implementation work:
 - Keep the task's owned files and acceptance criteria in mind.
 - When the task is done, record durable changes in the repository and update
   the ticket's checklist, verification evidence, and state.
+
+Before implementation, record intended outcomes, scope, acceptance criteria,
+blocking edges, and claims in GitHub. Update `CONTEXT.md` or an ADR when a domain
+term or durable decision is settled. Update Architecture and Reference only with
+implemented behavior; do not describe planned behavior as current.
 
 Do not rely on chat history for project state. Record changing delivery state
 in GitHub; commits, pull requests, and CI own implementation and verification

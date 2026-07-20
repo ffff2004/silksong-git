@@ -14,7 +14,7 @@ delivery state, and preserved legacy behavior.
 | Public TypeScript Interfaces               | Package-root [`@silksong-git/core`](../packages/core/src/index.ts) and [`@silksong-git/history`](../packages/history/src/index.ts) exports and behavior tests |
 | CLI syntax, safety, and error behavior     | [CLI Reference](reference/cli.md), implementation, and behavior tests                                                                                         |
 | Local HTTP protocol                        | Runtime schemas, generated OpenAPI, and the [Local HTTP API Reference](reference/local-http-api.md)                                                           |
-| Current delivery state, blockers, claims   | GitHub specs and tickets, linked through the [Roadmap](roadmap.md)                                                                                            |
+| Current delivery state, blockers, claims   | GitHub specs and tickets, governed by the [issue tracker rules](agents/issue-tracker.md)                                                                      |
 | Explicitly rejected project enhancements   | `.out-of-scope/`, governed by the [issue tracker rules](agents/issue-tracker.md#project-level-rejected-enhancements)                                          |
 | Implementation and verification history    | Commits, pull requests, and CI                                                                                                                                |
 | Preserved pre-Solid Web behavior           | [Legacy Web references](legacy/web-before-solid/overview.md)                                                                                                  |
@@ -47,9 +47,10 @@ its generated OpenAPI artifact.
 
 ## Delivery
 
-- [Roadmap](roadmap.md) — current initiatives and tracker frontier.
+- [Global ready-for-agent frontier](https://github.com/ffff2004/silksong-git/issues?q=is%3Aissue%20is%3Aopen%20label%3Aready-for-agent%20no%3Aassignee%20-is%3Ablocked)
+  — open, unassigned work without reported blockers.
 - [Issue tracker rules](agents/issue-tracker.md) — how specs, tickets,
-  dependencies, claims, and Wayfinder artifacts are represented.
+  dependencies, claims, completion, and Wayfinder artifacts are represented.
 - [Triage labels](agents/triage-labels.md) — category and state vocabulary.
 
 GitHub is the canonical source for changing delivery state. Repository

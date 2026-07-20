@@ -12,6 +12,10 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 When a skill mentions a role, use the corresponding label string from this table.
 
-Every triaged issue carries exactly one category label (`bug` or `enhancement`) and exactly one state label from this table.
+Every open triaged issue carries exactly one category label (`bug` or
+`enhancement`) and exactly one state label from this table. A successfully
+completed issue removes its active state label before closing because GitHub's
+closed state owns completion. A rejected issue retains `wontfix` as its close
+reason.
 
 Edit the right-hand column if this repository later adopts a different tracker vocabulary.
