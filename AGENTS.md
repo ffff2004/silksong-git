@@ -43,21 +43,13 @@ owning source when durable knowledge changes.
 
 ## Execution Tracking
 
-Use GitHub Issues as the task backlog and progress tracker. Start from the global
-frontier and follow the [issue tracker rules](docs/agents/issue-tracker.md).
+GitHub Issues is the sole authority for intended outcomes, active work,
+dependencies, claims, and execution state.
 
-Before starting implementation work:
-
-- Fetch the ticket, comments, labels, assignee, and blocking relationships.
-- Pick an open, unassigned task whose dependencies are complete, then claim it.
-- Keep the task's owned files and acceptance criteria in mind.
-- When the task is done, record durable changes in the repository and update
-  the ticket's checklist, verification evidence, and state.
-
-Before implementation, record intended outcomes, scope, acceptance criteria,
-blocking edges, and claims in GitHub. Update `CONTEXT.md` or an ADR when a domain
-term or durable decision is settled. Update Architecture and Reference only with
-implemented behavior; do not describe planned behavior as current.
+Before implementation, start from the global frontier and follow the complete
+[issue tracker lifecycle](docs/agents/issue-tracker.md#implementation-lifecycle).
+Claim the ticket before implementation; the claim is the session's first tracker
+write.
 
 Do not rely on chat history for project state. Record changing delivery state
 in GitHub; commits, pull requests, and CI own implementation and verification
