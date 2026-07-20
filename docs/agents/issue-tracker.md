@@ -4,17 +4,12 @@ Issues and PRDs for this repo live as GitHub issues in `ffff2004/silksong-git`. 
 
 ## Conventions
 
-- **Create an issue**: `gh issue create -R ffff2004/silksong-git --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `gh issue view <number> -R ffff2004/silksong-git --comments`, filtering comments by `jq` and also fetching labels.
-- **List issues**: `gh issue list -R ffff2004/silksong-git --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
-- **Comment on an issue**: `gh issue comment <number> -R ffff2004/silksong-git --body "..."`.
-- **Apply or remove labels**: `gh issue edit <number> -R ffff2004/silksong-git --add-label "..."` or `--remove-label "..."`.
-- **Close**: `gh issue close <number> -R ffff2004/silksong-git --comment "..."`.
-
-This clone has both `origin` and `upstream`. When a command accepts a repository,
-always pass `-R ffff2004/silksong-git`; do not rely on remote inference. For
-`gh api`, which does not accept `-R`, use a complete
-`repos/ffff2004/silksong-git/...` endpoint.
+- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
+- **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
+- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
+- **Comment on an issue**: `gh issue comment <number> --body "..."`.
+- **Apply or remove labels**: `gh issue edit <number> --add-label "..."` or `--remove-label "..."`.
+- **Close**: `gh issue close <number> --comment "..."`.
 
 ## Global frontier
 
@@ -23,7 +18,7 @@ and no reported blocker. It covers standalone issues and child tickets without
 requiring a repository-maintained initiative list:
 
 ```sh
-gh issue list -R ffff2004/silksong-git --state open --limit 1000 \
+gh issue list --state open --limit 1000 \
   --search 'label:ready-for-agent no:assignee -is:blocked' \
   --json number,title,labels,assignees
 ```
@@ -36,7 +31,7 @@ native dependency data and confirm every blocker is closed.
 Fetch the complete human-facing ticket context:
 
 ```sh
-gh issue view <number> -R ffff2004/silksong-git --comments \
+gh issue view <number> --comments \
   --json number,title,state,body,comments,labels,assignees
 ```
 
@@ -65,7 +60,7 @@ GitHub relationship writes use numeric database IDs, not issue numbers or
 - add a blocker with
   `gh api --method POST repos/ffff2004/silksong-git/issues/<ticket>/dependencies/blocked_by -F issue_id=<blocker-db-id>`; and
 - claim with
-  `gh issue edit <number> -R ffff2004/silksong-git --add-assignee @me`.
+  `gh issue edit <number> --add-assignee @me`.
 
 Create related issues before wiring relationships so every edge can use a real
 tracker identity.
@@ -101,11 +96,11 @@ On completion:
 
 When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
 
-- **Read a PR**: `gh pr view <number> -R ffff2004/silksong-git --comments` and `gh pr diff <number> -R ffff2004/silksong-git` for the diff.
-- **List external PRs for triage**: `gh pr list -R ffff2004/silksong-git --state open --json number,title,body,labels,author,authorAssociation,comments`, then keep only `authorAssociation` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` and drop `OWNER`, `MEMBER`, and `COLLABORATOR`.
-- **Comment, label, or close**: use `gh pr comment`, `gh pr edit`, or `gh pr close` with `-R ffff2004/silksong-git`.
+- **Read a PR**: `gh pr view <number> --comments` and `gh pr diff <number>` for the diff.
+- **List external PRs for triage**: `gh pr list --state open --json number,title,body,labels,author,authorAssociation,comments`, then keep only `authorAssociation` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` and drop `OWNER`, `MEMBER`, and `COLLABORATOR`.
+- **Comment, label, or close**: use `gh pr comment`, `gh pr edit`, or `gh pr close`.
 
-GitHub shares one number space across issues and PRs, so a bare `#42` may be either. Resolve it with `gh pr view 42 -R ffff2004/silksong-git` and fall back to `gh issue view 42 -R ffff2004/silksong-git`.
+GitHub shares one number space across issues and PRs, so a bare `#42` may be either. Resolve it with `gh pr view 42` and fall back to `gh issue view 42`.
 
 ## When a skill says "publish to the issue tracker"
 
@@ -133,7 +128,7 @@ remove its file before returning the outcome to tracker planning or triage.
 
 Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
 
-- **Map**: a single issue labelled `wayfinder:map`, holding the Notes, Decisions-so-far, and Fog body. Create it with `gh issue create -R ffff2004/silksong-git --label wayfinder:map`.
+- **Map**: a single issue labelled `wayfinder:map`, holding the Notes, Decisions-so-far, and Fog body. Create it with `gh issue create --label wayfinder:map`.
 - **Child ticket**: create an issue labelled `wayfinder:<type>` (`research`, `prototype`, `grilling`, or `task`), then link it to the map using the generic native sub-issue operation. Where sub-issues are unavailable, add it to a task list in the map body and put `Part of #<map>` at the top of the child body.
 - **Blocking**: use the generic native dependency operation. Where dependencies are unavailable, fall back to a `Blocked by: #<number>, #<number>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
 - **Frontier query**: list the map's open children, drop any with an open blocker or an assignee, and take the first in map order. Scope children through GitHub sub-issues when available or the map task list fallback otherwise.
