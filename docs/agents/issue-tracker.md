@@ -82,7 +82,7 @@ repository authority; do not maintain implementation logs in prose docs.
 
 On completion:
 
-1. Check every satisfied acceptance criterion in the issue body.
+1. Use `code-review` skill and sub-agents to check every satisfied acceptance criterion in the issue body.
 2. Comment with the commit SHA, exact verification commands and results,
    authoritative documents changed, and links to non-blocking follow-ups.
 3. Remove the active workflow label such as `ready-for-agent`, then close the
