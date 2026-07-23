@@ -19,15 +19,6 @@ The tracker uses the canonical
 This repository uses a
 [single-context domain documentation layout](docs/agents/domain.md).
 
-## Work Intake
-
-- Use `triage` for an incoming or uncertain request.
-- Use `wayfinder` when the destination is large and the route is unclear.
-- Use `to-spec`, then `to-tickets`, when the outcome is clear but implementation
-  requires multiple agent sessions.
-- For a small maintainer-approved feature or reproducible bug, create one
-  executable ticket directly.
-
 ## Documentation Map
 
 Start with the [documentation map](docs/README.md). It owns the classification,
@@ -63,9 +54,7 @@ history.
 - Web, CLI, and HTTP adapters must call public package Interfaces rather than internal helpers, SQLite tables, or Git command details.
 - Display Semantic Event Filters affect query/display behavior only; they must not decide raw Git commits or delete events from SQLite.
 
-## TDD Strategy
-
-Follow `tdd` skill. Use vertical slices, not horizontal batches. One behavior test should go red, then implementation should make it green, then move to the next behavior.
+## Test Strategy
 
 Tests should verify behavior through public Interfaces:
 
