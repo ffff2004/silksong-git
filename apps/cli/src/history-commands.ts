@@ -54,6 +54,7 @@ interface ListCommandOptions {
   readonly limit?: string;
   readonly cursor?: string;
   readonly includeFiltered?: boolean;
+  readonly order?: string;
   readonly json?: boolean;
 }
 
@@ -87,6 +88,7 @@ export function registerHistoryCommands(
     .option("--limit <n>")
     .option("--cursor <cursor>")
     .option("--include-filtered")
+    .option("--order <direction>")
     .option("--json")
     .action(async (options: ListCommandOptions) => {
       await runListCommand(options, runtime);
@@ -241,6 +243,7 @@ async function runListCommandOrThrow(
     limit:
       options.limit === undefined ? undefined : parseListLimit(options.limit),
     cursor: options.cursor,
+    order: options.order as "asc" | "desc" | undefined,
   });
 
   if (options.json === true) {

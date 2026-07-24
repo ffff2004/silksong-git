@@ -18,7 +18,7 @@ silksong-git repo init --save <save.dat> --repo <history-repo> [--json]
 silksong-git save decode <save.dat> [--compact] [--out <decoded-save.json>] [--schema-check]
 silksong-git save snapshot <save.dat> --json
 
-silksong-git history list [--repo <history-repo>] [--limit <n>] [--cursor <cursor>] [--include-filtered] [--json]
+silksong-git history list [--repo <history-repo>] [--limit <n>] [--cursor <cursor>] [--include-filtered] [--order <direction>] [--json]
 silksong-git history diff <from> <to> [--repo <history-repo>] [--include-filtered] [--json]
 silksong-git history search [--repo <history-repo>] [--event <text>] [--item-id <id>] [--label <text>] [--type <type>] [--status-to <status>] [--direction <direction>] [--include-filtered] [--json]
 silksong-git history checkpoint [--repo <history-repo>] [--message <text>] [--allow-unchanged] [--json]
@@ -102,7 +102,7 @@ stdout; invoking the command without it is a usage error.
 ### `history list`
 
 ```txt
-silksong-git history list [--repo <history-repo>] [--limit <n>] [--cursor <cursor>] [--include-filtered] [--json]
+silksong-git history list [--repo <history-repo>] [--limit <n>] [--cursor <cursor>] [--include-filtered] [--order <direction>] [--json]
 ```
 
 Reads Semantic Event history from the Semantic Read Model.
@@ -112,6 +112,8 @@ Reads Semantic Event history from the Semantic Read Model.
   JSON result.
 - `--include-filtered` includes events hidden by Display Semantic Event
   Filters.
+- `--order <direction>` sets sort order. Use `asc` for oldest first (default)
+  or `desc` for newest first.
 - `--json` writes the public history result. Text mode writes one event per
   line or `no semantic events`.
 
