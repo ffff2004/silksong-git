@@ -16,6 +16,7 @@
     "lint": "tsx ../../scripts/lint.ts apps/cli",
     "prepack": "pnpm run build",
     "preview": "node ./dist/main.js",
+    "prototype:linux-sidecar": "tsx prototypes/linux-sidecar/run.ts",
     "test": "pnpm run build && tsx --test --test-reporter=dot src/**/*.test.ts",
     "verify-pack": "tsx scripts/verify-pack.ts"
   },
@@ -25,6 +26,7 @@
   "devDependencies": {
     "@silksong-git/core": "workspace:*",
     "@silksong-git/history": "workspace:*",
+    "postject": "1.0.0-alpha.6",
     "tsup": "^8.5.1"
   }
 }
