@@ -357,11 +357,11 @@ test(
     assert.equal(typeof started.http?.token, "string");
     const endpoint = String(started.http?.endpoint);
     const token = String(started.http?.token);
-    const meta = await fetch(`${endpoint}/api/v1/meta`, {
+    const watcher = await fetch(`${endpoint}/api/v1/watcher`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    assert.equal(meta.status, 200);
+    assert.equal(watcher.status, 200);
 
     const observationLine = await withTimeout(
       cli.readStdoutLine(),

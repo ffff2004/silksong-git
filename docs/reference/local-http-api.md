@@ -12,11 +12,11 @@ and the route registry, not a separate source of truth.
 
 | Contract question                                                                                                         | Executable source                                                                                                                                                                      |
 | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API identity, version, capabilities, error codes, query and body validation, JSON success and error shapes                | [`http-wire.ts`](../../packages/history/src/http-wire.ts)                                                                                                                              |
+| Error codes, query and body validation, response schemas, JSON success and error shapes                                   | [`http-wire.ts`](../../packages/history/src/http-wire.ts)                                                                                                                              |
 | Methods, paths, route-declared media types, statuses and headers, and OpenAPI composition                                 | [`http-contract.ts`](../../packages/history/src/http-contract.ts)                                                                                                                      |
 | Authentication, CORS, request limits, handler and fallback behavior, runtime-only statuses and headers, and error mapping | [`http-app.ts`](../../packages/history/src/http-app.ts)                                                                                                                                |
 | Executable examples and edge-case behavior                                                                                | [`http-app.test.ts`](../../packages/history/src/http-app.test.ts) and [`http-wire.test.ts`](../../packages/history/src/http-wire.test.ts)                                              |
-| Browser-side authentication, compatibility checks, response validation, and request behavior                              | [`local-history-client.ts`](../../apps/web/src/features/local-history/local-history-client.ts) and its [tests](../../apps/web/src/features/local-history/local-history-client.test.ts) |
+| Browser-side authentication, response validation, and request behavior                                                    | [`local-history-client.ts`](../../apps/web/src/features/local-history/local-history-client.ts) and its [tests](../../apps/web/src/features/local-history/local-history-client.test.ts) |
 
 Client code can import the browser-safe schemas and inferred DTOs from
 `@silksong-git/history/http-wire`. Clients that need an exhaustive endpoint or
@@ -52,7 +52,7 @@ Authorization: Bearer <token>
 ```
 
 Do not place the token in a URL, cookie, browser storage, or Project Config.
-All actual API requests, including compatibility discovery, require it.
+All actual API requests require it.
 Missing, malformed, and incorrect credentials all return the same
 `unauthorized` response.
 
@@ -67,22 +67,17 @@ CORS preflight completes before that header middleware and is the exception.
 The binary export response additionally uses download and content-integrity
 headers defined across the route contract and handler.
 
-## Compatibility Discovery
+## Connection Probe
 
-The contract is rooted at `/api/v1`. After authenticating, clients start with
-the metadata route declared by `localHttpRoutes.meta`. Its runtime schema
-reports the API identity, `{ major, minor }` version, repository and Watched
-Save paths, and capability strings.
+The contract is rooted at `/api/v1`. After authenticating, the bundled Web
+client starts with `GET /api/v1/watcher`. The successful response both proves
+that the Local History Watch Process is reachable and seeds the initial watcher
+status displayed by the Web UI; later polling uses the same endpoint.
 
-The current executable protocol version is 1.1. The bundled Web client requires
-an equal major version, a server minor version greater than or equal to its own,
-and every capability it knows it needs. It accepts unknown additional fields
-and capabilities. Other clients may support a smaller capability subset, but
-must still reject incompatible required data rather than guessing its shape.
-
-Capabilities describe implemented protocol behavior, not current availability.
-For example, a temporarily unavailable Semantic Read Model remains an endpoint
-error; it does not remove history-related capabilities from metadata.
+The Web client and Local History Watch Process are released in lockstep, so the
+protocol has no separate metadata endpoint or runtime version/capability
+negotiation. The executable route and response schemas remain the source of
+truth for the requests each release supports.
 
 ## Request and Empty-Result Boundaries
 

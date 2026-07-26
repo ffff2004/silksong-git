@@ -74,7 +74,6 @@ test("OpenAPI describes the complete authenticated Local History API", () => {
     "/api/v1/diff",
     "/api/v1/export",
     "/api/v1/history",
-    "/api/v1/meta",
     "/api/v1/observations",
     "/api/v1/restores/in-place",
     "/api/v1/save",
@@ -86,12 +85,6 @@ test("OpenAPI describes the complete authenticated Local History API", () => {
     scheme: "bearer",
   });
   assert.deepEqual(document.security, [{ bearerAuth: [] }]);
-  assert.equal(
-    document.paths["/api/v1/meta"]?.get.responses["200"]?.content[
-      "application/json"
-    ]?.schema.$ref,
-    "#/components/schemas/LocalHttpMeta",
-  );
   const historicalEventSchema =
     document.components.schemas["HistoricalSemanticEvent"];
   const rawObservationEntrySchema =
@@ -117,7 +110,7 @@ test("OpenAPI describes the complete authenticated Local History API", () => {
   );
 });
 
-test("authenticated meta reports the versioned Local History API contract", async (t) => {
+test("authenticated watcher reports the current watcher status", async (t) => {
   const tempDirectory = await mkdtemp(
     path.join(tmpdir(), "silksong-http-test-"),
   );
@@ -143,11 +136,11 @@ test("authenticated meta reports the versioned Local History API contract", asyn
       capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
     }),
   });
-  const unauthorized = await app.request("/api/v1/meta");
-  const wrongToken = await app.request("/api/v1/meta", {
+  const unauthorized = await app.request("/api/v1/watcher");
+  const wrongToken = await app.request("/api/v1/watcher", {
     headers: { Authorization: "Bearer wrong" },
   });
-  const response = await app.request("/api/v1/meta", {
+  const response = await app.request("/api/v1/watcher", {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -162,23 +155,13 @@ test("authenticated meta reports the versioned Local History API contract", asyn
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   assert.deepEqual(await response.json(), {
-    api: {
-      name: "silksong-git-local-history",
-      version: { major: 1, minor: 1 },
-    },
+    status: "running",
+    activity: "idle",
+    observationRevision: 0,
+    startedAt: "2026-07-12T00:00:00.000Z",
     repoPath,
     watchedSavePath,
-    capabilities: [
-      "watcherStatus",
-      "saveState",
-      "history",
-      "rawObservations",
-      "diff",
-      "search",
-      "checkpoint",
-      "exportEncodedSave",
-      "restoreInPlace",
-    ],
+    capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
   });
 });
 
@@ -206,7 +189,7 @@ test("CORS preflight is public while actual browser requests remain authenticate
       capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
     }),
   });
-  const preflight = await app.request("/api/v1/meta", {
+  const preflight = await app.request("/api/v1/watcher", {
     method: "OPTIONS",
     headers: {
       Origin: "https://example.test",
@@ -214,7 +197,7 @@ test("CORS preflight is public while actual browser requests remain authenticate
       "Access-Control-Request-Headers": "authorization,content-type",
     },
   });
-  const actual = await app.request("/api/v1/meta", {
+  const actual = await app.request("/api/v1/watcher", {
     headers: { Origin: "https://example.test" },
   });
 
@@ -433,7 +416,7 @@ test("HTTP input failures use bounded stable errors without leaking values", asy
       headers: authorization,
     },
   );
-  const method = await app.request("/api/v1/meta", {
+  const method = await app.request("/api/v1/watcher", {
     method: "POST",
     headers: authorization,
   });

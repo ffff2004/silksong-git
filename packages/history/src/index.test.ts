@@ -1120,27 +1120,16 @@ test("startLocalHistoryWatchProcess atomically starts authenticated HTTP on a dy
   assert.equal(started?.type, "started");
   assert.deepEqual(started.http, process.http);
 
-  const response = await fetch(`${process.http.endpoint}/api/v1/meta`, {
+  const response = await fetch(`${process.http.endpoint}/api/v1/watcher`, {
     headers: { Authorization: `Bearer ${process.http.token}` },
   });
 
   assert.equal(response.status, 200);
-  const metaBody = await readJson<{
-    api: { version: { major: number } };
-  }>(response);
-
-  assert.equal(metaBody.api.version.major, 1);
-
-  const watcherResponse = await fetch(
-    `${process.http.endpoint}/api/v1/watcher`,
-    { headers: { Authorization: `Bearer ${process.http.token}` } },
-  );
   const watcherBody = await readJson<{
     observationRevision: number;
     activity: string;
     lastObservation?: { status?: string };
-    events?: unknown;
-  }>(watcherResponse);
+  }>(response);
 
   assert.equal(watcherBody.observationRevision, 1);
   assert.equal(watcherBody.activity, "idle");
@@ -1148,7 +1137,7 @@ test("startLocalHistoryWatchProcess atomically starts authenticated HTTP on a dy
   assert.equal("events" in watcherBody, false);
 
   await process.stop();
-  await assert.rejects(fetch(`${process.http.endpoint}/api/v1/meta`));
+  await assert.rejects(fetch(`${process.http.endpoint}/api/v1/watcher`));
 });
 
 test("HTTP startup uses fixed loopback binding and rejects occupied ports", async (t) => {

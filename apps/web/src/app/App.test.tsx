@@ -25,24 +25,14 @@ const intersectionState: {
   callback: undefined,
 };
 
-const localHistoryMeta = {
-  api: {
-    name: "silksong-git-local-history",
-    version: { major: 1, minor: 1 },
-  },
+const localHistoryWatcher = {
+  status: "running",
+  activity: "idle",
+  observationRevision: 0,
+  startedAt: "2026-07-14T00:00:00.000Z",
   repoPath: "/tmp/history-repo",
   watchedSavePath: "/tmp/user1.dat",
-  capabilities: [
-    "watcherStatus",
-    "saveState",
-    "history",
-    "rawObservations",
-    "diff",
-    "search",
-    "checkpoint",
-    "exportEncodedSave",
-    "restoreInPlace",
-  ],
+  capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
 };
 
 const latestObservation = {
@@ -155,6 +145,9 @@ describe("Solid Web app routing", () => {
       "fetch",
       vi.fn(async () => {
         requestCount++;
+        if (requestCount === 1) {
+          return Response.json(localHistoryWatcher);
+        }
         if (requestCount === 2) {
           return Response.json({
             status: "available",
@@ -175,8 +168,7 @@ describe("Solid Web app routing", () => {
             },
           });
         }
-
-        return Response.json(localHistoryMeta);
+        return Response.json(localHistoryWatcher);
       }),
     );
 
@@ -261,8 +253,8 @@ describe("Solid Web app routing", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json(localHistoryWatcher);
         }
         if (url.includes("commit=unavailable")) {
           throw new TypeError("Local endpoint became unavailable.");
@@ -319,9 +311,6 @@ describe("Solid Web app routing", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
-        }
         if (url.includes("/api/v1/watcher")) {
           watcherRequests++;
           return Response.json({
@@ -350,7 +339,7 @@ describe("Solid Web app routing", () => {
         document.querySelector("#disconnect-local-history"),
       ).not.toBeNull();
     });
-    expect(watcherRequests).toBe(0);
+    expect(watcherRequests).toBe(1);
 
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
@@ -358,7 +347,7 @@ describe("Solid Web app routing", () => {
     });
     document.dispatchEvent(new Event("visibilitychange"));
     await waitFor(() => {
-      expect(watcherRequests).toBe(1);
+      expect(watcherRequests).toBe(2);
     });
 
     Object.defineProperty(document, "visibilityState", {
@@ -369,7 +358,7 @@ describe("Solid Web app routing", () => {
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 1100);
     });
-    expect(watcherRequests).toBe(1);
+    expect(watcherRequests).toBe(2);
   });
 
   it("refreshes moving latest on Watcher revision changes without replacing a historical selection", async () => {
@@ -379,9 +368,6 @@ describe("Solid Web app routing", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
-        }
         if (url.includes("/api/v1/watcher")) {
           watcherRequests++;
           return Response.json({
@@ -489,7 +475,11 @@ describe("Solid Web app routing", () => {
     await waitFor(() => {
       expect(watcherRequests).toBe(3);
     });
-    expect(document.querySelector("#completionValue")?.textContent).toBe("70%");
+    await waitFor(() => {
+      expect(document.querySelector("#completionValue")?.textContent).toBe(
+        "70%",
+      );
+    });
   });
 
   it("reports a newer latest observation and returns a historical selection to it", async () => {
@@ -508,9 +498,6 @@ describe("Solid Web app routing", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
-        }
         if (url.includes("/api/v1/watcher")) {
           return Response.json({
             status: "running",
@@ -555,7 +542,11 @@ describe("Solid Web app routing", () => {
     expect(
       await screen.findByText("A newer latest save is available."),
     ).toBeDefined();
-    expect(document.querySelector("#completionValue")?.textContent).toBe("70%");
+    await waitFor(() => {
+      expect(document.querySelector("#completionValue")?.textContent).toBe(
+        "70%",
+      );
+    });
 
     fireEvent.click(getRequiredElement("#back-to-latest"));
     await waitFor(() => {
@@ -574,8 +565,8 @@ describe("Solid Web app routing", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
         urls.push(url);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json(localHistoryWatcher);
         }
         if (url.includes("/api/v1/save")) {
           return Response.json({ status: "empty" });
@@ -634,8 +625,8 @@ describe("Solid Web app routing", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
         urls.push(url);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json(localHistoryWatcher);
         }
         if (url.includes("/api/v1/save")) {
           return Response.json({ status: "empty" });
@@ -721,8 +712,8 @@ describe("Solid Web app routing", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
         urls.push(url);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json(localHistoryWatcher);
         }
         if (url.includes("/api/v1/save")) {
           return Response.json({ status: "empty" });
@@ -849,8 +840,8 @@ describe("Solid Web app routing", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = requestUrl(input);
       urls.push(url);
-      if (url.includes("/api/v1/meta")) {
-        return Response.json(localHistoryMeta);
+      if (url.includes("/api/v1/watcher")) {
+        return Response.json(localHistoryWatcher);
       }
       if (url.includes("/api/v1/save")) {
         if (url.includes("commit=before")) {

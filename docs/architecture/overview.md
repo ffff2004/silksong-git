@@ -84,11 +84,11 @@ Core directly. Command syntax and safety behavior belong in the
 ### Local History Web workflow
 
 The watch process may start the versioned Local HTTP Adapter on loopback with a
-per-start bearer token. The Web client performs a compatibility handshake and
-then obtains watcher state, save state, history, diff, search, checkpoint,
-export, and restore behavior through that adapter. The adapter delegates to
-History; the frontend never runs Git or SQLite operations. The process owns the
-HTTP listener lifecycle, while frontend serving remains separate. See
+per-start bearer token. The Web client performs an authenticated watcher probe
+and then obtains save state, history, diff, search, checkpoint, export, and
+restore behavior through that adapter. The adapter delegates to History; the
+frontend never runs Git or SQLite operations. The process owns the HTTP
+listener lifecycle, while frontend serving remains separate. See
 [ADR-0008](../adr/0008-one-local-process-owns-watching-and-local-history-api.md),
 [ADR-0018](../adr/0018-secure-versioned-local-http-adapter.md), and the
 [Local HTTP API Reference](../reference/local-http-api.md).
@@ -118,10 +118,3 @@ Capability details live in the [Semantic Core](semantic-core.md),
 [Web](web.md) architecture documents. Accepted rationale is indexed in the
 [ADR index](../adr/README.md); those sources should be linked rather than
 duplicated here.
-
-The current Local HTTP Adapter's compatibility metadata still reads Project
-Config through a History-internal reader rather than a public package
-Interface. This is a current deviation from the guardrail above, not an
-accepted architecture boundary. Moving that read behind the public History
-Interface is tracked by
-[#15](https://github.com/ffff2004/silksong-git/issues/15).

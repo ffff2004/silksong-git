@@ -30,9 +30,9 @@ Its two external dependencies have deliberately different roles:
   Git, SQLite, watcher state, or the local filesystem directly.
 
 The Web client validates every JSON response with the public runtime schemas.
-Its initial authenticated `/api/v1/meta` request requires a compatible API
-major and minor version and the complete current capability set. Exact routes,
-payloads, and authentication rules belong to the
+Its initial authenticated `/api/v1/watcher` request establishes the local
+session and seeds the first watcher status. Exact routes, payloads, and
+authentication rules belong to the
 [Local HTTP API reference](../reference/local-http-api.md), not this document.
 
 ## Runtime Composition and Routes
@@ -83,8 +83,7 @@ become a second Save State store.
 The Local History Store separately owns:
 
 - `disconnected`, `connecting`, `connected`, or connection-error state;
-- the in-memory endpoint, bearer-token-backed client, and compatibility
-  metadata for a connected session;
+- the in-memory endpoint and bearer-token-backed client for a connected session;
 - the latest fetched Save State and Watcher status used for synchronization;
   and
 - whether failed automatic requests have left already loaded data stale.
@@ -102,9 +101,9 @@ Opaque pagination cursors stay in component runtime state.
 
 ## Static Web Mode
 
-Static Web Mode is active whenever there is no compatible Local History
-connection. The user may upload either an Encoded Save (`.dat`) or Decoded Save
-JSON. [`load-current-save.ts`](../../apps/web/src/features/current-save/load-current-save.ts)
+Static Web Mode is active whenever there is no Local History connection. The
+user may upload either an Encoded Save (`.dat`) or Decoded Save JSON.
+[`load-current-save.ts`](../../apps/web/src/features/current-save/load-current-save.ts)
 performs this browser-only pipeline through the public Core Interface:
 
 ```txt
@@ -125,8 +124,9 @@ History responsibility and therefore does not apply in Static Web Mode.
 ## Local History Web Mode
 
 The user enters Local History Web Mode through the Topbar connection dialog.
-A successful authenticated compatibility handshake creates a local session
-and clears any uploaded Static Save before Local History loads its own state.
+A successful authenticated `/api/v1/watcher` request creates a local session,
+seeds its initial watcher status, and clears any uploaded Static Save before
+Local History loads its own state.
 The Local History runtime then fetches either:
 
 - `latest`, when the URL has no `commit`; or
@@ -154,9 +154,9 @@ event log. When the revision changes it fetches the latest Save State:
 
 The historical Topbar banner shows the selected ref, reports when a newer
 latest observation is known, and removes `commit` for Back to Latest.
-Authentication, protocol, compatibility, or Local Network Access failures
-pause automatic requests; already loaded data remains explicitly stale until
-reconnection or disconnect. Other transient failures may continue polling.
+Authentication, protocol, or Local Network Access failures pause automatic
+requests; already loaded data remains explicitly stale until reconnection or
+disconnect. Other transient failures may continue polling.
 
 ## Local History Workflows
 

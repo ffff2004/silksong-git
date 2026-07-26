@@ -9,26 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App.tsx";
 
-const localHistoryMeta = {
-  api: {
-    name: "silksong-git-local-history",
-    version: { major: 1, minor: 1 },
-  },
-  repoPath: "/tmp/history-repo",
-  watchedSavePath: "/tmp/user1.dat",
-  capabilities: [
-    "watcherStatus",
-    "saveState",
-    "history",
-    "rawObservations",
-    "diff",
-    "search",
-    "checkpoint",
-    "exportEncodedSave",
-    "restoreInPlace",
-  ],
-};
-
 describe("Watcher view", () => {
   beforeEach(() => {
     globalThis.location.hash = "#/watcher";
@@ -47,9 +27,6 @@ describe("Watcher view", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
-        }
         if (url.includes("/api/v1/save")) {
           return Response.json({ status: "empty" });
         }
@@ -106,9 +83,6 @@ describe("Watcher view", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = requestUrl(input);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
-        }
         if (url.includes("/api/v1/save")) {
           return Response.json({ status: "empty" });
         }
@@ -221,9 +195,6 @@ describe("Watcher view", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = requestUrl(input);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
-        }
         if (url.includes("/api/v1/save")) {
           return Response.json({ status: "empty" });
         }

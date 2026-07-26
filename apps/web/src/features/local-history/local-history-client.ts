@@ -3,7 +3,6 @@ import type {
   LocalHttpDiffResult,
   LocalHttpErrorCode,
   LocalHttpHistoryResult,
-  LocalHttpMeta,
   LocalHttpObservationHistoryResult,
   LocalHttpRestoreResult,
   LocalHttpSaveState,
@@ -13,10 +12,7 @@ import type {
 import {
   diffCommitsResultSchema,
   historyResultSchema,
-  localHttpApiVersion,
-  localHttpCapabilities,
   localHttpErrorSchema,
-  localHttpMetaSchema,
   observeSaveResultSchema,
   rawObservationHistoryResultSchema,
   restoreResultSchema,
@@ -28,7 +24,6 @@ import { createLocalHistoryUrl } from "./url-utils.ts";
 
 export type LocalHistoryClientErrorKind =
   | "api"
-  | "incompatible"
   | "local-network-denied"
   | "protocol"
   | "unauthorized"
@@ -57,7 +52,6 @@ export class LocalHistoryClientError extends Error {
 }
 
 export interface LocalHistoryClient {
-  readonly getMeta: () => Promise<LocalHttpMeta>;
   readonly getSave: (selector: SaveSelector) => Promise<LocalHttpSaveState>;
   readonly getWatcher: () => Promise<LocalHttpWatcherStatus>;
   readonly getHistory: (
@@ -134,34 +128,10 @@ export interface CreateLocalHistoryClientInput {
   readonly token: string;
 }
 
-export function assertLocalHistoryCompatibility(meta: LocalHttpMeta): void {
-  if (
-    meta.api.version.major !== localHttpApiVersion.major
-    || meta.api.version.minor < localHttpApiVersion.minor
-  ) {
-    throw new LocalHistoryClientError({
-      kind: "incompatible",
-      message: "Local History API version is not supported.",
-    });
-  }
-
-  const missingCapabilities = localHttpCapabilities.filter(
-    (capability) => !meta.capabilities.includes(capability),
-  );
-  if (missingCapabilities.length > 0) {
-    throw new LocalHistoryClientError({
-      kind: "incompatible",
-      message: `Local History is missing capabilities: ${missingCapabilities.join(", ")}.`,
-    });
-  }
-}
-
 export function createLocalHistoryClient(
   input: CreateLocalHistoryClientInput,
 ): LocalHistoryClient {
   const request = input.fetch ?? globalThis.fetch;
-  const metaUrlObject = new URL("/api/v1/meta", input.endpoint);
-  const metaUrl = metaUrlObject.href;
   const saveUrlObject = new URL("/api/v1/save", input.endpoint);
 
   const requestResponse = async (
@@ -245,12 +215,6 @@ export function createLocalHistoryClient(
   };
 
   return {
-    getMeta: async () =>
-      await getJson(
-        metaUrl,
-        localHttpMetaSchema,
-        "Local History returned an invalid metadata response.",
-      ),
     async getSave(selector) {
       const url = new URL(saveUrlObject);
       if (selector.kind === "latest") {

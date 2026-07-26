@@ -7,7 +7,6 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { timeout } from "hono/timeout";
 
-import { readProjectConfig } from "./config.ts";
 import {
   InvalidCommitRefError,
   InvalidReadModelCursorError,
@@ -28,12 +27,7 @@ import {
   searchSemanticEvents,
 } from "./history-interface.ts";
 import type { LocalHttpErrorCode } from "./http-contract.ts";
-import {
-  localHttpApiName,
-  localHttpApiVersion,
-  localHttpCapabilities,
-  localHttpRoutes,
-} from "./http-contract.ts";
+import { localHttpRoutes } from "./http-contract.ts";
 import { restoreEncodedSave } from "./restore.ts";
 import { getSaveState, readEncodedSave } from "./save-state.ts";
 import type { LocalHistoryWatcherStatus } from "./types.ts";
@@ -127,22 +121,6 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
   );
 
   const routedApp = app
-    .openapi(localHttpRoutes.meta, async (c) => {
-      const config = await readProjectConfig(input.repoPath);
-
-      return c.json(
-        {
-          api: {
-            name: localHttpApiName,
-            version: localHttpApiVersion,
-          },
-          repoPath: input.repoPath,
-          watchedSavePath: config.watchedSavePath,
-          capabilities: localHttpCapabilities,
-        },
-        200,
-      );
-    })
     .openapi(localHttpRoutes.watcher, (c) =>
       c.json(input.getWatcherStatus(), 200),
     )

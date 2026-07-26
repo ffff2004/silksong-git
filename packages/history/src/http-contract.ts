@@ -13,7 +13,6 @@ const decorateOpenApi = <T extends z.ZodType>(schema: T, refId: string): T =>
 
 const contractSchemas = createLocalHttpWireSchemas(z, decorateOpenApi);
 const {
-  localHttpMetaSchema: metaSchema,
   localHttpErrorSchema: errorSchema,
   saveQuerySchema,
   historyQuerySchema,
@@ -60,16 +59,6 @@ const baseResponses = {
 } as const;
 
 export const localHttpRoutes = {
-  meta: createRoute({
-    method: "get",
-    path: "/api/v1/meta",
-    summary: "Get Local History API compatibility metadata",
-    responses: {
-      200: jsonSuccess(metaSchema),
-      401: unauthorized,
-      500: internalError,
-    },
-  }),
   watcher: createRoute({
     method: "get",
     path: "/api/v1/watcher",

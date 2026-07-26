@@ -15,26 +15,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App.tsx";
 import decodedSave from "../../test-fixtures/mask-shard-2-collected-rosaries-save.decoded.json";
 
-const localHistoryMeta = {
-  api: {
-    name: "silksong-git-local-history",
-    version: { major: 1, minor: 1 },
-  },
-  repoPath: "/tmp/history-repo",
-  watchedSavePath: "/tmp/user1.dat",
-  capabilities: [
-    "watcherStatus",
-    "saveState",
-    "history",
-    "rawObservations",
-    "diff",
-    "search",
-    "checkpoint",
-    "exportEncodedSave",
-    "restoreInPlace",
-  ],
-};
-
 const latestObservation = {
   commit: {
     ref: "latest",
@@ -71,9 +51,6 @@ describe("Diff view", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
-        }
         if (url.includes("/api/v1/watcher")) {
           return Response.json({
             status: "running",
@@ -163,9 +140,6 @@ describe("Diff view", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
-        }
         if (url.includes("/api/v1/watcher")) {
           return Response.json({
             status: "running",
@@ -237,9 +211,6 @@ describe("Diff view", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = requestUrl(input);
-        if (url.includes("/api/v1/meta")) {
-          return Response.json(localHistoryMeta);
-        }
         if (url.includes("/api/v1/watcher")) {
           return Response.json({
             status: "running",

@@ -154,10 +154,9 @@ releases `watch.lock`. An unrecoverable listener runtime failure is fatal to the
 whole process, while an individual request failure is not.
 
 Route handlers adapt requests to public History workflows. Exact routes,
-authentication, compatibility discovery, wire schemas, and error responses
-belong to the [Local HTTP API Reference](../reference/local-http-api.md) and its
-executable contract, not to this process architecture. Frontend serving also
-remains outside the process.
+authentication, wire schemas, and error responses belong to the [Local HTTP API
+Reference](../reference/local-http-api.md) and its executable contract, not to
+this process architecture. Frontend serving also remains outside the process.
 
 ## Graceful Shutdown
 

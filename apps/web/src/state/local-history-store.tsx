@@ -2,14 +2,12 @@ import type { JSX, Setter } from "solid-js";
 import { createContext, createSignal, useContext } from "solid-js";
 
 import type {
-  LocalHttpMeta,
   LocalHttpSaveState,
   LocalHttpWatcherStatus,
 } from "@silksong-git/history/http-wire";
 import type { LocalHistoryClient } from "../features/local-history/local-history-client.ts";
 import {
   LocalHistoryClientError,
-  assertLocalHistoryCompatibility,
   createLocalHistoryClient,
 } from "../features/local-history/local-history-client.ts";
 
@@ -17,7 +15,6 @@ interface LocalHistorySession {
   readonly client: LocalHistoryClient;
   readonly endpoint: string;
   readonly latestSaveState: () => LocalHttpSaveState | undefined;
-  readonly meta: LocalHttpMeta;
   readonly observationRevision: () => number | undefined;
   readonly watcherStatus: () => LocalHttpWatcherStatus | undefined;
 }
@@ -70,11 +67,10 @@ export function LocalHistoryProvider(props: {
 
       try {
         const client = createLocalHistoryClient(input);
-        const meta = await client.getMeta();
-        assertLocalHistoryCompatibility(meta);
+        const initialWatcherStatus = await client.getWatcher();
         const [watcherStatus, setNextWatcherStatus] = createSignal<
           LocalHttpWatcherStatus | undefined
-        >();
+        >(initialWatcherStatus);
         const [latestSaveState, setNextLatestSaveState] = createSignal<
           LocalHttpSaveState | undefined
         >();
@@ -87,7 +83,6 @@ export function LocalHistoryProvider(props: {
             client,
             endpoint: input.endpoint,
             latestSaveState,
-            meta,
             observationRevision: () => watcherStatus()?.observationRevision,
             watcherStatus,
           },
@@ -177,12 +172,9 @@ function toLocalHistoryClientError(
 }
 
 function shouldPauseAutomaticRequests(error: LocalHistoryClientError): boolean {
-  return [
-    "incompatible",
-    "local-network-denied",
-    "protocol",
-    "unauthorized",
-  ].includes(error.kind);
+  return ["local-network-denied", "protocol", "unauthorized"].includes(
+    error.kind,
+  );
 }
 
 export function useLocalHistoryStore(): LocalHistoryStore {

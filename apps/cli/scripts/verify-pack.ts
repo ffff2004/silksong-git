@@ -64,14 +64,14 @@ async function verifyPackedHttpRuntime(input: {
   );
 
   try {
-    await callPackedMeta(child);
+    await callPackedWatcher(child);
   } finally {
     child.kill("SIGTERM");
     await waitForChild(child);
   }
 }
 
-async function callPackedMeta(child: ReturnType<typeof spawn>) {
+async function callPackedWatcher(child: ReturnType<typeof spawn>) {
   const started = JSON.parse(await readLine(child)) as {
     readonly http?: {
       readonly endpoint?: unknown;
@@ -80,12 +80,12 @@ async function callPackedMeta(child: ReturnType<typeof spawn>) {
   };
   const endpoint = String(started.http?.endpoint);
   const token = String(started.http?.token);
-  const response = await fetch(`${endpoint}/api/v1/meta`, {
+  const response = await fetch(`${endpoint}/api/v1/watcher`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
   if (response.status !== 200) {
-    throw new Error(`Packed HTTP meta returned ${response.status}`);
+    throw new Error(`Packed HTTP watcher returned ${response.status}`);
   }
 }
 

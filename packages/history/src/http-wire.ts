@@ -16,24 +16,6 @@ import type {
   SearchSemanticEventsResult,
 } from "./types.ts";
 
-export const localHttpApiName = "silksong-git-local-history" as const;
-
-export const localHttpApiVersion = { major: 1, minor: 1 } as const;
-
-export const localHttpCapabilities = [
-  "watcherStatus",
-  "saveState",
-  "history",
-  "rawObservations",
-  "diff",
-  "search",
-  "checkpoint",
-  "exportEncodedSave",
-  "restoreInPlace",
-] as const;
-
-export type LocalHttpCapability = (typeof localHttpCapabilities)[number];
-
 export const localHttpErrorCodes = [
   "invalid_request",
   "unauthorized",
@@ -73,28 +55,6 @@ export function createLocalHttpWireSchemas(
   zod: ZodNamespace,
   decorate: LocalHttpSchemaDecorator = (schema) => schema,
 ) {
-  const apiVersionSchema = zod.object({
-    major: zod.number().int().nonnegative(),
-    minor: zod.number().int().nonnegative(),
-  });
-
-  const apiIdentitySchema = zod.object({
-    name: zod.literal(localHttpApiName),
-    version: apiVersionSchema,
-  });
-
-  const capabilitySchema = zod.string().min(1);
-
-  const localHttpMetaSchema = decorate(
-    zod.object({
-      api: apiIdentitySchema,
-      repoPath: zod.string(),
-      watchedSavePath: zod.string(),
-      capabilities: zod.array(capabilitySchema).readonly(),
-    }),
-    "LocalHttpMeta",
-  );
-
   const localHttpErrorSchema = decorate(
     zod.object({
       error: zod.object({
@@ -513,7 +473,6 @@ export function createLocalHttpWireSchemas(
   );
 
   return {
-    localHttpMetaSchema,
     localHttpErrorSchema,
     refSchema,
     cursorSchema,
@@ -587,7 +546,6 @@ export function createLocalHttpWireSchemas(
 const wireSchemas = createLocalHttpWireSchemas(z);
 
 export const {
-  localHttpMetaSchema,
   localHttpErrorSchema,
   refSchema,
   cursorSchema,
@@ -656,7 +614,6 @@ export const {
   restoreResultSchema,
 } = wireSchemas;
 
-export type LocalHttpMeta = z.infer<typeof localHttpMetaSchema>;
 export type LocalHttpError = z.infer<typeof localHttpErrorSchema>;
 export type LocalHttpSaveState = z.infer<typeof saveStateResultSchema>;
 export type LocalHttpHistoryResult = z.infer<typeof historyResultSchema>;
