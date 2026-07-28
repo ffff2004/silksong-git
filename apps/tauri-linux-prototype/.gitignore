@@ -1,0 +1,6 @@
+/dist/
+/src-tauri/binaries/
+/src-tauri/gen/
+/src-tauri/icons/
+/src-tauri/resources/
+/src-tauri/target/

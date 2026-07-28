@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Silksong Git Tauri Linux Prototype",
+  "version": "0.0.0",
+  "identifier": "io.github.ffff2004.silksong-git.prototype",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "Silksong Git packaging tracer",
+        "width": 900,
+        "height": 720,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["appimage"],
+    "externalBin": ["binaries/silksong-git-sidecar"],
+    "resources": ["resources/**/*"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.png"]
+  }
+}

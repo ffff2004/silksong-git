@@ -1,0 +1,64 @@
+:root {
+  color: #f5efe2;
+  background: #17151d;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 48px;
+}
+
+.eyebrow {
+  color: #efb34c;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+h1 {
+  font-size: 2.4rem;
+  margin: 0.2em 0;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin: 28px 0 16px;
+}
+
+button {
+  border: 1px solid #efb34c;
+  border-radius: 7px;
+  padding: 12px 18px;
+  color: #17151d;
+  background: #efb34c;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+}
+
+#status {
+  min-height: 1.5em;
+  color: #a9d9b7;
+}
+
+li {
+  margin: 7px 0;
+}
+
+pre {
+  max-height: 280px;
+  overflow: auto;
+  padding: 16px;
+  border-radius: 7px;
+  background: #0d0c11;
+  white-space: pre-wrap;
+}

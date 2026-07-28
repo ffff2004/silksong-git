@@ -1,0 +1,18 @@
+[package]
+name = "silksong-git-tauri-linux-prototype"
+version = "0.0.0"
+description = "Disposable issue #42 Tauri Linux packaging prototype"
+edition = "2024"
+
+[lib]
+name = "silksong_git_tauri_linux_prototype_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+libc = "0.2.176"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+tauri = { version = "2.11.5", features = [] }

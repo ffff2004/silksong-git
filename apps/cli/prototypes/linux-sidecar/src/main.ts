@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
 import {
   copyFile,
   mkdir,
@@ -27,7 +28,7 @@ process.env["PATH"] = bundledBinDirectory;
 interface CommandEnvelope {
   readonly version: number;
   readonly id: string;
-  readonly command: "exercise" | "reopen" | "shutdown";
+  readonly command: "exercise" | "holdGit" | "reopen" | "shutdown";
   readonly workspacePath?: string;
   readonly fixturePath?: string;
   readonly repoPath?: string;
@@ -102,7 +103,9 @@ async function runCommand(command: CommandEnvelope) {
   const result =
     command.command === "exercise"
       ? await exerciseHistory(command)
-      : await reopenHistory(command);
+      : command.command === "holdGit"
+        ? await holdBundledGit(command)
+        : await reopenHistory(command);
 
   emit({
     type: "operationCompleted",
@@ -110,6 +113,47 @@ async function runCommand(command: CommandEnvelope) {
     durationMs: roundMilliseconds(performance.now() - startedAt),
     result,
   });
+}
+
+async function holdBundledGit(command: CommandEnvelope) {
+  const gitExecutablePath = path.join(bundledBinDirectory, "git");
+  const git = spawn("git", ["hash-object", "--stdin"], {
+    stdio: ["pipe", "ignore", "pipe"],
+  });
+  const stderrChunks: Buffer[] = [];
+  git.stderr.on("data", (chunk: Buffer) => {
+    stderrChunks.push(chunk);
+  });
+  await new Promise<void>((resolve, reject) => {
+    git.once("error", reject);
+    git.once("spawn", () => {
+      emit({
+        type: "prototypeGitDescendant",
+        replyTo: command.id,
+        pid: git.pid,
+        executablePath: gitExecutablePath,
+      });
+      resolve();
+    });
+  });
+  const exit = await new Promise<{
+    readonly code: number | null;
+    readonly signal: NodeJS.Signals | null;
+  }>((resolve, reject) => {
+    git.once("error", reject);
+    git.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+  if (exit.code !== 0) {
+    throw new Error(
+      `Held bundled Git exited with ${
+        exit.signal ?? `code ${String(exit.code)}`
+      }: ${Buffer.concat(stderrChunks).toString("utf8")}`,
+    );
+  }
+  return {
+    gitPid: git.pid,
+    gitExecutablePath,
+  };
 }
 
 async function exerciseHistory(command: CommandEnvelope) {
@@ -243,6 +287,7 @@ function parseCommand(line: string): CommandEnvelope {
 
   if (
     value.command !== "exercise"
+    && value.command !== "holdGit"
     && value.command !== "reopen"
     && value.command !== "shutdown"
   ) {

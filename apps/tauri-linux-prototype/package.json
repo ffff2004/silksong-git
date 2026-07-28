@@ -1,0 +1,14 @@
+{
+  "name": "@silksong-git/tauri-linux-prototype",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "prepare:artifacts": "tsx ./scripts/prepare.ts",
+    "build": "pnpm run prepare:artifacts && NO_STRIP=1 tauri build --bundles appimage",
+    "prototype": "tsx ./scripts/run.ts"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

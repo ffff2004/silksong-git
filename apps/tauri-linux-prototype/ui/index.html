@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Silksong Git packaging tracer</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">ISSUE #42 · DISPOSABLE LINUX PROTOTYPE</p>
+      <h1>Installed Tauri → SEA → private Git</h1>
+      <p>
+        A visible, packaged tracer bullet. It uses installed resources and a
+        versioned JSONL protocol; it never asks the WebView to spawn a process.
+      </p>
+      <div class="actions">
+        <button id="run">Run full tracer</button>
+        <button id="close-probe">Start active work, then close</button>
+      </div>
+      <p id="status" role="status">Ready.</p>
+      <ol id="steps"></ol>
+      <pre id="details"></pre>
+    </main>
+    <script src="./main.js"></script>
+  </body>
+</html>

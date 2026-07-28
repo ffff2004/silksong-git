@@ -1,0 +1,21 @@
+FROM docker.io/library/archlinux:base@sha256:5c0a4c06b4aca92db11a9db181461d9e412fbee3aa3561d318aec2df2f318769
+
+RUN printf 'Server = https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch\n' \
+      >/etc/pacman.d/mirrorlist \
+    && HTTPS_PROXY= HTTP_PROXY= https_proxy= http_proxy= \
+      pacman -Syu --noconfirm --needed \
+      dbus \
+      fontconfig \
+      fribidi \
+      harfbuzz \
+      mesa \
+      xdotool \
+      xorg-server-xvfb \
+      xorg-xwd \
+    && pacman -Scc --noconfirm \
+    && useradd --create-home --uid 1000 prototype
+
+USER prototype
+WORKDIR /home/prototype
+
+ENTRYPOINT ["/bin/bash", "/verify/verify-clean.sh"]
