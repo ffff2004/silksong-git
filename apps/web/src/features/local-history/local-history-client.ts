@@ -8,7 +8,7 @@ import type {
   LocalHttpSaveState,
   LocalHttpSearchResult,
   LocalHttpWatcherStatus,
-} from "@silksong-git/history/http-wire";
+} from "@silksong-git/repo-session/http-wire";
 import {
   diffCommitsResultSchema,
   historyResultSchema,
@@ -19,7 +19,7 @@ import {
   saveStateResultSchema,
   searchResultSchema,
   watcherStatusSchema,
-} from "@silksong-git/history/http-wire";
+} from "@silksong-git/repo-session/http-wire";
 import { createLocalHistoryUrl } from "./url-utils.ts";
 
 export type LocalHistoryClientErrorKind =

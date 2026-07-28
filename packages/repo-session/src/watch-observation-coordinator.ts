@@ -1,6 +1,6 @@
+import type { ObserveSaveResult } from "@silksong-git/history";
 import type {
   FileStabilityProbe,
-  ObserveSaveResult,
   ScheduledWatchTask,
   WatchScheduler,
 } from "./types.ts";

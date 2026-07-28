@@ -2,7 +2,7 @@ import type {
   SemanticSnapshot,
   SemanticSnapshotItem,
 } from "@silksong-git/core";
-import type { LocalHttpSaveState } from "@silksong-git/history/http-wire";
+import type { LocalHttpSaveState } from "@silksong-git/repo-session/http-wire";
 import type { JSX } from "solid-js";
 import { createContext, createMemo, createSignal, useContext } from "solid-js";
 

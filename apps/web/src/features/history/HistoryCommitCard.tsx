@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
 
-import type { LocalHttpObservationHistoryResult } from "@silksong-git/history/http-wire";
+import type { LocalHttpObservationHistoryResult } from "@silksong-git/repo-session/http-wire";
 import buttonStyles from "../../ui/Button.module.css";
 import styles from "./HistoryView.module.css";
 import type { HistoryEventGroup } from "./history-events-query.ts";

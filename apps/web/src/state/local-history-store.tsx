@@ -4,7 +4,7 @@ import { createContext, createSignal, useContext } from "solid-js";
 import type {
   LocalHttpSaveState,
   LocalHttpWatcherStatus,
-} from "@silksong-git/history/http-wire";
+} from "@silksong-git/repo-session/http-wire";
 import type { LocalHistoryClient } from "../features/local-history/local-history-client.ts";
 import {
   LocalHistoryClientError,

@@ -49,7 +49,7 @@ history.
 ## Architecture Guardrails
 
 - Keep the semantic core free of DOM, Git, SQLite, filesystem watching, and HTTP concerns.
-- Keep history persistence as the owner of Git, SQLite, watcher, restore, and Local History Watch Process behavior.
+- Keep history persistence as the owner of Git, SQLite, watcher leases, and restore. Keep Repo Session as the owner of watcher scheduling and local HTTP lifecycle.
 - Web frontend code must use local HTTP endpoints for local-history workflows and must not directly call Git, SQLite, filesystem watcher, or history internals.
 - Web, CLI, and HTTP adapters must call public package Interfaces rather than internal helpers, SQLite tables, or Git command details.
 - Display Semantic Event Filters affect query/display behavior only; they must not decide raw Git commits or delete events from SQLite.
@@ -60,6 +60,7 @@ Tests should verify behavior through public Interfaces:
 
 - `packages/core` tests use `createSemanticSnapshot` and `diffSemanticSnapshots`.
 - `packages/history` tests use the history Interface with temporary directories, real Git, and real SQLite.
+- `packages/repo-session` runtime behavior tests use the root Repo Session Interface with real History repositories and loopback HTTP. Tests for `./http-wire` and `./http-contract` may call those public contract subpaths directly.
 - Mocks are limited to true system boundaries such as time and watcher event delivery.
 - Tests should not assert internal helper calls, Git command calls, or SQLite table layout.
 

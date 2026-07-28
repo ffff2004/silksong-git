@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import { createSignal, onMount, Show } from "solid-js";
 
-import type { LocalHttpDiffResult } from "@silksong-git/history/http-wire";
+import type { LocalHttpDiffResult } from "@silksong-git/repo-session/http-wire";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import buttonStyles from "../../ui/Button.module.css";
 import viewStyles from "../../ui/View.module.css";

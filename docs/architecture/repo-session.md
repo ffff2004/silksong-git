@@ -1,24 +1,28 @@
-# Local History Watch Process Architecture
+# Repo Session Architecture
 
-The Local History Watch Process is the long-running owner for one Watched Save
+The Repo Session is the long-running owner for one Watched Save
 and its Save History Repository. It subscribes to file changes, schedules
 observations, calls the public History behavior that commits Raw Save
 Observations and updates the Semantic Read Model, and may own one local HTTP
 listener. Its live public contract is the package-root
-[`@silksong-git/history` Interface](../../packages/history/src/index.ts).
+[`@silksong-git/repo-session` Interface](../../packages/repo-session/src/index.ts).
 
-This process boundary follows
+This session boundary follows
 [ADR-0008](../adr/0008-one-local-process-owns-watching-and-local-history-api.md).
 Observation persistence belongs to the
 [Save History Module](save-history-module.md), not to a second watcher-specific
 write path.
 
+This extraction changes package ownership, not lifecycle scope. A Repo Session
+starts by acquiring watcher ownership and stops by releasing it; it does not
+yet represent a watcher-independent or query-only repository lifecycle.
+
 ## Ownership and Locks
 
 Only one acquired Save History Watcher lease may own a Save History Repository
-at a time. The Local History Watch Process acquires that lease before attaching
+at a time. The Repo Session acquires that lease before attaching
 the watch backend; the lease holds the repository's `watch.lock` until shutdown
-cleanup releases it. A conflicting lease stops a second process before it starts
+cleanup releases it. A conflicting lease stops a second session before it starts
 watching. The lock contains diagnostics, but the current implementation does
 not automatically decide that an existing lock is stale or remove it. Shutdown
 waits for every already-started observation path, including deferred work,
@@ -33,7 +37,7 @@ The two repository locks have different scopes:
 
 Holding `watch.lock` therefore does not exclude an Offline Command. Manual
 checkpoints, rebuilds, restores, and watcher observations share `write.lock`
-and wait for one another when they mutate repository state. The process does
+and wait for one another when they mutate repository state. The session does
 not expose or reimplement the Git, SQLite, Capture Policy, or restore work
 inside that lock.
 
@@ -41,26 +45,26 @@ inside that lock.
 
 Startup acquires a Save History Watcher lease, which reads Project Config once
 and retains the snapshot's Watched Save path and Capture Policy until the
-process exits. Editing Project Config does not reconfigure a running process;
+session exits. Editing Project Config does not reconfigure a running session;
 it must be restarted. One-shot Offline Commands continue to read the current
 Project Config when they run.
 
 After acquiring the watcher lease, startup attaches the file watch backend. If
-HTTP is requested, it then starts the listener in the same process. Only after
-the requested components are ready does the process emit its structured
-`started` event. Failure to acquire process ownership or start either component
+HTTP is requested, it then starts the listener in the same session. Only after
+the requested components are ready does the session emit its structured
+`started` event. Failure to acquire session ownership or start either component
 aborts startup and releases resources already acquired.
 
 The backend is attached before the initial observation, so a change during
 startup is not missed by attaching too late. The initial observation then runs
 the same bounded stability probe as every other candidate read before History
 reads the Watched Save. Startup does not apply the real-change debounce: it is
-already an explicit process-start observation.
+already an explicit session-start observation.
 
 ## Event-to-Observation Scheduling
 
 A filesystem event is a scheduling signal, not a Raw Save Observation and not
-a commit boundary. One process-owned scheduling state machine accepts startup,
+a commit boundary. One session-owned scheduling state machine accepts startup,
 filesystem-change, and deferred-observation requests. It keeps at most one
 active stability-probe/observation path and one pending timed opportunity.
 
@@ -75,13 +79,13 @@ active stability-probe/observation path and one pending timed opportunity.
 4. Every chosen opportunity waits until the Watched Save has the same size and
    modification time across bounded probes. An inability to stat the file or
    reach stability produces a non-committed Watcher Error for that opportunity.
-5. Once stable, the process invokes the watcher lease's observation behavior
+5. Once stable, the session invokes the watcher lease's observation behavior
    with an explicit observation time. History acquires its short-lived
    `write.lock`, uses the lease's startup Project Config snapshot and watcher
-   trigger, then returns `committed`, `skipped`, or `watcherError`; the process
+   trigger, then returns `committed`, `skipped`, or `watcherError`; the session
    emits an observation event and updates its coarse status.
 
-The process never treats event payload bytes as authoritative: every
+The session never treats event payload bytes as authoritative: every
 opportunity reads the current stable Watched Save through History. The
 single-flight scheduler therefore coalesces bursts while preserving a later
 opportunity for a change that arrives during active work.
@@ -111,17 +115,17 @@ transaction and the distinction between an Unrecognized Schema Observation
 and a decode failure are documented in the
 [Save History Module](save-history-module.md).
 
-The process separates recoverable candidate-save failures from fatal ownership
+The session separates recoverable candidate-save failures from fatal ownership
 or component failures:
 
-| Failure class                 | Current examples                                           | Process effect                                                                                                                             |
+| Failure class                 | Current examples                                           | Session effect                                                                                                                             |
 | ----------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Recoverable Watcher Error     | read failure, decode failure, stability timeout            | No Raw Save Observation is committed for that pass. Status and an observation event record the error; later changes may still be observed. |
-| Fatal process failure         | watch backend failure, unrecoverable HTTP listener failure | A fatal event is emitted and graceful shutdown begins.                                                                                     |
-| Startup failure               | existing `watch.lock`, backend or listener start failure   | The start call fails and acquired process resources are cleaned up; no running process is returned.                                        |
+| Fatal session failure         | watch backend failure, unrecoverable HTTP listener failure | A fatal event is emitted and graceful shutdown begins.                                                                                     |
+| Startup failure               | existing `watch.lock`, backend or listener start failure   | The start call fails and acquired session resources are cleaned up; no running session is returned.                                        |
 | Nonfatal HTTP request failure | a classified server-side request or handler failure        | A sanitized `httpRequestError` event may be emitted; the listener and watcher continue.                                                    |
 
-A Watcher Error describes one candidate save read, not process ownership. A
+A Watcher Error describes one candidate save read, not session ownership. A
 decoded but unrecognized save is instead a committed Unrecognized Schema
 Observation and is not a Watcher Error.
 
@@ -132,7 +136,7 @@ Callers may omit the event listener. When supplied, it receives structured
 `stopped` events. The CLI is an Adapter over those events; it does not own a
 second watcher state machine.
 
-The process also exposes a coarse current status snapshot containing:
+The session also exposes a coarse current status snapshot containing:
 
 - `idle`, `pending`, or `observing` activity;
 - the repository and Watched Save paths;
@@ -143,21 +147,21 @@ The process also exposes a coarse current status snapshot containing:
 
 This status is not a lossless event stream or a durable audit log. Persistent
 changes belong to History queries. Exact status and event types remain owned
-by the package-root Interface rather than this document.
+by the Repo Session package-root Interface rather than this document.
 
 ## Optional Local HTTP Lifecycle
 
-HTTP is an optional component of the same Local History Watch Process. Enabling
+HTTP is an optional component of the same Repo Session. Enabling
 it does not create a second watcher, persistence owner, or mutation queue. The
 watch backend and requested listener must both start successfully before the
-process reports `started`; a listener startup failure cleans up the backend and
+session reports `started`; a listener startup failure cleans up the backend and
 releases `watch.lock`. An unrecoverable listener runtime failure is fatal to the
-whole process, while an individual request failure is not.
+whole session, while an individual request failure is not.
 
 Route handlers adapt requests to public History workflows. Exact routes,
 authentication, wire schemas, and error responses belong to the [Local HTTP API
 Reference](../reference/local-http-api.md) and its executable contract, not to
-this process architecture. Frontend serving also remains outside the process.
+this session architecture. Frontend serving also remains outside the session.
 
 ## Graceful Shutdown
 
@@ -175,6 +179,6 @@ the watch lock is released. Its ordering is:
 5. release the Save History Watcher lease (and therefore `watch.lock`) and emit
    `stopped`.
 
-The process does not hard-cancel started stability probes or work that may be
+The session does not hard-cancel started stability probes or work that may be
 mutating Git, SQLite, or the Watched Save. It waits for that path before
 releasing resources, while cancelling only opportunities that have not begun.

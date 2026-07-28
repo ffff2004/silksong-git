@@ -6,8 +6,8 @@ interface WatchLockInfo {
   readonly command?: unknown;
 }
 
-export class LocalHistoryWatchProcessAlreadyRunningError extends Error {
-  override name = "LocalHistoryWatchProcessAlreadyRunningError";
+export class SaveHistoryWatcherAlreadyAcquiredError extends Error {
+  override name = "SaveHistoryWatcherAlreadyAcquiredError";
 
   readonly lockPath: string;
   readonly lockInfo?: WatchLockInfo;

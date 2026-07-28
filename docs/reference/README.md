@@ -13,3 +13,4 @@ The public TypeScript Interfaces remain owned by the package-root exports:
 
 - [`@silksong-git/core`](../../packages/core/src/index.ts)
 - [`@silksong-git/history`](../../packages/history/src/index.ts)
+- [`@silksong-git/repo-session`](../../packages/repo-session/src/index.ts)

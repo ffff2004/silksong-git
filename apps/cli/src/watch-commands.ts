@@ -1,13 +1,10 @@
-import type {
-  LocalHistoryWatchProcess,
-  LocalHistoryWatchProcessEvent,
-  ObserveSaveResult,
-} from "@silksong-git/history";
+import type { ObserveSaveResult } from "@silksong-git/history";
+import { SaveHistoryWatcherAlreadyAcquiredError } from "@silksong-git/history";
+import type { RepoSession, RepoSessionEvent } from "@silksong-git/repo-session";
 import {
-  LocalHistoryWatchProcessAlreadyRunningError,
-  LocalHttpServerStartError,
-  startLocalHistoryWatchProcess,
-} from "@silksong-git/history";
+  RepoSessionHttpServerStartError,
+  startRepoSession,
+} from "@silksong-git/repo-session";
 import type { Command } from "commander";
 
 import type { CliRuntime } from "./cli-runtime.ts";
@@ -61,7 +58,7 @@ async function runWatchStartCommand(
   const stopRequest: { stop: () => void } = {
     stop: () => undefined,
   };
-  let localHistoryProcess: LocalHistoryWatchProcess | undefined;
+  let repoSession: RepoSession | undefined;
   const stopState = {
     requested: false,
     started: false,
@@ -97,8 +94,8 @@ async function runWatchStartCommand(
 
   function handleWatchStartError(error: unknown) {
     if (
-      error instanceof LocalHttpServerStartError
-      || error instanceof LocalHistoryWatchProcessAlreadyRunningError
+      error instanceof RepoSessionHttpServerStartError
+      || error instanceof SaveHistoryWatcherAlreadyAcquiredError
     ) {
       runtime.writeStderr(`error: ${error.message}\n`);
       runtime.setExitCode(1);
@@ -109,7 +106,7 @@ async function runWatchStartCommand(
   }
 
   async function runStartedWatchProcess() {
-    localHistoryProcess = await startLocalHistoryWatchProcess({
+    repoSession = await startRepoSession({
       repoPath,
       ...(httpOptions !== undefined && { http: httpOptions }),
       onEvent: (event) => {
@@ -135,7 +132,7 @@ async function runWatchStartCommand(
   function stop() {
     stopState.requested = true;
 
-    if (localHistoryProcess === undefined) {
+    if (repoSession === undefined) {
       return;
     }
 
@@ -147,7 +144,7 @@ async function runWatchStartCommand(
   }
 
   async function stopProcess() {
-    const process = localHistoryProcess;
+    const process = repoSession;
 
     if (stopState.started || process === undefined) {
       return;
@@ -199,7 +196,7 @@ function parseHttpOptions(
 type WatchOutputTarget = "stdout" | "stderr";
 
 interface WatchEventRenderer {
-  render: (event: LocalHistoryWatchProcessEvent) => void;
+  render: (event: RepoSessionEvent) => void;
   dispose: () => void;
 }
 
@@ -218,7 +215,7 @@ function createWatchEventRenderer(
   process.stderr.on("error", onStderrError);
 
   return {
-    render(event: LocalHistoryWatchProcessEvent) {
+    render(event: RepoSessionEvent) {
       if (options.jsonl === true) {
         writeWatchOutput(
           "stdout",
@@ -265,7 +262,7 @@ function writeStderrSafely(output: string) {
   }
 }
 
-function toJsonlWatchEvent(event: LocalHistoryWatchProcessEvent): unknown {
+function toJsonlWatchEvent(event: RepoSessionEvent): unknown {
   switch (event.type) {
     case "started": {
       return {
@@ -339,7 +336,7 @@ function summarizeObservationResult(result: ObserveSaveResult) {
   }
 }
 
-function toHumanWatchEvent(event: LocalHistoryWatchProcessEvent): string {
+function toHumanWatchEvent(event: RepoSessionEvent): string {
   switch (event.type) {
     case "started": {
       const http =
@@ -399,10 +396,7 @@ function formatTimestampPart(value: number): string {
 }
 
 function formatHumanWatchObservation(
-  event: Extract<
-    LocalHistoryWatchProcessEvent,
-    { readonly type: "observation" }
-  >,
+  event: Extract<RepoSessionEvent, { readonly type: "observation" }>,
 ): string {
   const { result } = event;
 

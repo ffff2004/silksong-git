@@ -81,6 +81,9 @@ importers:
       '@silksong-git/history':
         specifier: workspace:*
         version: link:../../packages/history
+      '@silksong-git/repo-session':
+        specifier: workspace:*
+        version: link:../../packages/repo-session
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.15)(tsx@4.22.4)(typescript@6.0.3)(yaml@2.9.0)
@@ -93,9 +96,9 @@ importers:
       '@silksong-git/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@silksong-git/history':
+      '@silksong-git/repo-session':
         specifier: workspace:*
-        version: link:../../packages/history
+        version: link:../../packages/repo-session
       '@solidjs/router':
         specifier: ^0.16.1
         version: 0.16.1(solid-js@1.9.14)
@@ -149,6 +152,12 @@ importers:
 
   packages/history:
     dependencies:
+      '@silksong-git/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/repo-session:
+    dependencies:
       '@hono/node-server':
         specifier: ^2.0.8
         version: 2.0.8(hono@4.12.29)
@@ -158,6 +167,9 @@ importers:
       '@silksong-git/core':
         specifier: workspace:*
         version: link:../core
+      '@silksong-git/history':
+        specifier: workspace:*
+        version: link:../history
       hono:
         specifier: ^4.12.29
         version: 4.12.29

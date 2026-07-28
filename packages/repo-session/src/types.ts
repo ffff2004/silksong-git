@@ -1,0 +1,147 @@
+import type { ObserveSaveResult, ProjectConfig } from "@silksong-git/history";
+
+export interface StartRepoSessionInput {
+  readonly repoPath: string;
+  readonly http?: {
+    readonly port?: number;
+  };
+  readonly onEvent?: (event: RepoSessionEvent) => void;
+  // System-boundary adapters used by behavior tests and non-Node hosts.
+  readonly runtime?: RepoSessionRuntimeAdapters;
+}
+
+export interface RepoSession {
+  readonly repoPath: string;
+  readonly http?: {
+    readonly endpoint: string;
+    readonly token: string;
+  };
+  readonly getWatcherStatus: () => RepoSessionWatcherStatus;
+  stop: () => void | Promise<void>;
+}
+
+export interface RepoSessionRuntimeAdapters {
+  readonly fileStabilityProbe?: FileStabilityProbe;
+  readonly now?: () => Date;
+  readonly watchEventSource?: WatchEventSource;
+  readonly watchScheduler?: WatchScheduler;
+}
+
+export interface RepoSessionWatcherStatus {
+  readonly status: "running";
+  readonly activity: "idle" | "pending" | "observing";
+  readonly observationRevision: number;
+  readonly startedAt: string;
+  readonly repoPath: string;
+  readonly watchedSavePath: string;
+  readonly capturePolicy: ProjectConfig["capturePolicy"];
+  readonly lastObservation?: RepoSessionObservationSummary;
+}
+
+export type RepoSessionObservationSummary =
+  | {
+      readonly cause: "startup" | "change" | "deferred";
+      readonly completedAt: string;
+      readonly status: "committed";
+      readonly commit: {
+        readonly ref: string;
+        readonly shortRef: string;
+        readonly committedAt: string;
+      };
+      readonly eventCount: number;
+      readonly semanticStatus: "updated" | "notAvailable";
+    }
+  | {
+      readonly cause: "startup" | "change" | "deferred";
+      readonly completedAt: string;
+      readonly status: "skipped";
+      readonly reason: "unchanged" | "minimumCommitInterval";
+      readonly nextAllowedAt?: string;
+    }
+  | {
+      readonly cause: "startup" | "change" | "deferred";
+      readonly completedAt: string;
+      readonly status: "watcherError";
+      readonly error: {
+        readonly message: string;
+        readonly reason: "decodeFailure" | "readFailure" | "stabilityTimeout";
+      };
+    };
+
+export type RepoSessionEvent =
+  | {
+      readonly type: "started";
+      readonly repoPath: string;
+      readonly watchedSavePath: string;
+      readonly capturePolicy: ProjectConfig["capturePolicy"];
+      readonly http?: {
+        readonly endpoint: string;
+        readonly token: string;
+      };
+    }
+  | {
+      readonly type: "httpRequestError";
+      readonly repoPath: string;
+      readonly error: {
+        readonly method: string;
+        readonly path: string;
+        readonly status: number;
+        readonly code: string;
+        readonly message: string;
+      };
+    }
+  | {
+      readonly type: "observation";
+      readonly repoPath: string;
+      readonly cause: "startup" | "change" | "deferred";
+      readonly result: ObserveSaveResult;
+    }
+  | {
+      readonly type: "fatalError";
+      readonly repoPath: string;
+      readonly error: RepoSessionFatalError;
+    }
+  | {
+      readonly type: "stopping";
+      readonly repoPath: string;
+    }
+  | {
+      readonly type: "stopped";
+      readonly repoPath: string;
+    };
+
+export interface RepoSessionFatalError {
+  readonly message: string;
+  readonly reason: "httpServerFailure" | "watchBackendFailure";
+}
+
+export interface WatchEventSource {
+  start: (
+    input: WatchEventSourceStartInput,
+  ) => WatchEventSubscription | Promise<WatchEventSubscription>;
+}
+
+export interface WatchEventSourceStartInput {
+  readonly watchedSavePath: string;
+  readonly onChange: () => void | Promise<void>;
+  readonly onError: (error: unknown) => void | Promise<void>;
+}
+
+export interface WatchEventSubscription {
+  stop: () => void | Promise<void>;
+}
+
+export interface WatchScheduler {
+  scheduleAt: (
+    runAt: Date,
+    task: () => void | Promise<void>,
+  ) => ScheduledWatchTask;
+}
+
+export interface ScheduledWatchTask {
+  cancel: () => void;
+}
+
+export interface FileStabilityProbe {
+  waitForStableFile: (filePath: string) => Promise<void>;
+}

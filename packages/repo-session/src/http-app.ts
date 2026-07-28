@@ -8,29 +8,34 @@ import { HTTPException } from "hono/http-exception";
 import { timeout } from "hono/timeout";
 
 import {
+  diffCommits,
+  getSaveState,
   InvalidCommitRefError,
   InvalidReadModelCursorError,
   InvalidRestoreBackupDirectoryError,
   ObservationNotFoundError,
-  ReadModelUnavailableError,
-  RestoreBackupFailedError,
-  RestoreConflictError,
-  RestoreWriteFailedError,
-  RestoreWriteVerificationError,
-  SaveHistoryRepositoryBusyError,
-} from "./errors.ts";
-import {
-  diffCommits,
   observeSave,
   queryHistory,
   queryRawObservations,
+  readEncodedSave,
+  ReadModelUnavailableError,
+  RestoreBackupFailedError,
+  RestoreConflictError,
+  restoreEncodedSave,
+  RestoreWriteFailedError,
+  RestoreWriteVerificationError,
+  SaveHistoryRepositoryBusyError,
   searchSemanticEvents,
-} from "./history-interface.ts";
+} from "@silksong-git/history";
 import type { LocalHttpErrorCode } from "./http-contract.ts";
 import { localHttpRoutes } from "./http-contract.ts";
-import { restoreEncodedSave } from "./restore.ts";
-import { getSaveState, readEncodedSave } from "./save-state.ts";
-import type { LocalHistoryWatcherStatus } from "./types.ts";
+import type { RepoSessionWatcherStatus } from "./types.ts";
+
+/*
+ * The HTTP adapter is intentionally only a caller of History's package-root
+ * workflows. It must not import layout, locks, Git, SQLite, or observation
+ * implementation details.
+ */
 
 const authorizationPattern = /^Bearer (?<token>[\w\-]+)$/v;
 
@@ -48,7 +53,7 @@ function validationHook(
 export interface CreateLocalHttpAppInput {
   readonly repoPath: string;
   readonly token: string;
-  readonly getWatcherStatus: () => LocalHistoryWatcherStatus;
+  readonly getWatcherStatus: () => RepoSessionWatcherStatus;
   readonly onRequestError?: (error: HttpRequestErrorEvent) => void;
 }
 

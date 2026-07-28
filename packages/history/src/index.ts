@@ -22,9 +22,6 @@ export {
   queryRawObservations,
   searchSemanticEvents,
 } from "./history-interface.ts";
-export { createLocalHttpApp } from "./http-app.ts";
-export type { LocalHttpApp } from "./http-app.ts";
-export { createLocalHttpOpenApiDocument } from "./http-contract.ts";
 export { acquireSaveHistoryWatcher } from "./save-history-watcher.ts";
 export { getSaveState, readEncodedSave } from "./save-state.ts";
 
@@ -32,8 +29,6 @@ export {
   InvalidCommitRefError,
   InvalidReadModelCursorError,
   InvalidRestoreBackupDirectoryError,
-  LocalHistoryWatchProcessAlreadyRunningError,
-  LocalHttpServerStartError,
   ObservationNotFoundError,
   ReadModelUnavailableError,
   RestoreBackupFailedError,
@@ -42,15 +37,14 @@ export {
   RestoreWriteFailedError,
   RestoreWriteVerificationError,
   SaveHistoryRepositoryBusyError,
+  SaveHistoryWatcherAlreadyAcquiredError,
 } from "./errors.ts";
 
-export { startLocalHistoryWatchProcess } from "./local-history-watch-process.ts";
 export { restoreEncodedSave } from "./restore.ts";
 export type {
   AcquireSaveHistoryWatcherInput,
   DiffCommitsInput,
   DiffCommitsResult,
-  FileStabilityProbe,
   GetSaveStateInput,
   GetSaveStateResult,
   HistoricalSemanticEvent,
@@ -58,10 +52,6 @@ export type {
   HistoryResult,
   InitSaveHistoryInput,
   InitSaveHistoryResult,
-  LocalHistoryWatcherStatus,
-  LocalHistoryWatchProcess,
-  LocalHistoryWatchProcessEvent,
-  LocalHistoryWatchProcessFatalError,
   ObservationTrigger,
   ObserveSaveHistoryWatcherInput,
   ObserveSaveInput,
@@ -81,16 +71,10 @@ export type {
   RestoreEncodedSaveResult,
   RestoreTarget,
   SaveHistoryWatcher,
-  ScheduledWatchTask,
   SearchSemanticEventsInput,
   SearchSemanticEventsResult,
   SemanticUpdateResult,
-  StartLocalHistoryWatchProcessInput,
   WatcherError,
-  WatchEventSource,
-  WatchEventSourceStartInput,
-  WatchEventSubscription,
-  WatchScheduler,
 } from "./types.ts";
 
 export async function initSaveHistory(

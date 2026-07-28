@@ -5,6 +5,8 @@ below are the currently implemented command contract. Exact callable result
 types remain owned by the public
 [`@silksong-git/history` Interface](../../packages/history/src/index.ts) and
 [`@silksong-git/core` Interface](../../packages/core/src/index.ts).
+The `watch start` runtime is owned by the public
+[`@silksong-git/repo-session` Interface](../../packages/repo-session/src/index.ts).
 
 The CLI parses arguments and renders results; save-history rules remain in
 History and save interpretation remains in Core. It does not expose Git
@@ -214,7 +216,7 @@ result; text mode reports observation and event counts.
 silksong-git watch start [--repo <history-repo>] [--jsonl] [--http] [--port <port>]
 ```
 
-Starts the long-running Local History Watch Process. Startup may immediately
+Starts the long-running Repo Session. Startup may immediately
 commit the current Watched Save, and later stable changes can mutate Git and
 the Semantic Read Model according to Capture Policy.
 
@@ -227,10 +229,10 @@ the Semantic Read Model according to Capture Policy.
 - `--port <port>` selects an integer port from 1 through 65535 and requires
   `--http`. Without `--port`, the operating system chooses an available port.
 
-The process runs until stopped by `SIGINT`, `SIGTERM`, or `SIGBREAK`, or until
-a fatal process/output failure begins shutdown. The current scheduling and
+The session runs until stopped by `SIGINT`, `SIGTERM`, or `SIGBREAK`, or until
+a fatal session/output failure begins shutdown. The current scheduling and
 shutdown guarantees, including known gaps, live in the
-[Local History Watch Process architecture](../architecture/local-history-watch-process.md).
+[Repo Session architecture](../architecture/repo-session.md).
 
 ## Safety and Side Effects
 
@@ -254,7 +256,7 @@ SQLite.
 | Human-readable text   | Default for most one-shot commands. Intended for interactive use; exact wording and layout are not a byte-stable automation contract.                                            |
 | `--json`              | One pretty-printed JSON value on stdout for supported commands, normally the corresponding public Interface result. `save snapshot` currently requires this mode.                |
 | Raw decode JSON       | `save decode` always emits the raw Decoded Save object, pretty by default or compact with `--compact`, either to stdout or `--out`. This raw shape is not a stable semantic API. |
-| `watch start --jsonl` | Compact JSON Lines on stdout. Events are adapter summaries, not copies of internal watch-process objects.                                                                        |
+| `watch start --jsonl` | Compact JSON Lines on stdout. Events are adapter summaries, not copies of internal Repo Session objects.                                                                         |
 
 In JSONL mode, `started` includes repository, Watched Save, Capture Policy,
 and optional HTTP endpoint/token fields. Observation lines identify their

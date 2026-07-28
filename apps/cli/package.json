@@ -25,6 +25,7 @@
   "devDependencies": {
     "@silksong-git/core": "workspace:*",
     "@silksong-git/history": "workspace:*",
+    "@silksong-git/repo-session": "workspace:*",
     "tsup": "^8.5.1"
   }
 }

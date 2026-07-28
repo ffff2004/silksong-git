@@ -28,6 +28,7 @@ function getLintCommands(
         "apps/web",
         "packages/core",
         "packages/history",
+        "packages/repo-session",
         "scripts",
       ]),
 
@@ -89,6 +90,10 @@ function getTypeScriptCommands(
         return ["tsc --project ./packages/history/tsconfig.json"];
       }
 
+      case "packages/repo-session": {
+        return ["tsc --project ./packages/repo-session/tsconfig.json"];
+      }
+
       case "scripts": {
         return ["tsc --project ./scripts/tsconfig.json"];
       }
@@ -104,6 +109,7 @@ function getScopedLintCommands(scope: string): readonly LintCommand[] {
   switch (scope) {
     case "apps/cli":
     case "packages/history":
+    case "packages/repo-session":
     case "scripts": {
       return [
         `eslint --cache --cache-location .eslintcache --max-warnings 0 ${scope}`,

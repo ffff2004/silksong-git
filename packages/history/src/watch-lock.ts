@@ -1,7 +1,7 @@
 import type { FileHandle } from "node:fs/promises";
 import { open, readFile, rm } from "node:fs/promises";
 
-import { LocalHistoryWatchProcessAlreadyRunningError } from "./errors.ts";
+import { SaveHistoryWatcherAlreadyAcquiredError } from "./errors.ts";
 import { getRepositoryLayout } from "./layout.ts";
 
 interface AcquireWatchLockInput {
@@ -24,7 +24,7 @@ export async function acquireWatchLock(
     return await createWatchLockFile(input, lockPath);
   } catch (error) {
     if (isExistingLockError(error)) {
-      throw new LocalHistoryWatchProcessAlreadyRunningError({
+      throw new SaveHistoryWatcherAlreadyAcquiredError({
         lockPath,
         lockInfo: await readExistingLockInfo(lockPath),
       });

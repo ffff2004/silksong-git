@@ -3,14 +3,14 @@ import { createHash } from "node:crypto";
 import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { TestContext } from "node:test";
 import test from "node:test";
 
-import {
-  createLocalHttpApp,
-  createLocalHttpOpenApiDocument,
-  initSaveHistory,
-  observeSave,
-} from "./index.ts";
+import { initSaveHistory, observeSave } from "@silksong-git/history";
+
+import { createLocalHttpOpenApiDocument } from "./http-contract.ts";
+import type { RepoSessionEvent } from "./index.ts";
+import { startRepoSession } from "./index.ts";
 
 const fixtureDirectory = path.join(
   import.meta.dirname,
@@ -27,6 +27,42 @@ const maskShardEncodedSavePath = path.join(
 
 async function readJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
+}
+
+async function startLocalHttpSession(
+  t: TestContext,
+  repoPath: string,
+  events?: RepoSessionEvent[],
+) {
+  const session = await startRepoSession({
+    repoPath,
+    http: {},
+    ...(events !== undefined && {
+      onEvent: (event) => {
+        events.push(event);
+      },
+    }),
+    runtime: {
+      fileStabilityProbe: {
+        waitForStableFile: async () => undefined,
+      },
+      watchEventSource: {
+        start: () => ({ stop: () => undefined }),
+      },
+    },
+  });
+  const { http } = session;
+
+  assert.ok(http !== undefined);
+  t.after(async () => {
+    await session.stop();
+  });
+
+  return {
+    request: async (requestPath: string, init?: RequestInit) =>
+      await fetch(new URL(requestPath, http.endpoint), init),
+    token: http.token,
+  };
 }
 
 interface OpenApiDocumentProbe {
@@ -116,31 +152,19 @@ test("authenticated watcher reports the current watcher status", async (t) => {
   );
   const repoPath = path.join(tempDirectory, "history-repo");
   const watchedSavePath = path.join(tempDirectory, "user1.dat");
-  const token = "a".repeat(43);
 
   t.after(async () => {
     await rm(tempDirectory, { recursive: true, force: true });
   });
   await initSaveHistory({ repoPath, watchedSavePath });
 
-  const app = createLocalHttpApp({
-    repoPath,
-    token,
-    getWatcherStatus: () => ({
-      status: "running",
-      activity: "idle",
-      observationRevision: 0,
-      startedAt: "2026-07-12T00:00:00.000Z",
-      repoPath,
-      watchedSavePath,
-      capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
-    }),
-  });
-  const unauthorized = await app.request("/api/v1/watcher");
-  const wrongToken = await app.request("/api/v1/watcher", {
+  const http = await startLocalHttpSession(t, repoPath);
+  const { token } = http;
+  const unauthorized = await http.request("/api/v1/watcher");
+  const wrongToken = await http.request("/api/v1/watcher", {
     headers: { Authorization: "Bearer wrong" },
   });
-  const response = await app.request("/api/v1/watcher", {
+  const response = await http.request("/api/v1/watcher", {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -154,14 +178,21 @@ test("authenticated watcher reports the current watcher status", async (t) => {
   });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Cache-Control"), "no-store");
-  assert.deepEqual(await response.json(), {
-    status: "running",
-    activity: "idle",
-    observationRevision: 0,
-    startedAt: "2026-07-12T00:00:00.000Z",
-    repoPath,
-    watchedSavePath,
-    capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+  const watcher = await readJson<{
+    readonly activity: string;
+    readonly capturePolicy: unknown;
+    readonly repoPath: string;
+    readonly status: string;
+    readonly watchedSavePath: string;
+  }>(response);
+
+  assert.equal(watcher.status, "running");
+  assert.equal(watcher.activity, "idle");
+  assert.equal(watcher.repoPath, repoPath);
+  assert.equal(watcher.watchedSavePath, watchedSavePath);
+  assert.deepEqual(watcher.capturePolicy, {
+    debounceWriteMs: 500,
+    minCommitIntervalMs: 0,
   });
 });
 
@@ -176,20 +207,8 @@ test("CORS preflight is public while actual browser requests remain authenticate
     await rm(tempDirectory, { recursive: true, force: true });
   });
   await initSaveHistory({ repoPath, watchedSavePath });
-  const app = createLocalHttpApp({
-    repoPath,
-    token: "secret",
-    getWatcherStatus: () => ({
-      status: "running",
-      activity: "idle",
-      observationRevision: 0,
-      startedAt: "2026-07-12T00:00:00.000Z",
-      repoPath,
-      watchedSavePath,
-      capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
-    }),
-  });
-  const preflight = await app.request("/api/v1/watcher", {
+  const http = await startLocalHttpSession(t, repoPath);
+  const preflight = await http.request("/api/v1/watcher", {
     method: "OPTIONS",
     headers: {
       Origin: "https://example.test",
@@ -197,7 +216,7 @@ test("CORS preflight is public while actual browser requests remain authenticate
       "Access-Control-Request-Headers": "authorization,content-type",
     },
   });
-  const actual = await app.request("/api/v1/watcher", {
+  const actual = await http.request("/api/v1/watcher", {
     headers: { Origin: "https://example.test" },
   });
 
@@ -222,7 +241,6 @@ test("save and history GET routes expose public history behavior recent-first", 
   );
   const repoPath = path.join(tempDirectory, "history-repo");
   const watchedSavePath = path.join(tempDirectory, "user1.dat");
-  const token = "secret";
 
   t.after(async () => {
     await rm(tempDirectory, { recursive: true, force: true });
@@ -242,30 +260,19 @@ test("save and history GET routes expose public history behavior recent-first", 
   assert.equal(before.status, "committed");
   assert.equal(after.status, "committed");
 
-  const app = createLocalHttpApp({
-    repoPath,
-    token,
-    getWatcherStatus: () => ({
-      status: "running",
-      activity: "idle",
-      observationRevision: 2,
-      startedAt: "2026-07-12T00:00:00.000Z",
-      repoPath,
-      watchedSavePath,
-      capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
-    }),
-  });
+  const http = await startLocalHttpSession(t, repoPath);
+  const { token } = http;
   const headers = { Authorization: `Bearer ${token}` };
-  const save = await app.request("/api/v1/save?selector=latest", { headers });
-  const history = await app.request("/api/v1/history?includeFiltered=true", {
+  const save = await http.request("/api/v1/save?selector=latest", { headers });
+  const history = await http.request("/api/v1/history?includeFiltered=true", {
     headers,
   });
-  const observations = await app.request("/api/v1/observations", { headers });
-  const diff = await app.request(
+  const observations = await http.request("/api/v1/observations", { headers });
+  const diff = await http.request(
     `/api/v1/diff?from=${before.observation.commit.ref}&to=${after.observation.commit.ref}`,
     { headers },
   );
-  const search = await app.request("/api/v1/search?itemId=mask-shard-2", {
+  const search = await http.request("/api/v1/search?itemId=mask-shard-2", {
     headers,
   });
 
@@ -316,7 +323,6 @@ test("checkpoint validates bounded strict JSON and preserves observation semanti
   );
   const repoPath = path.join(tempDirectory, "history-repo");
   const watchedSavePath = path.join(tempDirectory, "user1.dat");
-  const token = "secret";
 
   t.after(async () => {
     await rm(tempDirectory, { recursive: true, force: true });
@@ -324,36 +330,25 @@ test("checkpoint validates bounded strict JSON and preserves observation semanti
   await copyFile(minimalEncodedSavePath, watchedSavePath);
   await initSaveHistory({ repoPath, watchedSavePath });
   await observeSave({ repoPath });
-  const app = createLocalHttpApp({
-    repoPath,
-    token,
-    getWatcherStatus: () => ({
-      status: "running",
-      activity: "idle",
-      observationRevision: 1,
-      startedAt: "2026-07-12T00:00:00.000Z",
-      repoPath,
-      watchedSavePath,
-      capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
-    }),
-  });
+  const http = await startLocalHttpSession(t, repoPath);
+  const { token } = http;
   const baseHeaders = { Authorization: `Bearer ${token}` };
-  const unsupported = await app.request("/api/v1/checkpoints", {
+  const unsupported = await http.request("/api/v1/checkpoints", {
     method: "POST",
     headers: baseHeaders,
     body: "{}",
   });
-  const invalid = await app.request("/api/v1/checkpoints", {
+  const invalid = await http.request("/api/v1/checkpoints", {
     method: "POST",
     headers: { ...baseHeaders, "Content-Type": "application/json" },
     body: JSON.stringify({ unexpected: true }),
   });
-  const unchanged = await app.request("/api/v1/checkpoints", {
+  const unchanged = await http.request("/api/v1/checkpoints", {
     method: "POST",
     headers: { ...baseHeaders, "Content-Type": "application/json" },
     body: "{}",
   });
-  const committed = await app.request("/api/v1/checkpoints", {
+  const committed = await http.request("/api/v1/checkpoints", {
     method: "POST",
     headers: { ...baseHeaders, "Content-Type": "application/json" },
     body: JSON.stringify({ allowUnchanged: true, message: "before boss" }),
@@ -381,7 +376,6 @@ test("HTTP input failures use bounded stable errors without leaking values", asy
   );
   const repoPath = path.join(tempDirectory, "history-repo");
   const watchedSavePath = path.join(tempDirectory, "user1.dat");
-  const token = "secret";
 
   t.after(async () => {
     await rm(tempDirectory, { recursive: true, force: true });
@@ -389,41 +383,30 @@ test("HTTP input failures use bounded stable errors without leaking values", asy
   await copyFile(minimalEncodedSavePath, watchedSavePath);
   await initSaveHistory({ repoPath, watchedSavePath });
   await observeSave({ repoPath });
-  const app = createLocalHttpApp({
-    repoPath,
-    token,
-    getWatcherStatus: () => ({
-      status: "running",
-      activity: "idle",
-      observationRevision: 1,
-      startedAt: "2026-07-12T00:00:00.000Z",
-      repoPath,
-      watchedSavePath,
-      capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
-    }),
-  });
+  const http = await startLocalHttpSession(t, repoPath);
+  const { token } = http;
   const authorization = { Authorization: `Bearer ${token}` };
-  const invalidBoolean = await app.request(
+  const invalidBoolean = await http.request(
     "/api/v1/history?includeFiltered=yes",
     { headers: authorization },
   );
-  const invalidLimit = await app.request("/api/v1/history?limit=1001", {
+  const invalidLimit = await http.request("/api/v1/history?limit=1001", {
     headers: authorization,
   });
-  const invalidCursor = await app.request(
+  const invalidCursor = await http.request(
     "/api/v1/history?cursor=not-a-cursor",
     {
       headers: authorization,
     },
   );
-  const method = await app.request("/api/v1/watcher", {
+  const method = await http.request("/api/v1/watcher", {
     method: "POST",
     headers: authorization,
   });
-  const route = await app.request("/api/v1/not-real", {
+  const route = await http.request("/api/v1/not-real", {
     headers: authorization,
   });
-  const oversized = await app.request("/api/v1/checkpoints", {
+  const oversized = await http.request("/api/v1/checkpoints", {
     method: "POST",
     headers: { ...authorization, "Content-Type": "application/json" },
     body: JSON.stringify({ message: "x".repeat(17 * 1024) }),
@@ -449,45 +432,28 @@ test("HTTP emits sanitized request events for 5xx failures but not 4xx responses
   );
   const repoPath = path.join(tempDirectory, "history-repo");
   const watchedSavePath = path.join(tempDirectory, "user1.dat");
-  const token = "secret";
-  const requestErrors: Array<{
-    readonly method: string;
-    readonly path: string;
-    readonly status: number;
-    readonly code: string;
-    readonly message: string;
-  }> = [];
 
   t.after(async () => {
     await rm(tempDirectory, { recursive: true, force: true });
   });
   await initSaveHistory({ repoPath, watchedSavePath });
-  const app = createLocalHttpApp({
-    repoPath,
-    token,
-    getWatcherStatus: () => ({
-      status: "running",
-      activity: "idle",
-      observationRevision: 0,
-      startedAt: "2026-07-12T00:00:00.000Z",
-      repoPath,
-      watchedSavePath,
-      capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
-    }),
-    onRequestError: (error) => {
-      requestErrors.push(error);
-    },
-  });
+  const events: RepoSessionEvent[] = [];
+  const http = await startLocalHttpSession(t, repoPath, events);
+  const { token } = http;
   const authorization = { Authorization: `Bearer ${token}` };
-  const invalid = await app.request("/api/v1/history?limit=0", {
+  const invalid = await http.request("/api/v1/history?limit=0", {
     headers: authorization,
   });
-  const unavailable = await app.request("/api/v1/history", {
+  const unavailable = await http.request("/api/v1/history", {
     headers: authorization,
   });
 
   assert.equal(invalid.status, 400);
   assert.equal(unavailable.status, 503);
+  const requestErrors = events.flatMap((event) =>
+    event.type === "httpRequestError" ? [event.error] : [],
+  );
+
   assert.deepEqual(requestErrors, [
     {
       method: "GET",
@@ -505,7 +471,6 @@ test("export returns exact Encoded Save bytes and safe immutable headers", async
   );
   const repoPath = path.join(tempDirectory, "history-repo");
   const watchedSavePath = path.join(tempDirectory, "user slot.dat");
-  const token = "secret";
 
   t.after(async () => {
     await rm(tempDirectory, { recursive: true, force: true });
@@ -516,20 +481,9 @@ test("export returns exact Encoded Save bytes and safe immutable headers", async
 
   assert.equal(observed.status, "committed");
 
-  const app = createLocalHttpApp({
-    repoPath,
-    token,
-    getWatcherStatus: () => ({
-      status: "running",
-      activity: "idle",
-      observationRevision: 1,
-      startedAt: "2026-07-12T00:00:00.000Z",
-      repoPath,
-      watchedSavePath,
-      capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
-    }),
-  });
-  const response = await app.request("/api/v1/export?commit=HEAD~0", {
+  const http = await startLocalHttpSession(t, repoPath);
+  const { token } = http;
+  const response = await http.request("/api/v1/export?commit=HEAD~0", {
     headers: { Authorization: `Bearer ${token}` },
   });
   const expectedBytes = await readFile(minimalEncodedSavePath);
@@ -564,7 +518,6 @@ test("in-place restore requires and enforces the confirmed current-save hash", a
   );
   const repoPath = path.join(tempDirectory, "history-repo");
   const watchedSavePath = path.join(tempDirectory, "user1.dat");
-  const token = "secret";
 
   t.after(async () => {
     await rm(tempDirectory, { recursive: true, force: true });
@@ -578,24 +531,13 @@ test("in-place restore requires and enforces the confirmed current-save hash", a
   const currentHash = createHash("sha256")
     .update(await readFile(watchedSavePath))
     .digest("hex");
-  const app = createLocalHttpApp({
-    repoPath,
-    token,
-    getWatcherStatus: () => ({
-      status: "running",
-      activity: "idle",
-      observationRevision: 1,
-      startedAt: "2026-07-12T00:00:00.000Z",
-      repoPath,
-      watchedSavePath,
-      capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
-    }),
-  });
+  const http = await startLocalHttpSession(t, repoPath);
+  const { token } = http;
   const headers = {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
   };
-  const conflict = await app.request("/api/v1/restores/in-place", {
+  const conflict = await http.request("/api/v1/restores/in-place", {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -604,7 +546,7 @@ test("in-place restore requires and enforces the confirmed current-save hash", a
       expectedCurrent: { status: "missing" },
     }),
   });
-  const restored = await app.request("/api/v1/restores/in-place", {
+  const restored = await http.request("/api/v1/restores/in-place", {
     method: "POST",
     headers,
     body: JSON.stringify({

@@ -5,14 +5,15 @@ import { watch } from "node:fs";
 import { stat } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { LocalHttpServerStartError } from "./errors.ts";
+import type { ObserveSaveResult } from "@silksong-git/history";
+import { acquireSaveHistoryWatcher } from "@silksong-git/history";
+
+import { RepoSessionHttpServerStartError } from "./errors.ts";
 import { createLocalHttpApp } from "./http-app.ts";
-import { acquireSaveHistoryWatcher } from "./save-history-watcher.ts";
 import type {
   FileStabilityProbe,
-  LocalHistoryWatchProcess,
-  ObserveSaveResult,
-  StartLocalHistoryWatchProcessInput,
+  RepoSession,
+  StartRepoSessionInput,
   WatchEventSource,
   WatchEventSourceStartInput,
   WatchEventSubscription,
@@ -20,35 +21,36 @@ import type {
 } from "./types.ts";
 import { createWatchObservationCoordinator } from "./watch-observation-coordinator.ts";
 
-export async function startLocalHistoryWatchProcess(
-  input: StartLocalHistoryWatchProcessInput,
-): Promise<LocalHistoryWatchProcess> {
+export async function startRepoSession(
+  input: StartRepoSessionInput,
+): Promise<RepoSession> {
   const emit = input.onEvent ?? (() => undefined);
-  const now = input.now?.() ?? new Date();
+  const now = input.runtime?.now?.() ?? new Date();
   const watcher = await acquireSaveHistoryWatcher({
     repoPath: input.repoPath,
     startedAt: now,
   });
   const fileStabilityProbe =
-    input.fileStabilityProbe ?? defaultFileStabilityProbe;
-  const watchScheduler = input.watchScheduler ?? defaultWatchScheduler;
-  const watchEventSource = input.watchEventSource ?? nodeWatchEventSource;
+    input.runtime?.fileStabilityProbe ?? defaultFileStabilityProbe;
+  const watchScheduler = input.runtime?.watchScheduler ?? defaultWatchScheduler;
+  const watchEventSource =
+    input.runtime?.watchEventSource ?? nodeWatchEventSource;
   let subscription: WatchEventSubscription | undefined;
   let httpServer: ServerType | undefined;
-  let http: LocalHistoryWatchProcess["http"];
+  let http: RepoSession["http"];
   let stopped = false;
   const startedAt = now.toISOString();
   let activity: "idle" | "pending" | "observing" = "idle";
   let observationRevision = 0;
   let lastObservation: ReturnType<
-    LocalHistoryWatchProcess["getWatcherStatus"]
+    RepoSession["getWatcherStatus"]
   >["lastObservation"];
   const observationCoordinator = createWatchObservationCoordinator({
     watchedSavePath: watcher.watchedSavePath,
     debounceWriteMs: watcher.capturePolicy.debounceWriteMs,
     fileStabilityProbe,
     watchScheduler,
-    now: () => input.now?.() ?? new Date(),
+    now: () => input.runtime?.now?.() ?? new Date(),
     observe: observeAndEmit,
     complete: completeObservation,
     setActivity: (nextActivity) => {
@@ -247,7 +249,7 @@ async function startHttpServer(
   port: number,
 ): Promise<{ readonly server: ServerType; readonly endpoint: string }> {
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) {
-    throw new LocalHttpServerStartError();
+    throw new RepoSessionHttpServerStartError();
   }
 
   try {
@@ -263,7 +265,7 @@ async function startHttpServer(
       server.once("error", reject);
     });
   } catch (error) {
-    throw new LocalHttpServerStartError({ cause: error });
+    throw new RepoSessionHttpServerStartError({ cause: error });
   }
 }
 

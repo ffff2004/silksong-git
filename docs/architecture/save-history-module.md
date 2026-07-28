@@ -25,7 +25,7 @@ History owns the persistence rules and adapters behind its public Interface:
 | Decoded Save and Observation Metadata | Each Raw Save Observation also commits the decoded payload and metadata needed for inspection, provenance, and later semantic rebuilds. These are raw observation artifacts, not semantic truth.                                                                                      |
 | Project Config                        | Repository-scoped config records the Watched Save path, Capture Policy, Display Semantic Event Filters, and restore defaults. History reads it when executing repository behavior. Effective Config precedence is defined by [ADR-0004](../adr/0004-config-scopes-and-precedence.md). |
 | Semantic Read Model                   | History derives Semantic Snapshots, Semantic Events, observation lookup data, and semantic Version Stamps into SQLite, then applies Project Config display filters when querying. It is query authority but is rebuildable from Git, so it is not a restore source.                   |
-| `write.lock`                          | History uses this short-lived repository lock to serialize Git and SQLite mutations for observations and rebuilds, and the full in-place restore transaction. Offline Commands and the watch process share this lock instead of creating separate write paths.                        |
+| `write.lock`                          | History uses this short-lived repository lock to serialize Git and SQLite mutations for observations and rebuilds, and the full in-place restore transaction. Offline Commands and Repo Sessions share this lock instead of creating separate write paths.                            |
 | `watch.lock`                          | History implements the repository-scoped singleton lock held by an acquired Save History Watcher lease. Its acquisition, lifetime, and release belong to watcher ownership and are distinct from an observation transaction.                                                          |
 
 The repository currently tracks the Project Config and current observation's
@@ -72,10 +72,9 @@ Semantic Event Filters never decide whether an observation enters Git and do
 not delete derived events from SQLite.
 
 This transaction does not own file-event debounce, stability probes,
-single-flight dirty-bit handling, deferred observation timers, process status,
-or shutdown. When a Minimum Commit Interval skip includes a next-allowed time,
-the caller may use it as scheduling input; the
-[Local History Watch Process](local-history-watch-process.md) owns that
+single-flight dirty-bit handling, deferred observation timers, Repo Session
+status, or shutdown. When a Minimum Commit Interval skip includes a next-allowed time, the caller may use it as scheduling input; the
+[Repo Session](repo-session.md) owns that
 orchestration and calls `observeSave` again at the appropriate time.
 
 ## Public Read and Maintenance Workflows
@@ -146,11 +145,11 @@ Detailed safety decisions are recorded in
 and the Local History HTTP refinement in
 [ADR-0018](../adr/0018-secure-versioned-local-http-adapter.md).
 
-## Caller and Process Boundary
+## Caller and Repo Session Boundary
 
-The Local History Watch Process is a compatibility caller and orchestrator of
+The Repo Session is the caller and orchestrator of
 this Module's observation and query behavior. It obtains a Save History Watcher
-lease, then owns the watch subscription, process-level failure handling, and
+lease, then owns the watch subscription, session-level failure handling, and
 optional local HTTP listener while the lease owns `watch.lock`. It does not
 implement a second Git, SQLite, observation, export, or restore path. Manual
 checkpoints and Offline Commands call the direct History Interface with current
@@ -160,6 +159,6 @@ another watcher.
 The HTTP adapter is likewise an adapter over public History behavior. Its exact
 authentication, request, response, compatibility, and download contracts live
 in the [Local HTTP API Reference](../reference/local-http-api.md), not in this
-Module document. Process startup, observation scheduling, and graceful shutdown
+Module document. Repo Session startup, observation scheduling, and graceful shutdown
 live in the
-[Local History Watch Process architecture](local-history-watch-process.md).
+[Repo Session architecture](repo-session.md).

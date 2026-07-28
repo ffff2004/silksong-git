@@ -1,7 +1,7 @@
 # Local HTTP API Reference
 
 The Local HTTP API is the authenticated browser and tool boundary for one
-running Local History Watch Process. It adapts the public Save History Module
+running Repo Session. It adapts the public Save History Module
 Interface; it is not a second persistence path or a frontend server.
 
 ## Executable Contract
@@ -12,14 +12,14 @@ and the route registry, not a separate source of truth.
 
 | Contract question                                                                                                         | Executable source                                                                                                                                                                      |
 | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Error codes, query and body validation, response schemas, JSON success and error shapes                                   | [`http-wire.ts`](../../packages/history/src/http-wire.ts)                                                                                                                              |
-| Methods, paths, route-declared media types, statuses and headers, and OpenAPI composition                                 | [`http-contract.ts`](../../packages/history/src/http-contract.ts)                                                                                                                      |
-| Authentication, CORS, request limits, handler and fallback behavior, runtime-only statuses and headers, and error mapping | [`http-app.ts`](../../packages/history/src/http-app.ts)                                                                                                                                |
-| Executable examples and edge-case behavior                                                                                | [`http-app.test.ts`](../../packages/history/src/http-app.test.ts) and [`http-wire.test.ts`](../../packages/history/src/http-wire.test.ts)                                              |
+| Error codes, query and body validation, response schemas, JSON success and error shapes                                   | [`http-wire.ts`](../../packages/repo-session/src/http-wire.ts)                                                                                                                         |
+| Methods, paths, route-declared media types, statuses and headers, and OpenAPI composition                                 | [`http-contract.ts`](../../packages/repo-session/src/http-contract.ts)                                                                                                                 |
+| Authentication, CORS, request limits, handler and fallback behavior, runtime-only statuses and headers, and error mapping | [`http-app.ts`](../../packages/repo-session/src/http-app.ts)                                                                                                                           |
+| Executable examples and edge-case behavior                                                                                | [`http-app.test.ts`](../../packages/repo-session/src/http-app.test.ts) and [`http-wire.test.ts`](../../packages/repo-session/src/http-wire.test.ts)                                    |
 | Browser-side authentication, response validation, and request behavior                                                    | [`local-history-client.ts`](../../apps/web/src/features/local-history/local-history-client.ts) and its [tests](../../apps/web/src/features/local-history/local-history-client.test.ts) |
 
 Client code can import the browser-safe schemas and inferred DTOs from
-`@silksong-git/history/http-wire`. Clients that need an exhaustive endpoint or
+`@silksong-git/repo-session/http-wire`. Clients that need an exhaustive endpoint or
 schema listing should generate the OpenAPI document instead of copying the
 route registry into another document.
 
@@ -31,20 +31,20 @@ From the repository root, run:
 pnpm generate:openapi
 ```
 
-The root command delegates to the History package's `generate:openapi` script.
-The [generator](../../packages/history/src/scripts/generate-openapi.ts) writes
+The root command delegates to the Repo Session package's `generate:openapi` script.
+The [generator](../../packages/repo-session/src/scripts/generate-openapi.ts) writes
 `docs/generated/local-http-api.openapi.json`. That derived file is ignored by
-Git and exists only after generation. The watch process does not serve it as a
+Git and exists only after generation. The Repo Session does not serve it as a
 public documentation route.
 
 ## Connection and Authentication
 
-The first-version service is an optional listener owned by the Local History
-Watch Process. It binds only to `http://127.0.0.1`; LAN access, HTTPS, IPv6,
+The first-version service is an optional listener owned by a Repo Session. It
+binds only to `http://127.0.0.1`; LAN access, HTTPS, IPv6,
 custom hosts, and user-provided certificates are outside the accepted security
 boundary. See [ADR-0018](../adr/0018-secure-versioned-local-http-adapter.md).
 
-Every process start creates a new bearer token. Keep the endpoint and token in
+Every Repo Session start creates a new bearer token. Keep the endpoint and token in
 memory, and send the token only as:
 
 ```http
@@ -71,10 +71,10 @@ headers defined across the route contract and handler.
 
 The contract is rooted at `/api/v1`. After authenticating, the bundled Web
 client starts with `GET /api/v1/watcher`. The successful response both proves
-that the Local History Watch Process is reachable and seeds the initial watcher
+that the Repo Session is reachable and seeds the initial watcher
 status displayed by the Web UI; later polling uses the same endpoint.
 
-The Web client and Local History Watch Process are released in lockstep, so the
+The Web client and Repo Session are released in lockstep, so the
 protocol has no separate metadata endpoint or runtime version/capability
 negotiation. The executable route and response schemas remain the source of
 truth for the requests each release supports.
@@ -160,9 +160,9 @@ under its write lock before backup or overwrite, and a mismatch returns
 `restore_conflict`. Export is a read-only download and does not write a Restore
 Target.
 
-## Watch Process Lifecycle
+## Repo Session Lifecycle
 
 Listener startup, watcher ownership, observation scheduling, fatal versus
 request-local failures, and graceful shutdown belong to the
-[Local History Watch Process architecture](../architecture/local-history-watch-process.md).
+[Repo Session architecture](../architecture/repo-session.md).
 They are intentionally not duplicated in this protocol reference.

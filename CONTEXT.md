@@ -49,7 +49,8 @@ A Raw Save Observation whose Encoded Save decoded successfully but whose Decoded
 _Avoid_: Corrupted save, semantic event
 
 **Watcher Error**:
-A non-committed failure observed by the Local History Watch Process, such as a decode failure, transient half-written file, unreadable path, or corrupted/non-save input.
+A non-committed failure observed by a Repo Session, such as a decode failure,
+transient half-written file, unreadable path, or corrupted/non-save input.
 _Avoid_: Raw save observation, unrecognized schema observation
 
 **Observation Metadata**:
@@ -112,12 +113,16 @@ _Avoid_: Watched save, history repo
 A restore operation that overwrites the Watched Save path from Project Config. It requires explicit user intent and creates a backup before writing.
 _Avoid_: Default restore
 
-**Local History Watch Process**:
-The long-running process that owns watching one Watched Save, committing Raw Save Observations, updating the Semantic Read Model, and serving local HTTP API endpoints for that save's history workflows.
-_Avoid_: Web UI server, frontend server, CLI command
+**Repo Session**:
+The long-running local runtime for one Save History Repository. It acquires one
+Save History Watcher lease, owns file-event scheduling and optional local HTTP,
+and calls public History workflows. In the current lifecycle, starting a Repo
+Session always acquires watcher ownership; it is not yet a query-only or
+watcher-independent session.
+_Avoid_: Web UI server, frontend server, History Module
 
 **Offline Command**:
-A CLI command that reads the Save History Repository and Semantic Read Model directly without requiring the Local History Watch Process to be running.
+A CLI command that reads the Save History Repository and Semantic Read Model directly without requiring a Repo Session to be running.
 _Avoid_: Watcher
 
 **Static Web Mode**:

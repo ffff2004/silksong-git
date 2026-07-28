@@ -1,0 +1,8 @@
+// TypeScript configuration for the Node.js Repo Session package.
+{
+  "$schema": "https://raw.githubusercontent.com/complete-ts/complete/main/packages/complete-tsconfig/schemas/tsconfig-strict-schema.json",
+
+  "extends": "../../tsconfig.node.base.json",
+
+  "include": ["src/**/*.ts"],
+}

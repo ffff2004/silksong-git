@@ -26,7 +26,7 @@ Its two external dependencies have deliberately different roles:
 - Local History Web Mode calls the Local HTTP Adapter through
   [`local-history-client.ts`](../../apps/web/src/features/local-history/local-history-client.ts).
   The client imports only the public browser-safe wire schemas and DTOs from
-  `@silksong-git/history/http-wire`; it does not call History internals or read
+  `@silksong-git/repo-session/http-wire`; it does not call History internals or read
   Git, SQLite, watcher state, or the local filesystem directly.
 
 The Web client validates every JSON response with the public runtime schemas.
@@ -182,7 +182,7 @@ perform the checkpoint itself.
 
 History, Diff, and Watcher are frontend workflows over the Local HTTP Adapter.
 The [Save History Module](save-history-module.md) and
-[Local History Watch Process](local-history-watch-process.md) retain ownership
+[Repo Session](repo-session.md) retain ownership
 of persistence, serialization, watcher scheduling, export bytes, and restore
 safety.
 

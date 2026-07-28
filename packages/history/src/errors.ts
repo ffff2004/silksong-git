@@ -1,8 +1,6 @@
 export { InvalidCommitRefError } from "./errors/invalid-commit-ref-error.ts";
 export { InvalidReadModelCursorError } from "./errors/invalid-read-model-cursor-error.ts";
 export { InvalidRestoreBackupDirectoryError } from "./errors/invalid-restore-backup-directory-error.ts";
-export { LocalHistoryWatchProcessAlreadyRunningError } from "./errors/local-history-watch-process-already-running-error.ts";
-export { LocalHttpServerStartError } from "./errors/local-http-server-start-error.ts";
 export { ObservationNotFoundError } from "./errors/observation-not-found-error.ts";
 export { ReadModelUnavailableError } from "./errors/read-model-unavailable-error.ts";
 export { RestoreBackupFailedError } from "./errors/restore-backup-failed-error.ts";
@@ -11,3 +9,4 @@ export { RestoreTargetExistsError } from "./errors/restore-target-exists-error.t
 export { RestoreWriteFailedError } from "./errors/restore-write-failed-error.ts";
 export { RestoreWriteVerificationError } from "./errors/restore-write-verification-error.ts";
 export { SaveHistoryRepositoryBusyError } from "./errors/save-history-repository-busy-error.ts";
+export { SaveHistoryWatcherAlreadyAcquiredError } from "./errors/save-history-watcher-already-acquired-error.ts";

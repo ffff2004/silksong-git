@@ -7,14 +7,14 @@ import type {
   HistoricalSemanticEvent,
   HistoryCommit,
   HistoryResult,
-  LocalHistoryWatcherStatus,
   ObserveSaveResult,
   RawObservationHistoryEntry,
   RawObservationHistoryResult,
   RawSaveObservation,
   RestoreEncodedSaveResult,
   SearchSemanticEventsResult,
-} from "./types.ts";
+} from "@silksong-git/history";
+import type { RepoSessionWatcherStatus } from "./types.ts";
 
 export const localHttpErrorCodes = [
   "invalid_request",
@@ -408,7 +408,7 @@ export function createLocalHttpWireSchemas(
     debounceWriteMs: zod.number(),
     minCommitIntervalMs: zod.number(),
   });
-  const watcherStatusSchema: z.ZodType<LocalHistoryWatcherStatus> = decorate(
+  const watcherStatusSchema: z.ZodType<RepoSessionWatcherStatus> = decorate(
     zod.object({
       status: zod.literal("running"),
       activity: zod.enum(["idle", "pending", "observing"]),
@@ -419,7 +419,7 @@ export function createLocalHttpWireSchemas(
       capturePolicy: capturePolicySchema,
       lastObservation: observationSummarySchema.optional(),
     }),
-    "LocalHistoryWatcherStatus",
+    "RepoSessionWatcherStatus",
   );
   const semanticUpdateSchema = zod.discriminatedUnion("status", [
     zod.object({

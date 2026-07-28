@@ -10,6 +10,7 @@
     { "path": "./packages/core/tsconfig.json" },
     { "path": "./packages/core/tsconfig.node.json" },
     { "path": "./packages/history/tsconfig.json" },
+    { "path": "./packages/repo-session/tsconfig.json" },
     { "path": "./scripts/tsconfig.json" },
   ],
 }

@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js";
 import { createSignal } from "solid-js";
 
-import type { LocalHttpObservationHistoryResult } from "@silksong-git/history/http-wire";
+import type { LocalHttpObservationHistoryResult } from "@silksong-git/repo-session/http-wire";
 import type { LocalHistoryClient } from "../local-history/local-history-client.ts";
 
 type ObservationEntry = LocalHttpObservationHistoryResult["entries"][number];

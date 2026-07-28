@@ -8,26 +8,27 @@ packages do not depend on applications.
 
 ```txt
 Static Web Mode ----------------------> @silksong-git/core
-Local History Web Mode --HTTP client--> Local HTTP Adapter
+Local History Web Mode --HTTP client--> @silksong-git/repo-session/http-wire
 CLI --------------------+-------------> @silksong-git/history
+                        +-------------> @silksong-git/repo-session
                         +-------------> @silksong-git/core
-Local HTTP Adapter -------------------> @silksong-git/history
+@silksong-git/repo-session -----------> @silksong-git/history
 @silksong-git/history ----------------> @silksong-git/core
 ```
 
-| Module                                                       | Current responsibility and dependency boundary                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`packages/core`](../../packages/core/src/index.ts)          | Decodes and parses saves, supplies builtin Mapping Data, creates Semantic Snapshots, and diffs them into Semantic Events. It is browser-safe and has no DOM, Git, SQLite, filesystem-watching, or HTTP responsibility.                                                                 |
-| [`packages/history`](../../packages/history/src/index.ts)    | Owns one Save History Repository, Git and SQLite adapters, observation and restore workflows, query/diff/search behavior, repository locks, the Local History Watch Process, and its optional HTTP adapter. It depends on Core for semantic interpretation.                            |
-| [`apps/cli`](../../apps/cli/src/main.ts)                     | Parses commands and renders terminal or JSON output. Save inspection calls Core; repository, history, restore, and watch commands call the public History Interface. It does not own persistence rules.                                                                                |
-| [`apps/web`](../../apps/web/src/main.tsx)                    | Runs one Solid frontend in Static Web Mode or Local History Web Mode. Static mode calls Core in the browser. Local mode uses the browser-safe HTTP wire contract and an authenticated HTTP client; it does not import History's Node runtime or access local storage systems directly. |
-| [Local HTTP Adapter](../../packages/history/src/http-app.ts) | Runs only when enabled inside the Local History Watch Process. It authenticates and validates versioned loopback requests, then adapts them to History workflows. It does not create an independent persistence path or serve the Web frontend.                                        |
+| Module                                                              | Current responsibility and dependency boundary                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`packages/core`](../../packages/core/src/index.ts)                 | Decodes and parses saves, supplies builtin Mapping Data, creates Semantic Snapshots, and diffs them into Semantic Events. It is browser-safe and has no DOM, Git, SQLite, filesystem-watching, or HTTP responsibility.                                                                    |
+| [`packages/history`](../../packages/history/src/index.ts)           | Owns one Save History Repository, Git and SQLite adapters, observation and restore workflows, query/diff/search behavior, repository locks, and watcher leases. It depends on Core for semantic interpretation.                                                                           |
+| [`packages/repo-session`](../../packages/repo-session/src/index.ts) | Owns the long-running watcher runtime, file-event scheduling, optional loopback HTTP adapter, executable HTTP contract, and browser-safe wire contract. It calls only public History workflows.                                                                                           |
+| [`apps/cli`](../../apps/cli/src/main.ts)                            | Parses commands and renders terminal or JSON output. Save inspection calls Core; repository, history, and restore commands call History, while `watch start` starts a Repo Session. It does not own persistence rules.                                                                    |
+| [`apps/web`](../../apps/web/src/main.tsx)                           | Runs one Solid frontend in Static Web Mode or Local History Web Mode. Static mode calls Core in the browser. Local mode uses Repo Session's browser-safe HTTP wire contract and an authenticated HTTP client; it does not import a Node runtime or access local storage systems directly. |
 
 The package split follows
 [ADR-0011](../adr/0011-workspace-package-architecture.md). Exact callable
 Interfaces remain owned by package-root exports; exact HTTP shapes remain owned
-by the [executable contract](../../packages/history/src/http-contract.ts), its
-[browser-safe wire schemas](../../packages/history/src/http-wire.ts), and the
+by the [executable contract](../../packages/repo-session/src/http-contract.ts), its
+[browser-safe wire schemas](../../packages/repo-session/src/http-wire.ts), and the
 OpenAPI document generated on demand as described by the
 [Local HTTP API Reference](../reference/local-http-api.md).
 
@@ -59,7 +60,7 @@ the browser and has no Git, SQLite, watcher, or local HTTP dependency.
 
 ### Observation and semantic indexing
 
-The Local History Watch Process and CLI Manual Checkpoint both invoke History's
+The Repo Session and CLI Manual Checkpoint both invoke History's
 observation workflow. History reads and decodes the Watched Save. Watch-triggered
 work applies the Capture Policy; a Manual Checkpoint bypasses the Minimum Commit
 Interval and may explicitly allow unchanged bytes. A committed Raw Save
@@ -70,24 +71,24 @@ decode or file failure is a non-committed Watcher Error; a Manual Checkpoint
 reports the corresponding failure without committing. Detailed ownership
 belongs to the
 [Save History Module](save-history-module.md) and
-[Local History Watch Process](local-history-watch-process.md) documents.
+[Repo Session](repo-session.md) documents.
 
 ### Offline CLI workflow
 
 Repository-scoped CLI commands call History directly to initialize, observe,
 query, diff, search, rebuild, or restore. These commands do not require
-the watch process, but write operations use History's repository lock rather
+a Repo Session, but write operations use History's repository lock rather
 than bypassing its persistence boundary. Save decode and snapshot commands call
 Core directly. Command syntax and safety behavior belong in the
 [CLI Reference](../reference/cli.md).
 
 ### Local History Web workflow
 
-The watch process may start the versioned Local HTTP Adapter on loopback with a
+The Repo Session may start the versioned Local HTTP Adapter on loopback with a
 per-start bearer token. The Web client performs an authenticated watcher probe
 and then obtains save state, history, diff, search, checkpoint, export, and
 restore behavior through that adapter. The adapter delegates to History; the
-frontend never runs Git or SQLite operations. The process owns the HTTP
+frontend never runs Git or SQLite operations. The Repo Session owns the HTTP
 listener lifecycle, while frontend serving remains separate. See
 [ADR-0008](../adr/0008-one-local-process-owns-watching-and-local-history-api.md),
 [ADR-0018](../adr/0018-secure-versioned-local-http-adapter.md), and the
@@ -97,7 +98,8 @@ listener lifecycle, while frontend serving remains separate. See
 
 - Core remains free of DOM, Git, SQLite, filesystem watching, and HTTP concerns.
 - History is the only Module that owns Git, SQLite, repository locking,
-  observation, restore, and watch-process behavior.
+  observation, and restore behavior. Repo Session owns process scheduling and
+  HTTP lifecycle above that persistence boundary.
 - CLI and HTTP endpoint workflows must call public History Interfaces instead
   of Git commands, SQLite tables, or internal persistence helpers.
 - The Web frontend uses Core for browser-only semantic work and local HTTP for
@@ -105,7 +107,7 @@ listener lifecycle, while frontend serving remains separate. See
   the local filesystem.
 - Raw capture and semantic display are independent: display filters neither
   suppress Git observations nor delete Semantic Events from SQLite.
-- The watch process is the singleton long-running writer for a repository.
+- The Repo Session is the singleton long-running writer for a repository.
   Offline writes and manual checkpoints serialize through History's short-lived
   write lock; they do not start a second watcher.
 - Restore defaults to an explicit target. In-place restore requires explicit
@@ -114,7 +116,7 @@ listener lifecycle, while frontend serving remains separate. See
 
 Capability details live in the [Semantic Core](semantic-core.md),
 [Save History Module](save-history-module.md),
-[Local History Watch Process](local-history-watch-process.md), and
+[Repo Session](repo-session.md), and
 [Web](web.md) architecture documents. Accepted rationale is indexed in the
 [ADR index](../adr/README.md); those sources should be linked rather than
 duplicated here.

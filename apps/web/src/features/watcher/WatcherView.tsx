@@ -3,7 +3,7 @@ import { createSignal, Show } from "solid-js";
 import type {
   LocalHttpCheckpointResult,
   LocalHttpWatcherStatus,
-} from "@silksong-git/history/http-wire";
+} from "@silksong-git/repo-session/http-wire";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import buttonStyles from "../../ui/Button.module.css";
 import viewStyles from "../../ui/View.module.css";

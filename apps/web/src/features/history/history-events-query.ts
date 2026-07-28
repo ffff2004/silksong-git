@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js";
 import { createMemo, createSignal } from "solid-js";
 
-import type { LocalHttpHistoryResult } from "@silksong-git/history/http-wire";
+import type { LocalHttpHistoryResult } from "@silksong-git/repo-session/http-wire";
 import type { LocalHistoryClient } from "../local-history/local-history-client.ts";
 
 type HistoryEvent = LocalHttpHistoryResult["events"][number];
