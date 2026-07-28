@@ -175,8 +175,9 @@ prevent a Decoded Save JSON comparison. The semantic view renders the `to`
 Snapshot through the reusable Progress renderer with changed-item emphasis;
 it does not mutate the application Save Store.
 
-Watcher presents the current polled status, including activity, Capture Policy,
-last observation, and the latest Watcher Error. Its Manual Checkpoint action is
+Watcher presents inactive and transitional states as well as the active
+watcher's activity, Capture Policy, last observation, and latest Watcher Error.
+Its Manual Checkpoint action is
 an authenticated HTTP mutation. The Web application does not watch files or
 perform the checkpoint itself.
 

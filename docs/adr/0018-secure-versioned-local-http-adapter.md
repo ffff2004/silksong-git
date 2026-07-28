@@ -1,10 +1,21 @@
 # Serve a secure versioned local HTTP Adapter from Repo Session
 
-We decided that the optional local HTTP Adapter is part of the same Repo Session that owns file watching, Raw Save Observation commits, and Semantic Read Model updates. Enabling HTTP is an atomic session-start option: watcher ownership, the watch backend, and the HTTP listener must all start successfully before the session reports `started`. An unrecoverable listener failure stops the whole session and releases `watch.lock`; an individual request failure does not.
+We decided that the local HTTP Adapter is owned by the Repo Session that
+orchestrates file watching and calls History workflows. ADR-0020 supersedes the
+original optional and atomic startup lifetime: HTTP is now mandatory on open,
+while watcher ownership starts and stops independently. An unrecoverable
+listener failure stops the whole session; an individual request failure does
+not.
 
 The first version binds only `http://127.0.0.1`; the host is fixed in the HTTP Adapter and is not a Project Config field. The default runtime port is `0`, allowing the operating system to choose an available port, while `--port <port>` may select an explicit port only with `--http`. The port and credentials are runtime state and are never written to Project Config. HTTPS, IPv6, LAN binding, user-provided certificates, and a CLI host override are outside this decision; adding LAN access would require a new threat model and ADR.
 
-Each Repo Session start generates a new cryptographically secure random bearer token of at least 256 bits, encoded as unpadded base64url. The token is held only in session memory, compared in constant time, and accepted only through `Authorization: Bearer <token>`. It is never accepted through a URL, cookie, or alternate authentication scheme. The CLI reports the endpoint and token exactly once in the structured `started` event, with separate fields rather than embedding the token in the URL. Missing, malformed, and incorrect credentials are indistinguishable to clients.
+Each Repo Session open generates a new cryptographically secure random bearer
+token of at least 256 bits, encoded as unpadded base64url. The token is held
+only in session memory, compared in constant time, and accepted only through
+`Authorization: Bearer <token>`. It is never accepted through a URL, cookie, or
+alternate authentication scheme. The CLI may disclose the endpoint and token
+once from its output Adapter; credentials do not enter general session events.
+Missing, malformed, and incorrect credentials are indistinguishable to clients.
 
 Cross-origin browser access uses standard CORS with `Access-Control-Allow-Origin: *`, no credentials, and an explicit allowlist of methods and headers. Unauthenticated `OPTIONS` preflight is the only authentication exception and exposes no repository state. Actual requests require the bearer token. Browser Local Network Access permission handling belongs to the Web client; the server does not implement the superseded Private Network Access response headers.
 

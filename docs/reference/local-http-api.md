@@ -39,13 +39,13 @@ public documentation route.
 
 ## Connection and Authentication
 
-The first-version service is an optional listener owned by a Repo Session. It
+The service is a mandatory listener owned by an open Repo Session. It
 binds only to `http://127.0.0.1`; LAN access, HTTPS, IPv6,
 custom hosts, and user-provided certificates are outside the accepted security
 boundary. See [ADR-0018](../adr/0018-secure-versioned-local-http-adapter.md).
 
-Every Repo Session start creates a new bearer token. Keep the endpoint and token in
-memory, and send the token only as:
+Every Repo Session open creates a new bearer token. The endpoint and token stay
+fixed until that session stops. Keep them in memory, and send the token only as:
 
 ```http
 Authorization: Bearer <token>
@@ -128,8 +128,10 @@ protocol failure, not an API-domain error.
 ## Polling Model
 
 The first version uses polling, not SSE or WebSocket. Watcher status is a
-coarse snapshot with an `observationRevision` change signal and only the latest
-observation summary. It is not a lossless process-event stream or durable audit
+discriminated `inactive`, `starting`, `running`, or `stopping` snapshot.
+Session-scoped `observationRevision` and the latest observation summary remain
+coherent across watcher restarts; active watcher details appear only in active
+or draining states. It is not a lossless process-event stream or durable audit
 log.
 
 While connected and visible, the Web runtime polls watcher status. A revision
@@ -140,6 +142,11 @@ skips and Watcher Errors may change the revision without creating durable
 history.
 
 ## Mutation Retry Constraints
+
+Manual Checkpoint and In-Place Restore are available while watcher status is
+inactive and while another process owns watching. They acquire only History's
+short-lived repository write lock, so contention is reported through the same
+`repository_busy` contract as other History writers.
 
 The protocol has no idempotency keys, and the bundled client performs one HTTP
 attempt per call. Do not automatically retry Manual Checkpoint or in-place
@@ -162,7 +169,11 @@ Target.
 
 ## Repo Session Lifecycle
 
-Listener startup, watcher ownership, observation scheduling, fatal versus
-request-local failures, and graceful shutdown belong to the
+Opening starts the listener without watcher ownership. The protocol deliberately
+has no watcher start or stop routes; its clients observe status while the Repo
+Session owner controls that lifecycle. Admission closes during shutdown, and
+work already admitted into History is drained even after response timeout or
+client disconnect. Listener startup, watcher ownership, observation scheduling,
+fatal versus request-local failures, and graceful shutdown belong to the
 [Repo Session architecture](../architecture/repo-session.md).
 They are intentionally not duplicated in this protocol reference.

@@ -2,8 +2,8 @@ import type { ObserveSaveResult } from "@silksong-git/history";
 import { SaveHistoryWatcherAlreadyAcquiredError } from "@silksong-git/history";
 import type { RepoSession, RepoSessionEvent } from "@silksong-git/repo-session";
 import {
+  openRepoSession,
   RepoSessionHttpServerStartError,
-  startRepoSession,
 } from "@silksong-git/repo-session";
 import type { Command } from "commander";
 
@@ -41,12 +41,12 @@ async function runWatchStartCommand(
   options: WatchStartCommandOptions,
   runtime: CliRuntime,
 ) {
-  const http = parseHttpOptions(options, runtime);
+  const parsedPort = parseHttpOptions(options, runtime);
 
-  if (http === false) {
+  if (parsedPort === false) {
     return;
   }
-  const httpOptions: { readonly port?: number } | undefined = http;
+  const port: number | undefined = parsedPort;
 
   const repoPath = await resolveRepositoryContext({
     explicitRepoPath: options.repo,
@@ -59,24 +59,29 @@ async function runWatchStartCommand(
     stop: () => undefined,
   };
   let repoSession: RepoSession | undefined;
+  let watcherStarted = false;
   const stopState = {
     requested: false,
     started: false,
   };
-  const output = createWatchEventRenderer(options, (target, error) => {
-    if (outputState.failed) {
-      return;
-    }
+  const output = createWatchEventRenderer(
+    options,
+    () => repoSession?.http,
+    (target, error) => {
+      if (outputState.failed) {
+        return;
+      }
 
-    outputState.failed = true;
-    runtime.setExitCode(1);
+      outputState.failed = true;
+      runtime.setExitCode(1);
 
-    if (target !== "stderr") {
-      writeStderrSafely(`watch output failed: ${getErrorMessage(error)}\n`);
-    }
+      if (target !== "stderr") {
+        writeStderrSafely(`watch output failed: ${getErrorMessage(error)}\n`);
+      }
 
-    stopRequest.stop();
-  });
+      stopRequest.stop();
+    },
+  );
 
   stopRequest.stop = stop;
   process.once("SIGINT", stop);
@@ -106,27 +111,46 @@ async function runWatchStartCommand(
   }
 
   async function runStartedWatchProcess() {
-    repoSession = await startRepoSession({
+    repoSession = await openRepoSession({
       repoPath,
-      ...(httpOptions !== undefined && { http: httpOptions }),
+      ...(port !== undefined && { port }),
       onEvent: (event) => {
-        if (!outputState.failed) {
+        if (event.type === "started") {
+          watcherStarted = true;
+        }
+        if (!outputState.failed && watcherStarted) {
           output.render(event);
         }
 
         if (event.type === "fatalError") {
           runtime.setExitCode(1);
+          stopRequest.stop();
         } else if (event.type === "stopped") {
           stopped.resolve(undefined);
         }
       },
     });
-
     if (outputState.failed || stopState.requested) {
+      stop();
+      await stopped.promise;
+      return;
+    }
+    try {
+      await repoSession.startWatching();
+    } catch (error) {
+      await repoSession.stop();
+      throw error;
+    }
+
+    if (shouldStopAfterWatcherStart()) {
       stop();
     }
 
     await stopped.promise;
+  }
+
+  function shouldStopAfterWatcherStart() {
+    return outputState.failed || stopState.requested;
   }
 
   function stop() {
@@ -158,7 +182,7 @@ async function runWatchStartCommand(
 function parseHttpOptions(
   options: WatchStartCommandOptions,
   runtime: CliRuntime,
-): false | { readonly port?: number } | undefined {
+): false | number | undefined {
   if (options.port !== undefined && options.http !== true) {
     runtime.writeStderr("error: --port requires --http\n");
     runtime.setExitCode(exitCodes.usage);
@@ -166,12 +190,8 @@ function parseHttpOptions(
     return false;
   }
 
-  if (options.http !== true) {
-    return undefined;
-  }
-
   if (options.port === undefined) {
-    return {};
+    return undefined;
   }
 
   if (!/^\d+$/v.test(options.port)) {
@@ -190,7 +210,7 @@ function parseHttpOptions(
     return false;
   }
 
-  return { port };
+  return port;
 }
 
 type WatchOutputTarget = "stdout" | "stderr";
@@ -202,6 +222,7 @@ interface WatchEventRenderer {
 
 function createWatchEventRenderer(
   options: WatchStartCommandOptions,
+  getHttp: () => RepoSession["http"] | undefined,
   onFailure: (target: WatchOutputTarget, error: unknown) => void,
 ): WatchEventRenderer {
   const onStdoutError = (error: unknown) => {
@@ -216,20 +237,22 @@ function createWatchEventRenderer(
 
   return {
     render(event: RepoSessionEvent) {
+      const disclosedHttp = options.http === true ? getHttp() : undefined;
+
       if (options.jsonl === true) {
-        writeWatchOutput(
-          "stdout",
-          formatJson(toJsonlWatchEvent(event), { compact: true }),
-          onFailure,
+        const renderedEvent = formatJson(
+          toJsonlWatchEvent(event, disclosedHttp),
+          { compact: true },
         );
+        writeWatchOutput("stdout", renderedEvent, onFailure);
         return;
       }
 
-      writeWatchOutput(
-        "stderr",
-        withWatchTimestamp(toHumanWatchEvent(event), new Date()),
-        onFailure,
+      const renderedEvent = withWatchTimestamp(
+        toHumanWatchEvent(event, disclosedHttp),
+        new Date(),
       );
+      writeWatchOutput("stderr", renderedEvent, onFailure);
     },
     dispose() {
       process.stdout.off("error", onStdoutError);
@@ -262,7 +285,10 @@ function writeStderrSafely(output: string) {
   }
 }
 
-function toJsonlWatchEvent(event: RepoSessionEvent): unknown {
+function toJsonlWatchEvent(
+  event: RepoSessionEvent,
+  http?: RepoSession["http"],
+): unknown {
   switch (event.type) {
     case "started": {
       return {
@@ -270,7 +296,7 @@ function toJsonlWatchEvent(event: RepoSessionEvent): unknown {
         repoPath: event.repoPath,
         watchedSavePath: event.watchedSavePath,
         capturePolicy: event.capturePolicy,
-        ...(event.http !== undefined && { http: event.http }),
+        ...(http !== undefined && { http }),
       };
     }
 
@@ -336,13 +362,16 @@ function summarizeObservationResult(result: ObserveSaveResult) {
   }
 }
 
-function toHumanWatchEvent(event: RepoSessionEvent): string {
+function toHumanWatchEvent(
+  event: RepoSessionEvent,
+  httpConnection?: RepoSession["http"],
+): string {
   switch (event.type) {
     case "started": {
       const http =
-        event.http === undefined
+        httpConnection === undefined
           ? ""
-          : `http endpoint: ${event.http.endpoint}\nhttp token: ${event.http.token}\n`;
+          : `http endpoint: ${httpConnection.endpoint}\nhttp token: ${httpConnection.token}\n`;
 
       return `watch started\nrepo: ${event.repoPath}\nsave: ${event.watchedSavePath}\n${http}`;
     }

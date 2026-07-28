@@ -36,6 +36,7 @@ export const localHttpErrorCodes = [
   "internal_error",
   "watched_save_unavailable",
   "read_model_unavailable",
+  "session_stopping",
 ] as const;
 
 export type LocalHttpErrorCode = (typeof localHttpErrorCodes)[number];
@@ -408,17 +409,32 @@ export function createLocalHttpWireSchemas(
     debounceWriteMs: zod.number(),
     minCommitIntervalMs: zod.number(),
   });
+  const watcherStatusCommon = {
+    observationRevision: zod.number().int(),
+    repoPath: zod.string(),
+    lastObservation: observationSummarySchema.optional(),
+  } as const;
   const watcherStatusSchema: z.ZodType<RepoSessionWatcherStatus> = decorate(
-    zod.object({
-      status: zod.literal("running"),
-      activity: zod.enum(["idle", "pending", "observing"]),
-      observationRevision: zod.number().int(),
-      startedAt: zod.string(),
-      repoPath: zod.string(),
-      watchedSavePath: zod.string(),
-      capturePolicy: capturePolicySchema,
-      lastObservation: observationSummarySchema.optional(),
-    }),
+    zod.discriminatedUnion("status", [
+      zod.object({ ...watcherStatusCommon, status: zod.literal("inactive") }),
+      zod.object({ ...watcherStatusCommon, status: zod.literal("starting") }),
+      zod.object({
+        ...watcherStatusCommon,
+        status: zod.literal("running"),
+        activity: zod.enum(["idle", "pending", "observing"]),
+        startedAt: zod.string(),
+        watchedSavePath: zod.string(),
+        capturePolicy: capturePolicySchema,
+      }),
+      zod.object({
+        ...watcherStatusCommon,
+        status: zod.literal("stopping"),
+        activity: zod.enum(["idle", "pending", "observing"]),
+        startedAt: zod.string(),
+        watchedSavePath: zod.string(),
+        capturePolicy: capturePolicySchema,
+      }),
+    ]),
     "RepoSessionWatcherStatus",
   );
   const semanticUpdateSchema = zod.discriminatedUnion("status", [

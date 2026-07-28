@@ -54,6 +54,10 @@ export interface CreateLocalHttpAppInput {
   readonly repoPath: string;
   readonly token: string;
   readonly getWatcherStatus: () => RepoSessionWatcherStatus;
+  readonly admission: {
+    readonly isOpen: () => boolean;
+    readonly track: (work: Promise<unknown>) => void;
+  };
   readonly onRequestError?: (error: HttpRequestErrorEvent) => void;
 }
 
@@ -96,6 +100,24 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
     return undefined;
   });
   app.use("/api/v1/*", timeout(10_000, new HTTPException(408)));
+  app.use("/api/v1/*", async (c, next) => {
+    if (!input.admission.isOpen()) {
+      return errorResponse(
+        c,
+        503,
+        "session_stopping",
+        "Repo Session is stopping.",
+      );
+    }
+
+    // This promise is deliberately tracked below the response timeout. If a client disconnects or
+    // the timeout wins its race, shutdown still waits for the admitted History operation.
+    const work = next();
+    input.admission.track(work);
+    await work;
+
+    return undefined;
+  });
   app.use("/api/v1/checkpoints", requireJsonBody);
   app.use("/api/v1/restores/in-place", requireJsonBody);
   app.use(

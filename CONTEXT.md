@@ -113,12 +113,14 @@ _Avoid_: Watched save, history repo
 A restore operation that overwrites the Watched Save path from Project Config. It requires explicit user intent and creates a backup before writing.
 _Avoid_: Default restore
 
-**Repo Session**:
-The long-running local runtime for one Save History Repository. It acquires one
-Save History Watcher lease, owns file-event scheduling and optional local HTTP,
-and calls public History workflows. In the current lifecycle, starting a Repo
-Session always acquires watcher ownership; it is not yet a query-only or
-watcher-independent session.
+**Repo Session Process**:
+The long-running local reader process for one Save History Repository. Opening
+it starts mandatory authenticated IPv4-loopback HTTP with one in-memory
+session credential while watching remains inactive. The same process may
+independently start and stop watching; only that capability owns a Save History
+Watcher lease and file-event scheduling. HTTP handlers and watcher observations
+call public History workflows and share History's repository serialization.
+_Avoid_: Web UI server, frontend server, watcher lease, History Module
 _Avoid_: Web UI server, frontend server, History Module
 
 **Offline Command**:

@@ -10,7 +10,7 @@ import { initSaveHistory, observeSave } from "@silksong-git/history";
 
 import { createLocalHttpOpenApiDocument } from "./http-contract.ts";
 import type { RepoSessionEvent } from "./index.ts";
-import { startRepoSession } from "./index.ts";
+import { openRepoSession } from "./index.ts";
 
 const fixtureDirectory = path.join(
   import.meta.dirname,
@@ -34,9 +34,8 @@ async function startLocalHttpSession(
   repoPath: string,
   events?: RepoSessionEvent[],
 ) {
-  const session = await startRepoSession({
+  const session = await openRepoSession({
     repoPath,
-    http: {},
     ...(events !== undefined && {
       onEvent: (event) => {
         events.push(event);
@@ -51,9 +50,9 @@ async function startLocalHttpSession(
       },
     },
   });
+  await session.startWatching();
   const { http } = session;
 
-  assert.ok(http !== undefined);
   t.after(async () => {
     await session.stop();
   });

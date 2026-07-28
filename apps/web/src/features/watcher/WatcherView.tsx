@@ -31,6 +31,13 @@ function WatcherView() {
       ? connection.session.watcherStatus()
       : undefined;
   };
+  const activeStatus = () => {
+    const value = status();
+
+    return value?.status === "running" || value?.status === "stopping"
+      ? value
+      : undefined;
+  };
 
   return (
     <section class={viewStyles["view"]} data-testid="watcher-view">
@@ -38,17 +45,26 @@ function WatcherView() {
       <Show when={status()} fallback={<p>Watcher status unavailable.</p>}>
         {(value) => (
           <dl>
-            <dt>Activity</dt>
-            <dd>{value().activity}</dd>
+            <dt>Status</dt>
+            <dd>{value().status}</dd>
             <dt>Observation revision</dt>
             <dd>{value().observationRevision}</dd>
-            <dt>Watched path</dt>
-            <dd>{value().watchedSavePath}</dd>
-            <dt>Capture Policy</dt>
-            <dd>
-              {value().capturePolicy.debounceWriteMs} ms debounce,{" "}
-              {value().capturePolicy.minCommitIntervalMs} ms minimum interval
-            </dd>
+            <Show when={activeStatus()}>
+              {(active) => (
+                <>
+                  <dt>Activity</dt>
+                  <dd>{active().activity}</dd>
+                  <dt>Watched path</dt>
+                  <dd>{active().watchedSavePath}</dd>
+                  <dt>Capture Policy</dt>
+                  <dd>
+                    {active().capturePolicy.debounceWriteMs} ms debounce,{" "}
+                    {active().capturePolicy.minCommitIntervalMs} ms minimum
+                    interval
+                  </dd>
+                </>
+              )}
+            </Show>
             <Show when={value().lastObservation}>
               {(observation) => (
                 <>

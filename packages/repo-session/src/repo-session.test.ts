@@ -1,15 +1,22 @@
 import { strict as assert } from "node:assert";
+import { fork } from "node:child_process";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
 import test from "node:test";
 
-import type { ProjectConfigOverrides } from "@silksong-git/history";
+import type {
+  ObserveSaveResult,
+  ProjectConfigOverrides,
+} from "@silksong-git/history";
 import {
   initSaveHistory,
+  observeSave,
+  queryRawObservations,
   SaveHistoryWatcherAlreadyAcquiredError,
 } from "@silksong-git/history";
 import type {
@@ -21,7 +28,8 @@ import type {
   WatchEventSubscription,
   WatchScheduler,
 } from "./index.ts";
-import { RepoSessionHttpServerStartError, startRepoSession } from "./index.ts";
+import { openRepoSession, RepoSessionHttpServerStartError } from "./index.ts";
+import { externalWatcherFixturePath } from "./test-fixtures/external-watcher.ts";
 
 async function startRepoSessionForTest(input: {
   readonly repoPath: string;
@@ -32,9 +40,9 @@ async function startRepoSessionForTest(input: {
   readonly onEvent?: (event: RepoSessionEvent) => void;
   readonly now?: () => Date;
 }): Promise<RepoSession> {
-  return await startRepoSession({
+  const session = await openRepoSession({
     repoPath: input.repoPath,
-    ...(input.http !== undefined && { http: input.http }),
+    ...(input.http?.port !== undefined && { port: input.http.port }),
     ...(input.onEvent !== undefined && { onEvent: input.onEvent }),
     runtime: {
       ...(input.watchEventSource !== undefined && {
@@ -49,6 +57,14 @@ async function startRepoSessionForTest(input: {
       ...(input.now !== undefined && { now: input.now }),
     },
   });
+  try {
+    await session.startWatching();
+  } catch (error) {
+    await session.stop();
+    throw error;
+  }
+
+  return session;
 }
 
 const fixtureDirectory = path.join(
@@ -70,6 +86,10 @@ const maskShard2CollectedRosariesEncodedSavePath = path.join(
 
 async function readJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
+}
+
+function readSessionHttp(session: RepoSession) {
+  return session.http;
 }
 
 async function createTempDirectory(t: TestContext): Promise<string> {
@@ -113,6 +133,75 @@ async function createHistoryRepo(
     watchedSavePath,
     configPath: initialized.configPath,
   };
+}
+
+async function startExternalWatcher(t: TestContext, repoPath: string) {
+  const child = fork(externalWatcherFixturePath, [repoPath], {
+    execArgv: ["--import", "tsx"],
+    stdio: ["ignore", "ignore", "inherit", "ipc"],
+  });
+  let released = false;
+  t.after(() => {
+    if (!released) {
+      child.kill();
+    }
+  });
+
+  await waitForChildMessage(child, "acquired");
+
+  return {
+    async release() {
+      if (released) {
+        return;
+      }
+
+      child.send({ type: "release" });
+      await waitForChildMessage(child, "released");
+      released = true;
+      child.disconnect();
+    },
+  };
+}
+
+async function waitForChildMessage(
+  child: ReturnType<typeof fork>,
+  expectedType: string,
+) {
+  await new Promise<void>((resolve, reject) => {
+    const onMessage = (message: unknown) => {
+      if (
+        typeof message !== "object"
+        || message === null
+        || !("type" in message)
+      ) {
+        return;
+      }
+      if (message.type === "error") {
+        cleanUp();
+        reject(
+          new Error(
+            "message" in message ? String(message.message) : "Child failed.",
+          ),
+        );
+      } else if (message.type === expectedType) {
+        cleanUp();
+        resolve();
+      }
+    };
+    const onExit = (code: number | null) => {
+      cleanUp();
+      reject(
+        new Error(`Child exited before ${expectedType} with code ${code}.`),
+      );
+    };
+    const cleanUp = () => {
+      child.off("message", onMessage);
+      child.off("exit", onExit);
+    };
+
+    child.on("message", onMessage);
+    child.once("exit", onExit);
+  });
 }
 
 class TestWatchEventSource implements WatchEventSource {
@@ -447,7 +536,7 @@ test("startRepoSessionForTest waits for file stability before its startup observ
   await process.stop();
 });
 
-test("startRepoSessionForTest atomically starts authenticated HTTP on a dynamic port", async (t) => {
+test("Repo Session keeps mandatory authenticated HTTP stable across watcher lifecycle", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
   const events: RepoSessionEvent[] = [];
@@ -464,13 +553,12 @@ test("startRepoSessionForTest atomically starts authenticated HTTP on a dynamic 
     await process.stop();
   });
 
-  assert.ok(process.http !== undefined);
   assert.match(process.http.endpoint, /^http:\/\/127\.0\.0\.1:\d+$/v);
   assert.match(process.http.token, /^[\w\-]{43}$/v);
   const started = events.find((event) => event.type === "started");
 
   assert.equal(started?.type, "started");
-  assert.deepEqual(started.http, process.http);
+  assert.equal("http" in started, false);
 
   const response = await fetch(`${process.http.endpoint}/api/v1/watcher`, {
     headers: { Authorization: `Bearer ${process.http.token}` },
@@ -488,8 +576,15 @@ test("startRepoSessionForTest atomically starts authenticated HTTP on a dynamic 
   assert.equal(watcherBody.lastObservation?.status, "committed");
   assert.equal("events" in watcherBody, false);
 
+  const http = readSessionHttp(process);
+  await process.stopWatching();
+  assert.deepEqual(readSessionHttp(process), http);
+  assert.equal(process.getWatcherStatus().status, "inactive");
+  await process.startWatching();
+  assert.deepEqual(readSessionHttp(process), http);
+
   await process.stop();
-  await assert.rejects(fetch(`${process.http.endpoint}/api/v1/watcher`));
+  await assert.rejects(fetch(`${http.endpoint}/api/v1/watcher`));
 });
 
 test("HTTP startup uses fixed loopback binding and rejects occupied ports", async (t) => {
@@ -506,7 +601,7 @@ test("HTTP startup uses fixed loopback binding and rejects occupied ports", asyn
     watchEventSource: new TestWatchEventSource(),
   });
   assert.match(
-    legacyConfigProcess.http?.endpoint ?? "",
+    legacyConfigProcess.http.endpoint,
     /^http:\/\/127\.0\.0\.1:\d+$/v,
   );
   await legacyConfigProcess.stop();
@@ -621,13 +716,20 @@ test("Repo Session releases watcher ownership after watch startup failure", asyn
     },
   };
 
-  await assert.rejects(
-    startRepoSessionForTest({
-      repoPath: repo.repoPath,
-      watchEventSource: failingWatchEventSource,
-    }),
-    startFailure,
-  );
+  const reader = await openRepoSession({
+    repoPath: repo.repoPath,
+    runtime: { watchEventSource: failingWatchEventSource },
+  });
+  t.after(async () => {
+    await reader.stop();
+  });
+
+  await assert.rejects(reader.startWatching(), startFailure);
+  assert.equal(reader.getWatcherStatus().status, "inactive");
+  const response = await fetch(`${reader.http.endpoint}/api/v1/watcher`, {
+    headers: { Authorization: `Bearer ${reader.http.token}` },
+  });
+  assert.equal(response.status, 200);
 
   const nextProcess = await startRepoSessionForTest({
     repoPath: repo.repoPath,
@@ -635,6 +737,54 @@ test("Repo Session releases watcher ownership after watch startup failure", asyn
   });
 
   await nextProcess.stop();
+});
+
+test("watch backend error reported before subscription return fails startup cleanly", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const startFailure = new Error("watch backend failed during startup");
+  let startCount = 0;
+  let stopCount = 0;
+  const session = await openRepoSession({
+    repoPath: repo.repoPath,
+    runtime: {
+      fileStabilityProbe: { waitForStableFile: async () => undefined },
+      watchEventSource: {
+        async start(input) {
+          startCount++;
+          if (startCount === 1) {
+            await input.onError(startFailure);
+          }
+
+          return {
+            stop() {
+              stopCount++;
+            },
+          };
+        },
+      },
+    },
+  });
+  t.after(async () => {
+    await session.stop();
+  });
+
+  await assert.rejects(session.startWatching(), (error: unknown) => {
+    assert.equal(error, startFailure);
+
+    return true;
+  });
+  assert.equal(session.getWatcherStatus().status, "inactive");
+  assert.equal(stopCount, 1);
+  const response = await fetch(`${session.http.endpoint}/api/v1/watcher`, {
+    headers: { Authorization: `Bearer ${session.http.token}` },
+  });
+  assert.equal(response.status, 200);
+  const watcherStatus = await readJson<{ status: string }>(response);
+  assert.equal(watcherStatus.status, "inactive");
+
+  await session.startWatching();
+  assert.equal(session.getWatcherStatus().status, "running");
+  assert.equal(startCount, 2);
 });
 
 test("Repo Session observes file-change events", async (t) => {
@@ -1161,7 +1311,28 @@ test("Repo Session waits for an active deferred observation before releasing wat
   const deferred = deferredTask.run();
   await deferredProbe.waitForCheck();
 
+  const { endpoint } = process.http;
+  const { token } = process.http;
+  let stopCompleted = false;
   const stop = process.stop();
+  stop
+    .then(() => {
+      stopCompleted = true;
+    })
+    .catch(() => undefined);
+  while (process.getWatcherStatus().status !== "stopping") {
+    await Promise.resolve();
+  }
+  assert.equal(stopCompleted, false);
+  const rejectedRequest = await fetch(`${endpoint}/api/v1/watcher`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(
+    (response) => ({ type: "response" as const, response }),
+    (error: unknown) => ({ type: "networkError" as const, error }),
+  );
+  if (rejectedRequest.type === "response") {
+    assert.equal(rejectedRequest.response.status, 503);
+  }
   const competingStart = await startRepoSessionForTest({
     repoPath: repo.repoPath,
     watchEventSource: new TestWatchEventSource(),
@@ -1173,6 +1344,7 @@ test("Repo Session waits for an active deferred observation before releasing wat
 
   deferredProbe.release();
   await Promise.all([deferred, stop]);
+  assert.equal(stopCompleted, true);
 
   if (competingStart.type === "started") {
     await competingStart.nextProcess.stop();
@@ -1246,7 +1418,7 @@ test("Repo Session reports save read failures as nonfatal Watcher Errors", async
   await process.stop();
 });
 
-test("Repo Session treats watch backend runtime failure as fatal", async (t) => {
+test("Repo Session stops only watching after a fatal watch backend failure", async (t) => {
   const repo = await createHistoryRepo(t);
   const watchEventSource = new TestWatchEventSource();
   const events: RepoSessionEvent[] = [];
@@ -1270,7 +1442,11 @@ test("Repo Session treats watch backend runtime failure as fatal", async (t) => 
   assert.ok(fatalEvent !== undefined);
   assert.equal(fatalEvent.error.reason, "watchBackendFailure");
   assert.equal(fatalEvent.error.message, "watch backend failed");
-  assert.equal(events.at(-1)?.type, "stopped");
+  assert.equal(process.getWatcherStatus().status, "inactive");
+  const response = await fetch(`${process.http.endpoint}/api/v1/watcher`, {
+    headers: { Authorization: `Bearer ${process.http.token}` },
+  });
+  assert.equal(response.status, 200);
 
   const nextProcess = await startRepoSessionForTest({
     repoPath: repo.repoPath,
@@ -1279,4 +1455,321 @@ test("Repo Session treats watch backend runtime failure as fatal", async (t) => 
   });
 
   await nextProcess.stop();
+});
+
+test("openRepoSession returns an inactive reader without acquiring watcher ownership", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const first = await openRepoSession({ repoPath: repo.repoPath });
+  const second = await openRepoSession({ repoPath: repo.repoPath });
+  t.after(async () => {
+    await Promise.all([first.stop(), second.stop()]);
+  });
+
+  assert.equal(first.getWatcherStatus().status, "inactive");
+  assert.equal(second.getWatcherStatus().status, "inactive");
+  assert.notEqual(first.http.endpoint, second.http.endpoint);
+  assert.notEqual(first.http.token, second.http.token);
+
+  await first.startWatching();
+  await assert.rejects(
+    second.startWatching(),
+    SaveHistoryWatcherAlreadyAcquiredError,
+  );
+  assert.equal(second.getWatcherStatus().status, "inactive");
+  await first.stopWatching();
+  await second.startWatching();
+  assert.equal(second.getWatcherStatus().status, "running");
+});
+
+test("concurrent watcher lifecycle calls linearize and same-state calls are idempotent", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watchEventSource = new TestWatchEventSource();
+  const session = await openRepoSession({
+    repoPath: repo.repoPath,
+    runtime: {
+      fileStabilityProbe: { waitForStableFile: async () => undefined },
+      watchEventSource,
+    },
+  });
+  t.after(async () => {
+    await session.stop();
+  });
+
+  await Promise.all([session.startWatching(), session.startWatching()]);
+  assert.equal(session.getWatcherStatus().status, "running");
+  await Promise.all([session.stopWatching(), session.stopWatching()]);
+  assert.equal(session.getWatcherStatus().status, "inactive");
+  assert.equal(watchEventSource.stopCount, 1);
+
+  const start = session.startWatching();
+  const stop = session.stopWatching();
+  await Promise.all([start, stop]);
+  assert.equal(session.getWatcherStatus().status, "inactive");
+  assert.equal(watchEventSource.stopCount, 2);
+});
+
+test("watcher transitional statuses expose only lifecycle-valid fields", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const startEntered = Promise.withResolvers<undefined>();
+  const allowStart = Promise.withResolvers<undefined>();
+  const stopEntered = Promise.withResolvers<undefined>();
+  const allowStop = Promise.withResolvers<undefined>();
+  const session = await openRepoSession({
+    repoPath: repo.repoPath,
+    runtime: {
+      fileStabilityProbe: { waitForStableFile: async () => undefined },
+      watchEventSource: {
+        async start() {
+          startEntered.resolve(undefined);
+          await allowStart.promise;
+
+          return {
+            async stop() {
+              stopEntered.resolve(undefined);
+              await allowStop.promise;
+            },
+          };
+        },
+      },
+    },
+  });
+  t.after(async () => {
+    allowStart.resolve(undefined);
+    allowStop.resolve(undefined);
+    await session.stop();
+  });
+
+  const start = session.startWatching();
+  await startEntered.promise;
+  const starting = session.getWatcherStatus();
+  assert.equal(starting.status, "starting");
+  assert.equal("watchedSavePath" in starting, false);
+  assert.equal("activity" in starting, false);
+  allowStart.resolve(undefined);
+  await start;
+
+  const stop = session.stopWatching();
+  await stopEntered.promise;
+  const stopping = session.getWatcherStatus();
+  assert.equal(stopping.status, "stopping");
+  assert.equal("watchedSavePath" in stopping, true);
+  assert.equal("activity" in stopping, true);
+  allowStop.resolve(undefined);
+  await stop;
+  assert.equal(session.getWatcherStatus().status, "inactive");
+});
+
+test("stop immediately closes HTTP admission while startup observation drains", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const fileStabilityProbe = createBlockingStabilityProbe();
+  const startupProbe = fileStabilityProbe.blockNextCheck();
+  const events: RepoSessionEvent[] = [];
+  const session = await openRepoSession({
+    repoPath: repo.repoPath,
+    onEvent: (event) => {
+      events.push(event);
+    },
+    runtime: {
+      fileStabilityProbe,
+      watchEventSource: new TestWatchEventSource(),
+    },
+  });
+  t.after(async () => {
+    startupProbe.release();
+    await session.stop();
+  });
+  const start = session.startWatching();
+  await startupProbe.waitForCheck();
+
+  let startCompleted = false;
+  let stopCompleted = false;
+  start
+    .then(() => {
+      startCompleted = true;
+    })
+    .catch(() => undefined);
+  const stop = session.stop();
+  const repeatedStop = session.stop();
+  stop
+    .then(() => {
+      stopCompleted = true;
+    })
+    .catch(() => undefined);
+
+  assert.equal(events.filter((event) => event.type === "stopping").length, 1);
+  const rejected = await fetch(`${session.http.endpoint}/api/v1/watcher`, {
+    headers: { Authorization: `Bearer ${session.http.token}` },
+  });
+  assert.equal(rejected.status, 503);
+  assert.deepEqual(await readJson(rejected), {
+    error: {
+      code: "session_stopping",
+      message: "Repo Session is stopping.",
+    },
+  });
+  assert.equal(startCompleted, false);
+  assert.equal(stopCompleted, false);
+
+  startupProbe.release();
+  await Promise.all([start, stop, repeatedStop]);
+  assert.equal(startCompleted, true);
+  assert.equal(stopCompleted, true);
+  assert.equal(session.getWatcherStatus().status, "inactive");
+
+  const nextSession = await openRepoSession({
+    repoPath: repo.repoPath,
+    runtime: {
+      fileStabilityProbe: { waitForStableFile: async () => undefined },
+      watchEventSource: new TestWatchEventSource(),
+    },
+  });
+  await nextSession.startWatching();
+  await nextSession.stop();
+});
+
+test("reader HTTP queries and mutations work beside a real external watcher process", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const baseline = await observeSave({
+    repoPath: repo.repoPath,
+    trigger: "manualCheckpoint",
+  });
+  if (baseline.status !== "committed") {
+    assert.fail("baseline observation should be committed");
+  }
+
+  const externalWatcher = await startExternalWatcher(t, repo.repoPath);
+  const reader = await openRepoSession({ repoPath: repo.repoPath });
+  t.after(async () => {
+    await reader.stop();
+  });
+  const headers = { Authorization: `Bearer ${reader.http.token}` };
+
+  await assert.rejects(
+    reader.startWatching(),
+    SaveHistoryWatcherAlreadyAcquiredError,
+  );
+  assert.equal(reader.getWatcherStatus().status, "inactive");
+  const watcherResponse = await fetch(
+    `${reader.http.endpoint}/api/v1/watcher`,
+    { headers },
+  );
+  assert.equal(watcherResponse.status, 200);
+  const watcherStatus = await readJson<{ status: string }>(watcherResponse);
+  assert.equal(watcherStatus.status, "inactive");
+
+  await rm(repo.watchedSavePath);
+  const saveResponse = await fetch(
+    `${reader.http.endpoint}/api/v1/save?selector=latest`,
+    { headers },
+  );
+  assert.equal(saveResponse.status, 200);
+  const exportResponse = await fetch(
+    `${reader.http.endpoint}/api/v1/export?commit=${baseline.observation.commit.ref}`,
+    { headers },
+  );
+  assert.equal(exportResponse.status, 200);
+  assert.deepEqual(
+    Buffer.from(await exportResponse.arrayBuffer()),
+    await readFile(minimalEncodedSavePath),
+  );
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const checkpointResponse = await fetch(
+    `${reader.http.endpoint}/api/v1/checkpoints`,
+    {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: "{}",
+    },
+  );
+  assert.equal(checkpointResponse.status, 200);
+  const checkpoint = await readJson<ObserveSaveResult>(checkpointResponse);
+  if (checkpoint.status !== "committed") {
+    assert.fail("Manual Checkpoint should be committed");
+  }
+
+  const restoreResponse = await fetch(
+    `${reader.http.endpoint}/api/v1/restores/in-place`,
+    {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commitRef: baseline.observation.commit.ref,
+        confirmation: "restore-watched-save",
+        expectedCurrent: {
+          status: "present",
+          encodedSha256: checkpoint.observation.encodedSha256,
+        },
+      }),
+    },
+  );
+  assert.equal(restoreResponse.status, 200);
+  assert.deepEqual(
+    await readFile(repo.watchedSavePath),
+    await readFile(minimalEncodedSavePath),
+  );
+
+  await externalWatcher.release();
+  await reader.startWatching();
+  assert.equal(reader.getWatcherStatus().status, "running");
+});
+
+test("session shutdown rejects new HTTP while draining an admitted History handler", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const session = await openRepoSession({ repoPath: repo.repoPath });
+  const endpoint = new URL(session.http.endpoint);
+  const socket = createConnection({
+    host: endpoint.hostname,
+    port: Number(endpoint.port),
+  });
+  t.after(() => {
+    socket.destroy();
+  });
+  await once(socket, "connect");
+  let responseText = "";
+  socket.on("data", (chunk: Buffer) => {
+    responseText += chunk.toString("utf8");
+  });
+  socket.write(
+    [
+      "POST /api/v1/checkpoints HTTP/1.1",
+      `Host: ${endpoint.host}`,
+      `Authorization: Bearer ${session.http.token}`,
+      "Content-Type: application/json",
+      "Content-Length: 2",
+      "Connection: close",
+      "Expect: 100-continue",
+      "",
+      "",
+    ].join("\r\n"),
+  );
+
+  while (!responseText.includes("100 Continue")) {
+    await once(socket, "data");
+  }
+
+  let stopCompleted = false;
+  const stop = session.stop().then(() => {
+    stopCompleted = true;
+  });
+  const rejectedRequest = await fetch(
+    `${session.http.endpoint}/api/v1/watcher`,
+    {
+      headers: { Authorization: `Bearer ${session.http.token}` },
+    },
+  ).then(
+    (response) => ({ type: "response" as const, response }),
+    () => ({ type: "networkError" as const }),
+  );
+  if (rejectedRequest.type === "response") {
+    assert.equal(rejectedRequest.response.status, 503);
+  }
+  assert.equal(stopCompleted, false);
+
+  socket.end("{}");
+  await once(socket, "close");
+  await stop;
+
+  const observations = await queryRawObservations({ repoPath: repo.repoPath });
+  assert.equal(observations.entries.length, 1);
 });

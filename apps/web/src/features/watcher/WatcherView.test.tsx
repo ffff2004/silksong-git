@@ -77,6 +77,34 @@ describe("Watcher view", () => {
     });
   });
 
+  it("renders an inactive watcher without inventing active configuration", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "inactive",
+            observationRevision: 0,
+            repoPath: "/tmp/history-repo",
+          });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    connectLocalHistory();
+
+    expect(await screen.findByText("inactive")).toBeDefined();
+    expect(screen.queryByText("Watched path")).toBeNull();
+    expect(screen.queryByText("Capture Policy")).toBeNull();
+  });
+
   it("submits an optional Manual Checkpoint message once and renders every result", async () => {
     const checkpointBodies: unknown[] = [];
     vi.stubGlobal(

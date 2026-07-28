@@ -1,10 +1,8 @@
 import type { ObserveSaveResult, ProjectConfig } from "@silksong-git/history";
 
-export interface StartRepoSessionInput {
+export interface OpenRepoSessionInput {
   readonly repoPath: string;
-  readonly http?: {
-    readonly port?: number;
-  };
+  readonly port?: number;
   readonly onEvent?: (event: RepoSessionEvent) => void;
   // System-boundary adapters used by behavior tests and non-Node hosts.
   readonly runtime?: RepoSessionRuntimeAdapters;
@@ -12,12 +10,14 @@ export interface StartRepoSessionInput {
 
 export interface RepoSession {
   readonly repoPath: string;
-  readonly http?: {
+  readonly http: {
     readonly endpoint: string;
     readonly token: string;
   };
   readonly getWatcherStatus: () => RepoSessionWatcherStatus;
-  stop: () => void | Promise<void>;
+  startWatching: () => Promise<void>;
+  stopWatching: () => Promise<void>;
+  stop: () => Promise<void>;
 }
 
 export interface RepoSessionRuntimeAdapters {
@@ -27,16 +27,23 @@ export interface RepoSessionRuntimeAdapters {
   readonly watchScheduler?: WatchScheduler;
 }
 
-export interface RepoSessionWatcherStatus {
-  readonly status: "running";
-  readonly activity: "idle" | "pending" | "observing";
+interface RepoSessionWatcherStatusBase {
   readonly observationRevision: number;
-  readonly startedAt: string;
   readonly repoPath: string;
-  readonly watchedSavePath: string;
-  readonly capturePolicy: ProjectConfig["capturePolicy"];
   readonly lastObservation?: RepoSessionObservationSummary;
 }
+
+export type RepoSessionWatcherStatus =
+  | (RepoSessionWatcherStatusBase & {
+      readonly status: "inactive" | "starting";
+    })
+  | (RepoSessionWatcherStatusBase & {
+      readonly status: "running" | "stopping";
+      readonly activity: "idle" | "pending" | "observing";
+      readonly startedAt: string;
+      readonly watchedSavePath: string;
+      readonly capturePolicy: ProjectConfig["capturePolicy"];
+    });
 
 export type RepoSessionObservationSummary =
   | {
@@ -74,10 +81,6 @@ export type RepoSessionEvent =
       readonly repoPath: string;
       readonly watchedSavePath: string;
       readonly capturePolicy: ProjectConfig["capturePolicy"];
-      readonly http?: {
-        readonly endpoint: string;
-        readonly token: string;
-      };
     }
   | {
       readonly type: "httpRequestError";

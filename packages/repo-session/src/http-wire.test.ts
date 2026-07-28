@@ -6,6 +6,7 @@ import {
   historyResultSchema,
   saveQuerySchema,
   searchQuerySchema,
+  watcherStatusSchema,
 } from "./http-wire.ts";
 
 test("wire request schemas preserve defaults and strict validation", () => {
@@ -19,6 +20,34 @@ test("wire request schemas preserve defaults and strict validation", () => {
     false,
   );
   assert.equal(searchQuerySchema.safeParse({}).success, false);
+});
+
+test("watcher status does not expose active-only fields on inactive and transitional readers", () => {
+  assert.deepEqual(
+    watcherStatusSchema.parse({
+      status: "inactive",
+      observationRevision: 2,
+      repoPath: "/tmp/history-repo",
+    }),
+    {
+      status: "inactive",
+      observationRevision: 2,
+      repoPath: "/tmp/history-repo",
+    },
+  );
+  assert.deepEqual(
+    watcherStatusSchema.parse({
+      status: "starting",
+      activity: "idle",
+      observationRevision: 2,
+      repoPath: "/tmp/history-repo",
+    }),
+    {
+      status: "starting",
+      observationRevision: 2,
+      repoPath: "/tmp/history-repo",
+    },
+  );
 });
 
 test("wire response schemas accept additive fields without changing DTOs", () => {

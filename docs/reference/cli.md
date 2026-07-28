@@ -54,7 +54,7 @@ Interface directly and do not require `watch start` to be running. History
 serializes repository mutations and in-place restore with watcher work through
 the repository write lock. An explicit restore to an external Restore Target
 is a filesystem write but does not take that repository lock. See the
-[Save History Module](../architecture/save-history-module.md#caller-and-process-boundary).
+[Save History Module](../architecture/save-history-module.md#caller-and-repo-session-boundary).
 
 ## Commands
 
@@ -216,16 +216,17 @@ result; text mode reports observation and event counts.
 silksong-git watch start [--repo <history-repo>] [--jsonl] [--http] [--port <port>]
 ```
 
-Starts the long-running Repo Session. Startup may immediately
+Opens the long-running Repo Session and immediately starts watching. Opening
+first starts authenticated loopback HTTP; watcher startup may immediately
 commit the current Watched Save, and later stable changes can mutate Git and
 the Semantic Read Model according to Capture Policy.
 
 - `--jsonl` writes one compact machine-readable event per line to stdout.
   Without it, timestamped diagnostic events go to stderr and stdout remains
   unused.
-- `--http` starts the authenticated loopback Local HTTP Adapter inside the same
-  process. Its endpoint and per-start token are reported in the `started`
-  event.
+- `--http` asks the CLI output Adapter to disclose the always-running listener's
+  endpoint and per-session token in `started` output. Without it, the listener
+  still exists but its credential is not printed.
 - `--port <port>` selects an integer port from 1 through 65535 and requires
   `--http`. Without `--port`, the operating system chooses an available port.
 
@@ -236,14 +237,14 @@ shutdown guarantees, including known gaps, live in the
 
 ## Safety and Side Effects
 
-| Class                      | Commands and effects                                                                                                                                                                          |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Read-only                  | `save decode`, `save snapshot`, `history list`, `history diff`, and `history search` only read inputs or repository state when used without a file-output option.                             |
-| Explicit filesystem write  | `save decode --out` writes or replaces exactly the requested JSON path. `history restore --to` writes a new explicit target and refuses an existing path.                                     |
-| Repository creation        | `repo init` creates or initializes the explicit empty repository directory and writes Project Config; it does not observe the save.                                                           |
-| Repository mutation        | `history checkpoint` may commit Git artifacts and update SQLite. `history rebuild` replaces only the rebuildable SQLite read model. Both use History's write lock.                            |
-| Process start and mutation | `watch start` acquires process ownership and may continuously commit observations and update SQLite. `--http` also starts a loopback listener; it does not create another persistence writer. |
-| High-risk in-place restore | `history restore --in-place --confirm-in-place` backs up, overwrites, and verifies the configured Watched Save under History's write lock.                                                    |
+| Class                      | Commands and effects                                                                                                                                                  |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read-only                  | `save decode`, `save snapshot`, `history list`, `history diff`, and `history search` only read inputs or repository state when used without a file-output option.     |
+| Explicit filesystem write  | `save decode --out` writes or replaces exactly the requested JSON path. `history restore --to` writes a new explicit target and refuses an existing path.             |
+| Repository creation        | `repo init` creates or initializes the explicit empty repository directory and writes Project Config; it does not observe the save.                                   |
+| Repository mutation        | `history checkpoint` may commit Git artifacts and update SQLite. `history rebuild` replaces only the rebuildable SQLite read model. Both use History's write lock.    |
+| Process start and mutation | `watch start` opens reader HTTP, then acquires watcher ownership and may continuously commit observations and update SQLite. `--http` only discloses connection data. |
+| High-risk in-place restore | `history restore --in-place --confirm-in-place` backs up, overwrites, and verifies the configured Watched Save under History's write lock.                            |
 
 Display Semantic Event Filters affect only list, diff, and search visibility;
 they never decide checkpoint or watcher commits and never delete events from
@@ -259,7 +260,8 @@ SQLite.
 | `watch start --jsonl` | Compact JSON Lines on stdout. Events are adapter summaries, not copies of internal Repo Session objects.                                                                         |
 
 In JSONL mode, `started` includes repository, Watched Save, Capture Policy,
-and optional HTTP endpoint/token fields. Observation lines identify their
+and, only with `--http`, HTTP endpoint/token fields added by the CLI Adapter.
+Credentials are not general Repo Session events. Observation lines identify their
 cause and a committed, skipped, or Watcher Error summary. Fatal HTTP/process
 errors and stopping lifecycle events are likewise typed lines. The HTTP token
 appears only in the started event and must be treated as a secret.

@@ -12,4 +12,7 @@ The local HTTP endpoints served by the Repo Session are adapters over the `packa
 
 The Web UI is a client of the local HTTP Interface. It enables local-history features only when connected to a compatible endpoint; without that endpoint it remains in Static Web Mode. The frontend's serve mechanism must not become part of the single-writer invariant.
 
-ADR-0018 refines this decision with the first-version HTTP security boundary, versioned contract, bearer authentication, polling model, and atomic watcher/server lifecycle.
+ADR-0018 refines this decision with the first-version HTTP security boundary,
+versioned contract, bearer authentication, and polling model. ADR-0020
+supersedes this ADR's singleton-session and atomic watcher/server lifecycle:
+only watching is singleton, while reader HTTP opens independently.

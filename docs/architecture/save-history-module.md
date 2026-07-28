@@ -148,13 +148,14 @@ and the Local History HTTP refinement in
 ## Caller and Repo Session Boundary
 
 The Repo Session is the caller and orchestrator of
-this Module's observation and query behavior. It obtains a Save History Watcher
-lease, then owns the watch subscription, session-level failure handling, and
-optional local HTTP listener while the lease owns `watch.lock`. It does not
+this Module's observation and query behavior. Its mandatory local HTTP listener
+can serve readers and mutations without watcher ownership. When watching is
+started, it obtains a Save History Watcher lease and owns the watch subscription
+while that lease owns `watch.lock`. It does not
 implement a second Git, SQLite, observation, export, or restore path. Manual
-checkpoints and Offline Commands call the direct History Interface with current
-Project Config and serialize mutations through `write.lock` without starting
-another watcher.
+checkpoints, HTTP mutations, and Offline Commands call the direct History
+Interface with current Project Config and serialize through `write.lock`
+without acquiring watcher ownership.
 
 The HTTP adapter is likewise an adapter over public History behavior. Its exact
 authentication, request, response, compatibility, and download contracts live

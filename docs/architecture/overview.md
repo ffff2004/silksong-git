@@ -20,7 +20,7 @@ CLI --------------------+-------------> @silksong-git/history
 | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`packages/core`](../../packages/core/src/index.ts)                 | Decodes and parses saves, supplies builtin Mapping Data, creates Semantic Snapshots, and diffs them into Semantic Events. It is browser-safe and has no DOM, Git, SQLite, filesystem-watching, or HTTP responsibility.                                                                    |
 | [`packages/history`](../../packages/history/src/index.ts)           | Owns one Save History Repository, Git and SQLite adapters, observation and restore workflows, query/diff/search behavior, repository locks, and watcher leases. It depends on Core for semantic interpretation.                                                                           |
-| [`packages/repo-session`](../../packages/repo-session/src/index.ts) | Owns the long-running watcher runtime, file-event scheduling, optional loopback HTTP adapter, executable HTTP contract, and browser-safe wire contract. It calls only public History workflows.                                                                                           |
+| [`packages/repo-session`](../../packages/repo-session/src/index.ts) | Owns the long-running repository reader process, mandatory loopback HTTP Adapter, independently controlled watcher scheduling, executable HTTP contract, and browser-safe wire contract. It calls only public History workflows.                                                          |
 | [`apps/cli`](../../apps/cli/src/main.ts)                            | Parses commands and renders terminal or JSON output. Save inspection calls Core; repository, history, and restore commands call History, while `watch start` starts a Repo Session. It does not own persistence rules.                                                                    |
 | [`apps/web`](../../apps/web/src/main.tsx)                           | Runs one Solid frontend in Static Web Mode or Local History Web Mode. Static mode calls Core in the browser. Local mode uses Repo Session's browser-safe HTTP wire contract and an authenticated HTTP client; it does not import a Node runtime or access local storage systems directly. |
 
@@ -84,8 +84,8 @@ Core directly. Command syntax and safety behavior belong in the
 
 ### Local History Web workflow
 
-The Repo Session may start the versioned Local HTTP Adapter on loopback with a
-per-start bearer token. The Web client performs an authenticated watcher probe
+Opening a Repo Session starts the versioned Local HTTP Adapter on loopback with
+a per-session bearer token while leaving watching inactive. The Web client performs an authenticated watcher probe
 and then obtains save state, history, diff, search, checkpoint, export, and
 restore behavior through that adapter. The adapter delegates to History; the
 frontend never runs Git or SQLite operations. The Repo Session owns the HTTP
@@ -107,9 +107,9 @@ listener lifecycle, while frontend serving remains separate. See
   the local filesystem.
 - Raw capture and semantic display are independent: display filters neither
   suppress Git observations nor delete Semantic Events from SQLite.
-- The Repo Session is the singleton long-running writer for a repository.
-  Offline writes and manual checkpoints serialize through History's short-lived
-  write lock; they do not start a second watcher.
+- Only an active Repo Session watcher is singleton for a repository. Multiple
+  reader sessions may coexist; Offline writes, HTTP mutations, and watcher
+  observations serialize through History's short-lived write lock.
 - Restore defaults to an explicit target. In-place restore requires explicit
   confirmation and backup behavior owned by History, as recorded in
   [ADR-0007](../adr/0007-restore-requires-explicit-target-or-in-place-confirmation.md).

@@ -31,7 +31,7 @@ delivery state, and preserved legacy behavior.
   Repository ownership, Raw Save Observations, Semantic Read Model workflows,
   querying, export, and restore.
 - [Repo Session](architecture/repo-session.md) — runtime ownership,
-  scheduling, optional HTTP lifecycle, and shutdown.
+  independent watcher scheduling, mandatory HTTP lifecycle, and shutdown.
 - [Web](architecture/web.md) — Static Web Mode, Local History Web Mode, and
   frontend state ownership.
 
