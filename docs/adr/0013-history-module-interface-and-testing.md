@@ -1,8 +1,18 @@
 # Expose a small history module interface and test it through behavior
 
-We decided that `packages/history` exposes a small deep Module interface for save-history workflows: `initSaveHistory`, `observeSave`, `rebuildSemanticReadModel`, `queryHistory`, `diffCommits`, `searchSemanticEvents`, `restoreEncodedSave`, and `startLocalHistoryWatchProcess`. Git, SQLite, file watching, config loading, and local HTTP details are implementation concerns or internal adapters behind this interface.
+We decided that `packages/history` exposes a small deep Module interface for save-history workflows: `initSaveHistory`, `observeSave`, `rebuildSemanticReadModel`, `queryHistory`, `diffCommits`, `searchSemanticEvents`, `restoreEncodedSave`, `acquireSaveHistoryWatcher`, and `startLocalHistoryWatchProcess`. Git, SQLite, file watching, config loading, and local HTTP details are implementation concerns or internal adapters behind this interface.
 
 History tests should be integration-style and use the public history interface with temporary directories, a real Git repository, and a real SQLite read model. Mocks should be limited to true system boundaries such as time and watcher event delivery. The first TDD tracer bullet should verify that `initSaveHistory` plus `observeSave` creates a raw observation that `restoreEncodedSave` can restore byte-for-byte; later vertical slices should add semantic diff/search behavior and capture-policy behavior.
+
+`acquireSaveHistoryWatcher` is the narrow watcher-ownership seam. It owns the
+startup Project Config snapshot, repository-scoped watcher ownership, and the
+automatic observation transaction. Its returned lease exposes only the fixed
+Watched Save and Capture Policy needed by scheduling, automatic observation at
+an explicit time, and idempotent release. It neither exposes Project Config,
+layout, lock, Git, or SQLite details nor changes `observeSave`'s current-config
+semantics for Manual Checkpoints and Offline Commands. The Local History Watch
+Process is a compatibility adapter over this lease; a later Repo Session can
+own the process concerns without taking over History internals.
 
 The SQLite schema is not part of the external Interface. CLI and Web callers must use history query functions such as `queryHistory`, `diffCommits`, and `searchSemanticEvents`; table layout, indexes, and migrations are implementation details of `packages/history` and can change as long as those observable query behaviors remain stable.
 

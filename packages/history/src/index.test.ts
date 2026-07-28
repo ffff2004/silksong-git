@@ -17,6 +17,7 @@ import type { TestContext } from "node:test";
 import test from "node:test";
 
 import {
+  acquireSaveHistoryWatcher,
   diffCommits,
   getSaveState,
   initSaveHistory,
@@ -92,6 +93,7 @@ interface HistoryRepoFixture {
   readonly tempDirectory: string;
   readonly repoPath: string;
   readonly watchedSavePath: string;
+  readonly configPath: string;
 }
 
 interface ObservedFixtureSequence extends HistoryRepoFixture {
@@ -108,7 +110,7 @@ async function createHistoryRepo(
   const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
 
   await copyFile(initialSavePath, watchedSavePath);
-  await initSaveHistory({
+  const initialized = await initSaveHistory({
     repoPath,
     watchedSavePath,
     config,
@@ -118,6 +120,7 @@ async function createHistoryRepo(
     tempDirectory,
     repoPath,
     watchedSavePath,
+    configPath: initialized.configPath,
   };
 }
 
@@ -994,6 +997,127 @@ test("history write lock serializes concurrent observations", async (t) => {
   assert.equal(skippedResult.reason, "unchanged");
 });
 
+test("acquireSaveHistoryWatcher snapshots watcher configuration and observes with it", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: {
+      debounceWriteMs: 25,
+      minCommitIntervalMs: 0,
+    },
+  });
+  const alternateSavePath = path.join(repo.tempDirectory, "alternate-save.dat");
+  const watcher = await acquireSaveHistoryWatcher({ repoPath: repo.repoPath });
+
+  t.after(async () => {
+    await watcher.release();
+  });
+
+  assert.equal(watcher.watchedSavePath, repo.watchedSavePath);
+  assert.deepEqual(watcher.capturePolicy, {
+    debounceWriteMs: 25,
+    minCommitIntervalMs: 0,
+  });
+  assert.throws(() => {
+    Object.assign(watcher.capturePolicy, { debounceWriteMs: 1000 });
+  }, TypeError);
+
+  await copyFile(minimalEncodedSavePath, alternateSavePath);
+  const changedConfig = JSON.parse(await readFile(repo.configPath, "utf8")) as {
+    watchedSavePath: string;
+    capturePolicy: { debounceWriteMs: number; minCommitIntervalMs: number };
+  };
+  changedConfig.watchedSavePath = alternateSavePath;
+  changedConfig.capturePolicy = {
+    debounceWriteMs: 1000,
+    minCommitIntervalMs: 60_000,
+  };
+  await writeFile(repo.configPath, `${JSON.stringify(changedConfig)}\n`);
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+
+  const watcherResult = await watcher.observe({
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+
+  assert.equal(watcherResult.status, "committed");
+  assert.equal(watcherResult.observation.sourcePath, repo.watchedSavePath);
+  assert.deepEqual(watcher.capturePolicy, {
+    debounceWriteMs: 25,
+    minCommitIntervalMs: 0,
+  });
+
+  const manualResult = await observeSave({
+    repoPath: repo.repoPath,
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+    trigger: "manualCheckpoint",
+  });
+
+  assert.equal(manualResult.status, "committed");
+  assert.equal(manualResult.observation.sourcePath, alternateSavePath);
+});
+
+test("Save History Watcher preserves observation outcomes and releases ownership safely", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: { minCommitIntervalMs: 60_000 },
+  });
+  const watcher = await acquireSaveHistoryWatcher({
+    repoPath: repo.repoPath,
+    startedAt: new Date("2026-06-30T11:59:00.000Z"),
+  });
+
+  const first = await watcher.observe({
+    observedAt: new Date("2026-06-30T12:00:00.000Z"),
+  });
+  assert.equal(first.status, "committed");
+
+  await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const deferred = await watcher.observe({
+    observedAt: new Date("2026-06-30T12:00:10.000Z"),
+  });
+  assert.deepEqual(deferred, {
+    status: "skipped",
+    reason: "minimumCommitInterval",
+    encodedSha256: createHash("sha256")
+      .update(await readFile(repo.watchedSavePath))
+      .digest("hex"),
+    nextAllowedAt: "2026-06-30T12:01:00.000Z",
+  });
+
+  const deferredObservation = watcher.observe({
+    observedAt: new Date("2026-06-30T12:01:00.000Z"),
+  });
+  const release = watcher.release();
+  await assert.rejects(
+    watcher.observe({ observedAt: new Date("2026-06-30T12:02:00.000Z") }),
+    /Save History Watcher is closing/v,
+  );
+  await assert.rejects(
+    acquireSaveHistoryWatcher({ repoPath: repo.repoPath }),
+    (error: unknown) => {
+      assert.ok(error instanceof LocalHistoryWatchProcessAlreadyRunningError);
+      assert.equal(error.lockInfo?.startedAt, "2026-06-30T11:59:00.000Z");
+
+      return true;
+    },
+  );
+
+  const committedDeferredObservation = await deferredObservation;
+  assert.equal(committedDeferredObservation.status, "committed");
+  await Promise.all([release, watcher.release()]);
+
+  await writeFile(repo.watchedSavePath, new Uint8Array([1, 2, 3, 4]));
+  const nextWatcher = await acquireSaveHistoryWatcher({
+    repoPath: repo.repoPath,
+  });
+  t.after(async () => {
+    await nextWatcher.release();
+  });
+  const watcherError = await nextWatcher.observe({
+    observedAt: new Date("2026-06-30T12:02:00.000Z"),
+  });
+
+  assert.equal(watcherError.status, "watcherError");
+  assert.equal(watcherError.error.reason, "decodeFailure");
+});
+
 test("startLocalHistoryWatchProcess emits started and performs a startup observation", async (t) => {
   const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
     capturePolicy: {
@@ -1258,6 +1382,31 @@ test("Local History Watch Process is a singleton per Save History Repository", a
   });
 
   await thirdProcess.stop();
+});
+
+test("Local History Watch Process releases watcher ownership after watch startup failure", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const startFailure = new Error("watch subscription could not start");
+  const failingWatchEventSource: WatchEventSource = {
+    start: async () => {
+      throw startFailure;
+    },
+  };
+
+  await assert.rejects(
+    startLocalHistoryWatchProcess({
+      repoPath: repo.repoPath,
+      watchEventSource: failingWatchEventSource,
+    }),
+    startFailure,
+  );
+
+  const nextProcess = await startLocalHistoryWatchProcess({
+    repoPath: repo.repoPath,
+    watchEventSource: new TestWatchEventSource(),
+  });
+
+  await nextProcess.stop();
 });
 
 test("Local History Watch Process observes file-change events", async (t) => {

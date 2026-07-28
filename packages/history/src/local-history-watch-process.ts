@@ -5,10 +5,9 @@ import { watch } from "node:fs";
 import { stat } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { readProjectConfig } from "./config.ts";
 import { LocalHttpServerStartError } from "./errors.ts";
 import { createLocalHttpApp } from "./http-app.ts";
-import { observeSaveUsingConfig } from "./observe-save.ts";
+import { acquireSaveHistoryWatcher } from "./save-history-watcher.ts";
 import type {
   FileStabilityProbe,
   LocalHistoryWatchProcess,
@@ -19,24 +18,20 @@ import type {
   WatchEventSubscription,
   WatchScheduler,
 } from "./types.ts";
-import { acquireWatchLock } from "./watch-lock.ts";
 import { createWatchObservationCoordinator } from "./watch-observation-coordinator.ts";
-import { withHistoryWriteLock } from "./write-lock.ts";
 
 export async function startLocalHistoryWatchProcess(
   input: StartLocalHistoryWatchProcessInput,
 ): Promise<LocalHistoryWatchProcess> {
-  const config = await readProjectConfig(input.repoPath);
   const emit = input.onEvent ?? (() => undefined);
   const now = input.now?.() ?? new Date();
+  const watcher = await acquireSaveHistoryWatcher({
+    repoPath: input.repoPath,
+    startedAt: now,
+  });
   const fileStabilityProbe =
     input.fileStabilityProbe ?? defaultFileStabilityProbe;
   const watchScheduler = input.watchScheduler ?? defaultWatchScheduler;
-  const watchLock = await acquireWatchLock({
-    repoPath: input.repoPath,
-    watchedSavePath: config.watchedSavePath,
-    now,
-  });
   const watchEventSource = input.watchEventSource ?? nodeWatchEventSource;
   let subscription: WatchEventSubscription | undefined;
   let httpServer: ServerType | undefined;
@@ -49,8 +44,8 @@ export async function startLocalHistoryWatchProcess(
     LocalHistoryWatchProcess["getWatcherStatus"]
   >["lastObservation"];
   const observationCoordinator = createWatchObservationCoordinator({
-    watchedSavePath: config.watchedSavePath,
-    debounceWriteMs: config.capturePolicy.debounceWriteMs,
+    watchedSavePath: watcher.watchedSavePath,
+    debounceWriteMs: watcher.capturePolicy.debounceWriteMs,
     fileStabilityProbe,
     watchScheduler,
     now: () => input.now?.() ?? new Date(),
@@ -78,8 +73,8 @@ export async function startLocalHistoryWatchProcess(
     emit({
       type: "started",
       repoPath: input.repoPath,
-      watchedSavePath: config.watchedSavePath,
-      capturePolicy: config.capturePolicy,
+      watchedSavePath: watcher.watchedSavePath,
+      capturePolicy: watcher.capturePolicy,
       ...(http !== undefined && { http }),
     });
 
@@ -97,12 +92,12 @@ export async function startLocalHistoryWatchProcess(
       await closeHttpServer(httpServer);
     }
 
-    await watchLock.release();
+    await watcher.release();
   }
 
   async function startComponents() {
     subscription = await watchEventSource.start({
-      watchedSavePath: config.watchedSavePath,
+      watchedSavePath: watcher.watchedSavePath,
       onChange: async () => {
         await observationCoordinator.notifyChange();
       },
@@ -203,7 +198,7 @@ export async function startLocalHistoryWatchProcess(
 
     await observationStop;
 
-    await watchLock.release();
+    await watcher.release();
     emit({
       type: "stopped",
       repoPath: input.repoPath,
@@ -214,16 +209,7 @@ export async function startLocalHistoryWatchProcess(
     _cause: "startup" | "change" | "deferred",
     observedAt: Date,
   ): Promise<ObserveSaveResult> {
-    return await withHistoryWriteLock(
-      input.repoPath,
-      async () =>
-        await observeSaveUsingConfig({
-          config,
-          repoPath: input.repoPath,
-          observedAt,
-          trigger: "watcher",
-        }),
-    );
+    return await watcher.observe({ observedAt });
   }
 
   function completeObservation(
@@ -249,8 +235,8 @@ export async function startLocalHistoryWatchProcess(
       observationRevision,
       startedAt,
       repoPath: input.repoPath,
-      watchedSavePath: config.watchedSavePath,
-      capturePolicy: config.capturePolicy,
+      watchedSavePath: watcher.watchedSavePath,
+      capturePolicy: watcher.capturePolicy,
       ...(lastObservation !== undefined && { lastObservation }),
     };
   }

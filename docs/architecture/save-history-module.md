@@ -26,7 +26,7 @@ History owns the persistence rules and adapters behind its public Interface:
 | Project Config                        | Repository-scoped config records the Watched Save path, Capture Policy, Display Semantic Event Filters, and restore defaults. History reads it when executing repository behavior. Effective Config precedence is defined by [ADR-0004](../adr/0004-config-scopes-and-precedence.md). |
 | Semantic Read Model                   | History derives Semantic Snapshots, Semantic Events, observation lookup data, and semantic Version Stamps into SQLite, then applies Project Config display filters when querying. It is query authority but is rebuildable from Git, so it is not a restore source.                   |
 | `write.lock`                          | History uses this short-lived repository lock to serialize Git and SQLite mutations for observations and rebuilds, and the full in-place restore transaction. Offline Commands and the watch process share this lock instead of creating separate write paths.                        |
-| `watch.lock`                          | History implements the repository-scoped singleton lock held by a Local History Watch Process. Its acquisition, lifetime, and release belong to the [watch-process lifecycle](local-history-watch-process.md), not to an observation transaction.                                     |
+| `watch.lock`                          | History implements the repository-scoped singleton lock held by an acquired Save History Watcher lease. Its acquisition, lifetime, and release belong to watcher ownership and are distinct from an observation transaction.                                                          |
 
 The repository currently tracks the Project Config and current observation's
 Encoded Save, Decoded Save, and Observation Metadata. The SQLite read model and
@@ -44,10 +44,11 @@ restore rules themselves.
 
 ## Observation Transaction
 
-`observeSave` is the public single-observation transaction used by both a
-watch-triggered observation and a Manual Checkpoint. Under `write.lock`, History
-reads the Watched Save path from Project Config and returns one of three
-outcomes:
+`observeSave` is the public single-observation transaction used by Manual
+Checkpoints and Offline Commands. Under `write.lock`, History reads the Watched
+Save path from current Project Config and returns one of three outcomes. An
+acquired Save History Watcher lease uses the same transaction under `write.lock`
+with its private startup Project Config snapshot and a watcher trigger.
 
 - `committed` means History wrote a Raw Save Observation to Git. If Core
   recognizes the Save Schema Version, History also appends the Semantic
@@ -147,12 +148,14 @@ and the Local History HTTP refinement in
 
 ## Caller and Process Boundary
 
-The Local History Watch Process is a caller and orchestrator of this Module's
-observation and query behavior. It owns a watch subscription, process-level
-failure handling, optional local HTTP listener, and `watch.lock` lifetime, but
-it does not implement a second Git, SQLite, observation, export, or restore
-path. Manual checkpoints and Offline Commands call the same History Interface
-and serialize mutations through `write.lock` without starting another watcher.
+The Local History Watch Process is a compatibility caller and orchestrator of
+this Module's observation and query behavior. It obtains a Save History Watcher
+lease, then owns the watch subscription, process-level failure handling, and
+optional local HTTP listener while the lease owns `watch.lock`. It does not
+implement a second Git, SQLite, observation, export, or restore path. Manual
+checkpoints and Offline Commands call the direct History Interface with current
+Project Config and serialize mutations through `write.lock` without starting
+another watcher.
 
 The HTTP adapter is likewise an adapter over public History behavior. Its exact
 authentication, request, response, compatibility, and download contracts live

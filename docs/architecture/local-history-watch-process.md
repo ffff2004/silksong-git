@@ -15,20 +15,20 @@ write path.
 
 ## Ownership and Locks
 
-Only one Local History Watch Process may own a Save History Repository at a
-time. Startup acquires the repository's `watch.lock` before attaching the watch
-backend. The process holds that lock until its shutdown cleanup releases it. A
-conflicting lock stops a second process before it starts watching. The lock
-contains diagnostics, but the current implementation does not automatically
-decide that an existing lock is stale or remove it. Shutdown waits for every
-already-started observation path, including deferred work, before releasing
-this lock.
+Only one acquired Save History Watcher lease may own a Save History Repository
+at a time. The Local History Watch Process acquires that lease before attaching
+the watch backend; the lease holds the repository's `watch.lock` until shutdown
+cleanup releases it. A conflicting lease stops a second process before it starts
+watching. The lock contains diagnostics, but the current implementation does
+not automatically decide that an existing lock is stale or remove it. Shutdown
+waits for every already-started observation path, including deferred work,
+before releasing the lease.
 
 The two repository locks have different scopes:
 
 | Lock         | Lifetime                            | Responsibility                                                                                                                                                 |
 | ------------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `watch.lock` | One complete watch-process lifetime | Enforces singleton ownership of watching and, when enabled, the listener lifecycle for one repository.                                                         |
+| `watch.lock` | One acquired watcher-lease lifetime | Enforces singleton ownership of watching and, when enabled, the listener lifecycle for one repository.                                                         |
 | `write.lock` | One History mutation transaction    | Serializes an observation's Git and SQLite work, rebuilds, and in-place restore with watcher work and Offline Commands. It is released after each transaction. |
 
 Holding `watch.lock` therefore does not exclude an Offline Command. Manual
@@ -39,16 +39,17 @@ inside that lock.
 
 ## Startup and Configuration Snapshot
 
-Startup reads Project Config once, then uses that snapshot's Watched Save path
-and Capture Policy until the process exits. Editing Project Config does not
-reconfigure a running process; it must be restarted. One-shot Offline Commands
-continue to read the current Project Config when they run.
+Startup acquires a Save History Watcher lease, which reads Project Config once
+and retains the snapshot's Watched Save path and Capture Policy until the
+process exits. Editing Project Config does not reconfigure a running process;
+it must be restarted. One-shot Offline Commands continue to read the current
+Project Config when they run.
 
-After acquiring `watch.lock`, startup attaches the file watch backend. If HTTP
-is requested, it then starts the listener in the same process. Only after the
-requested components are ready does the process emit its structured `started`
-event. Failure to acquire process ownership or start either component aborts
-startup and releases resources already acquired.
+After acquiring the watcher lease, startup attaches the file watch backend. If
+HTTP is requested, it then starts the listener in the same process. Only after
+the requested components are ready does the process emit its structured
+`started` event. Failure to acquire process ownership or start either component
+aborts startup and releases resources already acquired.
 
 The backend is attached before the initial observation, so a change during
 startup is not missed by attaching too late. The initial observation then runs
@@ -74,11 +75,11 @@ active stability-probe/observation path and one pending timed opportunity.
 4. Every chosen opportunity waits until the Watched Save has the same size and
    modification time across bounded probes. An inability to stat the file or
    reach stability produces a non-committed Watcher Error for that opportunity.
-5. Once stable, the process acquires History's short-lived `write.lock` and
-   invokes the shared observation path with the startup Project Config snapshot
-   and watcher trigger. History then returns `committed`, `skipped`, or
-   `watcherError`, and the process emits an observation event and updates its
-   coarse status.
+5. Once stable, the process invokes the watcher lease's observation behavior
+   with an explicit observation time. History acquires its short-lived
+   `write.lock`, uses the lease's startup Project Config snapshot and watcher
+   trigger, then returns `committed`, `skipped`, or `watcherError`; the process
+   emits an observation event and updates its coarse status.
 
 The process never treats event payload bytes as authoritative: every
 opportunity reads the current stable Watched Save through History. The
@@ -171,7 +172,8 @@ the watch lock is released. Its ordering is:
 4. wait for the one active observation path, including a stability probe or
    History observation that began as startup, change, or deferred work, to
    finish;
-5. release `watch.lock` and emit `stopped`.
+5. release the Save History Watcher lease (and therefore `watch.lock`) and emit
+   `stopped`.
 
 The process does not hard-cancel started stability probes or work that may be
 mutating Git, SQLite, or the Watched Save. It waits for that path before

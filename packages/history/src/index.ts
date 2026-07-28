@@ -25,6 +25,7 @@ export {
 export { createLocalHttpApp } from "./http-app.ts";
 export type { LocalHttpApp } from "./http-app.ts";
 export { createLocalHttpOpenApiDocument } from "./http-contract.ts";
+export { acquireSaveHistoryWatcher } from "./save-history-watcher.ts";
 export { getSaveState, readEncodedSave } from "./save-state.ts";
 
 export {
@@ -46,6 +47,7 @@ export {
 export { startLocalHistoryWatchProcess } from "./local-history-watch-process.ts";
 export { restoreEncodedSave } from "./restore.ts";
 export type {
+  AcquireSaveHistoryWatcherInput,
   DiffCommitsInput,
   DiffCommitsResult,
   FileStabilityProbe,
@@ -61,6 +63,7 @@ export type {
   LocalHistoryWatchProcessEvent,
   LocalHistoryWatchProcessFatalError,
   ObservationTrigger,
+  ObserveSaveHistoryWatcherInput,
   ObserveSaveInput,
   ObserveSaveResult,
   ProjectConfig,
@@ -77,6 +80,7 @@ export type {
   RestoreEncodedSaveInput,
   RestoreEncodedSaveResult,
   RestoreTarget,
+  SaveHistoryWatcher,
   ScheduledWatchTask,
   SearchSemanticEventsInput,
   SearchSemanticEventsResult,

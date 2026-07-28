@@ -52,6 +52,24 @@ export interface ObserveSaveInput {
   readonly allowUnchanged?: boolean;
 }
 
+export interface AcquireSaveHistoryWatcherInput {
+  readonly repoPath: string;
+  readonly startedAt?: Date;
+}
+
+export interface SaveHistoryWatcher {
+  readonly watchedSavePath: string;
+  readonly capturePolicy: ProjectConfig["capturePolicy"];
+  observe: (
+    input: ObserveSaveHistoryWatcherInput,
+  ) => Promise<ObserveSaveResult>;
+  release: () => Promise<void>;
+}
+
+export interface ObserveSaveHistoryWatcherInput {
+  readonly observedAt: Date;
+}
+
 export type ObservationTrigger = "watcher" | "manualCheckpoint";
 
 export type ObserveSaveResult =
