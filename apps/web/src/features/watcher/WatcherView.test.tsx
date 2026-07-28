@@ -7,7 +7,12 @@ import {
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { App } from "../../app/App.tsx";
+import { App as RuntimeApp } from "../../app/App.tsx";
+import { desktopTestRuntimeCapabilities } from "../../test/desktop-runtime-capabilities.ts";
+
+const App = () => (
+  <RuntimeApp runtimeCapabilities={desktopTestRuntimeCapabilities} />
+);
 
 describe("Watcher view", () => {
   beforeEach(() => {
@@ -275,10 +280,6 @@ describe("Watcher view", () => {
 
 function connectLocalHistory() {
   fireEvent.click(getRequiredElement("#connect-local-history"));
-  fireEvent.input(getRequiredElement("#local-history-token"), {
-    target: { value: "session-token" },
-  });
-  fireEvent.click(getRequiredElement("#local-history-connect"));
 }
 
 function getRequiredElement(selector: string): HTMLElement {

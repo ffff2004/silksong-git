@@ -10,6 +10,7 @@ import {
   LocalHistoryClientError,
   createLocalHistoryClient,
 } from "../features/local-history/local-history-client.ts";
+import type { RuntimeCapabilities } from "../runtime-capabilities/interface.ts";
 
 interface LocalHistorySession {
   readonly client: LocalHistoryClient;
@@ -38,12 +39,10 @@ export type LocalHistoryConnection =
   | { readonly error: LocalHistoryClientError; readonly kind: "error" };
 
 interface LocalHistoryStore {
-  readonly connect: (input: {
-    readonly endpoint: string;
-    readonly token: string;
-  }) => Promise<boolean>;
+  readonly connect: () => Promise<boolean>;
   readonly connection: () => LocalHistoryConnection;
   readonly disconnect: () => void;
+  readonly isSupported: boolean;
   readonly reportRequestFailure: (error: unknown) => void;
   readonly reportRequestSuccess: () => void;
   readonly updateLatestSaveState: (state: LocalHttpSaveState) => void;
@@ -54,6 +53,7 @@ const LocalHistoryContext = createContext<LocalHistoryStore>();
 
 export function LocalHistoryProvider(props: {
   readonly children: JSX.Element;
+  readonly runtimeCapabilities: RuntimeCapabilities;
 }) {
   const [connection, setConnection] = createSignal<LocalHistoryConnection>({
     kind: "disconnected",
@@ -62,10 +62,15 @@ export function LocalHistoryProvider(props: {
   let setLatestSaveState: Setter<LocalHttpSaveState | undefined> | undefined;
 
   const store: LocalHistoryStore = {
-    async connect(input) {
+    async connect() {
       setConnection({ kind: "connecting" });
 
       try {
+        if (props.runtimeCapabilities.kind !== "desktop") {
+          throw new Error("Local History is unavailable in this runtime.");
+        }
+        const input =
+          await props.runtimeCapabilities.getRepoSessionConnection();
         const client = createLocalHistoryClient(input);
         const initialWatcherStatus = await client.getWatcher();
         const [watcherStatus, setNextWatcherStatus] = createSignal<
@@ -108,6 +113,7 @@ export function LocalHistoryProvider(props: {
       setWatcherStatus = undefined;
       setConnection({ kind: "disconnected" });
     },
+    isSupported: props.runtimeCapabilities.kind === "desktop",
     reportRequestFailure(error) {
       const current = connection();
       if (current.kind !== "connected") {

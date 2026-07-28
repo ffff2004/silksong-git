@@ -7,18 +7,21 @@ import { MapView } from "../features/map/MapView.tsx";
 import { ProgressView } from "../features/progress/ProgressView.tsx";
 import { RawSaveView } from "../features/raw-save/RawSaveView.tsx";
 import { WatcherRoute } from "../features/watcher/WatcherView.tsx";
+import type { RuntimeCapabilities } from "../runtime-capabilities/interface.ts";
 import { LocalHistoryProvider } from "../state/local-history-store.tsx";
 import { PreferencesProvider } from "../state/preferences-store.tsx";
 import { SaveProvider } from "../state/save-store.tsx";
 import { ToastProvider } from "../state/toast-store.tsx";
 import { AppShell } from "./AppShell.tsx";
 
-export function App() {
+export function App(props: {
+  readonly runtimeCapabilities: RuntimeCapabilities;
+}) {
   return (
     <ToastProvider>
       <PreferencesProvider>
         <SaveProvider>
-          <LocalHistoryProvider>
+          <LocalHistoryProvider runtimeCapabilities={props.runtimeCapabilities}>
             <HashRouter root={AppShell}>
               <Route
                 path="/"

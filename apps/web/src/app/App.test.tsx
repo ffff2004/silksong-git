@@ -16,8 +16,14 @@ import {
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { browserRuntimeCapabilities } from "../runtime-capabilities/browser.ts";
 import decodedSave from "../test-fixtures/mask-shard-2-collected-rosaries-save.decoded.json";
-import { App } from "./App.tsx";
+import { desktopTestRuntimeCapabilities } from "../test/desktop-runtime-capabilities.ts";
+import { App as RuntimeApp } from "./App.tsx";
+
+const App = () => (
+  <RuntimeApp runtimeCapabilities={desktopTestRuntimeCapabilities} />
+);
 
 const intersectionState: {
   callback: IntersectionObserverCallback | undefined;
@@ -139,6 +145,38 @@ describe("Solid Web app routing", () => {
     expect(screen.getByText("Local History connection required")).toBeDefined();
   });
 
+  it("keeps the Browser runtime in Static Web Mode", async () => {
+    globalThis.location.hash = "#/history";
+    render(() => (
+      <RuntimeApp runtimeCapabilities={browserRuntimeCapabilities} />
+    ));
+
+    expect(await screen.findByTestId("browser-unavailable")).toBeDefined();
+    expect(
+      screen.getByText("Local History is unavailable in the browser"),
+    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Upload save" })).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Connect to Local History" }),
+    ).toBeNull();
+    expect(screen.queryByRole("link", { name: "History" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Compare" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Watcher" })).toBeNull();
+  });
+
+  it("rejects a preserved historical selection in the Browser runtime", async () => {
+    globalThis.location.hash = "#/progress?commit=unavailable";
+    render(() => (
+      <RuntimeApp runtimeCapabilities={browserRuntimeCapabilities} />
+    ));
+
+    expect(await screen.findByTestId("browser-unavailable")).toBeDefined();
+    expect(screen.queryByTestId("local-connection-required")).toBeNull();
+    expect(screen.queryByRole("link", { name: "History" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Compare" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Watcher" })).toBeNull();
+  });
+
   it("connects Local History and clears the uploaded Static Save", async () => {
     let requestCount = 0;
     vi.stubGlobal(
@@ -179,13 +217,6 @@ describe("Solid Web app routing", () => {
     );
 
     fireEvent.click(getRequiredElement("#connect-local-history"));
-    fireEvent.input(getRequiredElement("#local-history-endpoint"), {
-      target: { value: "http://127.0.0.1:4312" },
-    });
-    fireEvent.input(getRequiredElement("#local-history-token"), {
-      target: { value: "session-token" },
-    });
-    fireEvent.click(getRequiredElement("#local-history-connect"));
 
     await waitFor(() => {
       expect(
@@ -210,6 +241,15 @@ describe("Solid Web app routing", () => {
     expect(document.querySelector("#shardsValue")?.textContent).toBe("88");
     expect(document.querySelector("#upload-save")).toBeNull();
     expect(document.querySelector("#clearDataBtn")).toBeNull();
+
+    fireEvent.click(getRequiredElement("#disconnect-local-history"));
+    await waitFor(() => {
+      expect(document.querySelector("#upload-save")).not.toBeNull();
+    });
+    expect(document.querySelector("#modeBanner")?.textContent).not.toContain(
+      "SAVE LOADED",
+    );
+    expect(screen.queryByRole("link", { name: "History" })).toBeNull();
   });
 
   it("explains when browser Local Network Access was denied", async () => {
@@ -236,14 +276,26 @@ describe("Solid Web app routing", () => {
 
     render(() => <App />);
     fireEvent.click(getRequiredElement("#connect-local-history"));
-    fireEvent.input(getRequiredElement("#local-history-token"), {
-      target: { value: "session-token" },
-    });
-    fireEvent.click(getRequiredElement("#local-history-connect"));
 
     expect(
       await screen.findByText(
         "Local Network Access was denied. Allow this site to access the local network, then try again.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("explains when Desktop session credentials are invalid", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(undefined, { status: 401 })),
+    );
+
+    render(() => <App />);
+    fireEvent.click(getRequiredElement("#connect-local-history"));
+
+    expect(
+      await screen.findByText(
+        "The Desktop session credentials are invalid or expired. Reopen the Desktop session, then reconnect.",
       ),
     ).toBeDefined();
   });
@@ -283,10 +335,6 @@ describe("Solid Web app routing", () => {
 
     render(() => <App />);
     fireEvent.click(getRequiredElement("#connect-local-history"));
-    fireEvent.input(getRequiredElement("#local-history-token"), {
-      target: { value: "session-token" },
-    });
-    fireEvent.click(getRequiredElement("#local-history-connect"));
 
     await waitFor(() => {
       expect(document.querySelector("#completionValue")?.textContent).toBe(
@@ -330,10 +378,6 @@ describe("Solid Web app routing", () => {
 
     render(() => <App />);
     fireEvent.click(getRequiredElement("#connect-local-history"));
-    fireEvent.input(getRequiredElement("#local-history-token"), {
-      target: { value: "session-token" },
-    });
-    fireEvent.click(getRequiredElement("#local-history-connect"));
     await waitFor(() => {
       expect(
         document.querySelector("#disconnect-local-history"),
@@ -424,10 +468,6 @@ describe("Solid Web app routing", () => {
 
     render(() => <App />);
     fireEvent.click(getRequiredElement("#connect-local-history"));
-    fireEvent.input(getRequiredElement("#local-history-token"), {
-      target: { value: "session-token" },
-    });
-    fireEvent.click(getRequiredElement("#local-history-connect"));
     await waitFor(() => {
       expect(document.querySelector("#completionValue")?.textContent).toBe(
         "81%",
@@ -534,10 +574,6 @@ describe("Solid Web app routing", () => {
 
     render(() => <App />);
     fireEvent.click(getRequiredElement("#connect-local-history"));
-    fireEvent.input(getRequiredElement("#local-history-token"), {
-      target: { value: "session-token" },
-    });
-    fireEvent.click(getRequiredElement("#local-history-connect"));
 
     expect(
       await screen.findByText("A newer latest save is available."),
@@ -577,10 +613,6 @@ describe("Solid Web app routing", () => {
 
     render(() => <App />);
     fireEvent.click(getRequiredElement("#connect-local-history"));
-    fireEvent.input(getRequiredElement("#local-history-token"), {
-      target: { value: "session-token" },
-    });
-    fireEvent.click(getRequiredElement("#local-history-connect"));
     expect(await screen.findByTestId("history-view")).toBeDefined();
     await waitFor(() => {
       expect(urls.some((url) => url.includes("/api/v1/history"))).toBe(true);
@@ -671,10 +703,6 @@ describe("Solid Web app routing", () => {
 
     render(() => <App />);
     fireEvent.click(getRequiredElement("#connect-local-history"));
-    fireEvent.input(getRequiredElement("#local-history-token"), {
-      target: { value: "session-token" },
-    });
-    fireEvent.click(getRequiredElement("#local-history-connect"));
 
     expect(await screen.findByText(secondItem.label)).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Load More" }));
@@ -751,10 +779,6 @@ describe("Solid Web app routing", () => {
 
     render(() => <App />);
     fireEvent.click(getRequiredElement("#connect-local-history"));
-    fireEvent.input(getRequiredElement("#local-history-token"), {
-      target: { value: "session-token" },
-    });
-    fireEvent.click(getRequiredElement("#local-history-connect"));
     expect(await screen.findByTestId("history-view")).toBeDefined();
 
     fireEvent.click(screen.getByRole("tab", { name: "Observations" }));
@@ -871,10 +895,6 @@ describe("Solid Web app routing", () => {
 
     render(() => <App />);
     fireEvent.click(getRequiredElement("#connect-local-history"));
-    fireEvent.input(getRequiredElement("#local-history-token"), {
-      target: { value: "session-token" },
-    });
-    fireEvent.click(getRequiredElement("#local-history-connect"));
 
     expect(await screen.findByTestId("diff-view")).toBeDefined();
     fireEvent.input(getRequiredElement("#diff-from"), {

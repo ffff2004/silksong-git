@@ -1,9 +1,12 @@
 # Web Architecture
 
-The Web application is one Solid single-page application that runs in either
-Static Web Mode or Local History Web Mode. The mode changes where Save State
-comes from; it does not select a different frontend build or server. This
-follows [ADR-0009](../adr/0009-one-web-ui-with-static-and-local-history-modes.md).
+The Web application is one shared Solid presentation composed with
+build-specific Runtime Capabilities. The Browser entry point supports Static
+Web Mode only. A Desktop entry point can additionally support Local History Web
+Mode by injecting Repo Session connection delivery. The presentation and Save
+State model remain shared; feature code does not detect Tauri or inspect runtime
+globals. This follows
+[ADR-0009](../adr/0009-one-web-ui-with-static-and-local-history-modes.md).
 
 The live runtime is rooted at [`apps/web/src/main.tsx`](../../apps/web/src/main.tsx)
 and [`App.tsx`](../../apps/web/src/app/App.tsx). It uses a hash router so the
@@ -37,8 +40,11 @@ authentication rules belong to the
 
 ## Runtime Composition and Routes
 
-[`App.tsx`](../../apps/web/src/app/App.tsx) composes four application-wide
-providers around the router:
+[`main.tsx`](../../apps/web/src/main.tsx) explicitly injects the Browser Runtime
+Capabilities into [`App.tsx`](../../apps/web/src/app/App.tsx). A Desktop shell
+uses the same seam with a narrow function that supplies its in-memory Repo
+Session endpoint and token. `App.tsx` composes four application-wide providers
+around the router:
 
 - the Toast Store owns transient notifications;
 - the Preferences Store owns presentation preferences and may persist them in
@@ -49,19 +55,21 @@ providers around the router:
 
 The routes are:
 
-| Hash route          | Availability                          | Responsibility                                    |
-| ------------------- | ------------------------------------- | ------------------------------------------------- |
-| `/` and `/progress` | Both modes                            | Render semantic progress.                         |
-| `/map`              | Both modes                            | Render mapped items on the interactive map.       |
-| `/raw-save`         | Both modes                            | Render the current Decoded Save JSON.             |
-| `/history`          | Connected Local History Web Mode only | Browse Semantic Events or Raw Save Observations.  |
-| `/diff`             | Connected Local History Web Mode only | Compare two commits semantically or as JSON.      |
-| `/watcher`          | Connected Local History Web Mode only | Show watcher state and create Manual Checkpoints. |
+| Hash route          | Availability                         | Responsibility                                    |
+| ------------------- | ------------------------------------ | ------------------------------------------------- |
+| `/` and `/progress` | Both modes                           | Render semantic progress.                         |
+| `/map`              | Both modes                           | Render mapped items on the interactive map.       |
+| `/raw-save`         | Both modes                           | Render the current Decoded Save JSON.             |
+| `/history`          | Connected Desktop Local History only | Browse Semantic Events or Raw Save Observations.  |
+| `/diff`             | Connected Desktop Local History only | Compare two commits semantically or as JSON.      |
+| `/watcher`          | Connected Desktop Local History only | Show watcher state and create Manual Checkpoints. |
 
-Local-only routes remain addressable while disconnected, but render a
-connection-required state. The Sidebar exposes them only while connected. A
-current-save route with a `commit` query parameter also requires a connection,
-so a bookmarked historical selection cannot be mistaken for Static Web Mode.
+Local-only routes remain addressable. In Desktop they render a
+connection-required state while disconnected; in Browser they render an
+explicit unavailable state. The Sidebar exposes them only for a connected
+Desktop session. A current-save route with a `commit` query parameter follows
+the same rule, so a bookmarked historical selection cannot be mistaken for
+Static Web Mode.
 
 ## Save State Ownership
 
@@ -101,8 +109,9 @@ Opaque pagination cursors stay in component runtime state.
 
 ## Static Web Mode
 
-Static Web Mode is active whenever there is no Local History connection. The
-user may upload either an Encoded Save (`.dat`) or Decoded Save JSON.
+Static Web Mode is the only mode offered by the Browser build. A disconnected
+Desktop presentation also has an empty Static Web Mode current-save surface.
+The user may upload either an Encoded Save (`.dat`) or Decoded Save JSON.
 [`load-current-save.ts`](../../apps/web/src/features/current-save/load-current-save.ts)
 performs this browser-only pipeline through the public Core Interface:
 
@@ -123,8 +132,10 @@ History responsibility and therefore does not apply in Static Web Mode.
 
 ## Local History Web Mode
 
-The user enters Local History Web Mode through the Topbar connection dialog.
-A successful authenticated `/api/v1/watcher` request creates a local session,
+The Desktop user enters Local History Web Mode through the Topbar connection
+control. Its injected capability supplies the Repo Session endpoint and token;
+the presentation never asks the user to type either value. A successful
+authenticated `/api/v1/watcher` request creates a local session,
 seeds its initial watcher status, and clears any uploaded Static Save before
 Local History loads its own state.
 The Local History runtime then fetches either:

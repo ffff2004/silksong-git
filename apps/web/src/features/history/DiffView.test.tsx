@@ -12,8 +12,13 @@ import {
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { App } from "../../app/App.tsx";
+import { App as RuntimeApp } from "../../app/App.tsx";
 import decodedSave from "../../test-fixtures/mask-shard-2-collected-rosaries-save.decoded.json";
+import { desktopTestRuntimeCapabilities } from "../../test/desktop-runtime-capabilities.ts";
+
+const App = () => (
+  <RuntimeApp runtimeCapabilities={desktopTestRuntimeCapabilities} />
+);
 
 const latestObservation = {
   commit: {
@@ -287,10 +292,6 @@ describe("Diff view", () => {
 
 function connectLocalHistory() {
   fireEvent.click(getRequiredElement("#connect-local-history"));
-  fireEvent.input(getRequiredElement("#local-history-token"), {
-    target: { value: "session-token" },
-  });
-  fireEvent.click(getRequiredElement("#local-history-connect"));
 }
 
 function createCommit(ref: string) {

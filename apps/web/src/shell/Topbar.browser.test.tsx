@@ -3,6 +3,7 @@ import { afterEach, expect, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
 
 import { App } from "../app/App.tsx";
+import { browserRuntimeCapabilities } from "../runtime-capabilities/browser.ts";
 import decodedSave from "../test-fixtures/mask-shard-2-collected-rosaries-save.decoded.json";
 // Browser tests render App directly, so load the production root stylesheet.
 // eslint-disable-next-line import-x/no-unassigned-import
@@ -16,7 +17,7 @@ afterEach(() => {
 
 it("moves the complete control group below ModeBanner when space is insufficient", async () => {
   await page.viewport(1600, 800);
-  render(() => <App />);
+  render(() => <App runtimeCapabilities={browserRuntimeCapabilities} />);
 
   await userEvent.click(page.getByRole("button", { name: "Upload save" }));
   await userEvent.upload(
@@ -31,7 +32,7 @@ it("moves the complete control group below ModeBanner when space is insufficient
   await setViewport(1600);
   assertTopbarLayout("same-row");
 
-  await setViewport(1234);
+  await setViewport(900);
   assertTopbarLayout("controls-below");
 });
 

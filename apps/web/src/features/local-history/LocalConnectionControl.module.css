@@ -1,0 +1,20 @@
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status {
+  color: #9fd7a4;
+  font-size: 0.85rem;
+}
+
+.stale {
+  color: #f2c879;
+}
+
+.error {
+  margin: 0;
+  color: #f29a9a;
+  font-size: 0.85rem;
+}

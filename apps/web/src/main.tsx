@@ -1,6 +1,7 @@
 import { render } from "solid-js/web";
 
 import { App } from "./app/App.tsx";
+import { browserRuntimeCapabilities } from "./runtime-capabilities/browser.ts";
 // Vite applies the root stylesheet through this import side effect.
 // eslint-disable-next-line import-x/no-unassigned-import
 import "./app/global.css";
@@ -10,4 +11,4 @@ if (root === null) {
   throw new Error("Failed to find Solid root element.");
 }
 
-render(() => <App />, root);
+render(() => <App runtimeCapabilities={browserRuntimeCapabilities} />, root);

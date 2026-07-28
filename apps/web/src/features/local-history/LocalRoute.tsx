@@ -11,7 +11,13 @@ export function LocalRoute(props: { readonly children: JSX.Element }) {
   return (
     <Show
       when={localHistory.connection().kind === "connected"}
-      fallback={<ConnectionRequiredState />}
+      fallback={
+        localHistory.isSupported ? (
+          <ConnectionRequiredState />
+        ) : (
+          <BrowserUnavailableState />
+        )
+      }
     >
       {props.children}
     </Show>
@@ -27,6 +33,17 @@ function ConnectionRequiredState() {
   );
 }
 
+function BrowserUnavailableState() {
+  return (
+    <section class={viewStyles["view"]} data-testid="browser-unavailable">
+      <h2 class={viewStyles["heading"]}>
+        Local History is unavailable in the browser
+      </h2>
+      <p>Open this view in the Desktop application to use Local History.</p>
+    </section>
+  );
+}
+
 export function CurrentSaveRoute(props: { readonly children: JSX.Element }) {
   const localHistory = useLocalHistoryStore();
 
@@ -36,7 +53,13 @@ export function CurrentSaveRoute(props: { readonly children: JSX.Element }) {
         !hasCommitSelection(globalThis.location.hash)
         || localHistory.connection().kind === "connected"
       }
-      fallback={<ConnectionRequiredState />}
+      fallback={
+        localHistory.isSupported ? (
+          <ConnectionRequiredState />
+        ) : (
+          <BrowserUnavailableState />
+        )
+      }
     >
       {props.children}
     </Show>
