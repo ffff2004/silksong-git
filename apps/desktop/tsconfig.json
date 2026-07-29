@@ -1,17 +1,8 @@
-// TypeScript configuration for Vite configuration code that runs in Node.js.
 {
   "$schema": "https://raw.githubusercontent.com/complete-ts/complete/main/packages/complete-tsconfig/schemas/tsconfig-strict-schema.json",
-
   "extends": "../../tsconfig.node.base.json",
-
   "compilerOptions": {
     "rootDir": ".",
   },
-
-  "include": [
-    "vite-entry.test.ts",
-    "vite-entry.ts",
-    "vite.config.ts",
-    "vitest.browser.config.ts",
-  ],
+  "include": ["./scripts/**/*.ts"],
 }

@@ -8,6 +8,7 @@ packages do not depend on applications.
 
 ```txt
 Static Web Mode ----------------------> @silksong-git/core
+Desktop Static Mode ----shared Web----> @silksong-git/core
 Local History Web Mode --HTTP client--> @silksong-git/repo-session/http-wire
 CLI --------------------+-------------> @silksong-git/history
                         +-------------> @silksong-git/repo-session
@@ -23,6 +24,7 @@ CLI --------------------+-------------> @silksong-git/history
 | [`packages/repo-session`](../../packages/repo-session/src/index.ts) | Owns the long-running repository reader process, mandatory loopback HTTP Adapter, independently controlled watcher scheduling, executable HTTP contract, and browser-safe wire contract. It calls only public History workflows.                                                          |
 | [`apps/cli`](../../apps/cli/src/main.ts)                            | Parses commands and renders terminal or JSON output. Save inspection calls Core; repository, history, and restore commands call History, while `watch start` starts a Repo Session. It does not own persistence rules.                                                                    |
 | [`apps/web`](../../apps/web/src/main.tsx)                           | Runs one Solid frontend in Static Web Mode or Local History Web Mode. Static mode calls Core in the browser. Local mode uses Repo Session's browser-safe HTTP wire contract and an authenticated HTTP client; it does not import a Node runtime or access local storage systems directly. |
+| [`apps/desktop`](../../apps/desktop/src-tauri/src/lib.rs)           | Runs the single-instance Tauri shell around a dedicated build of the shared Web source. Its only implemented application capability is Static Save inspection; it owns the one native window, bundled-content boundary, navigation policy, and external opening.                          |
 
 The package split follows
 [ADR-0011](../adr/0011-workspace-package-architecture.md). Exact callable
@@ -55,8 +57,10 @@ applies later when querying the rebuilt model. See
 ### Static save inspection
 
 The Web app receives an uploaded Encoded Save or Decoded Save, calls Core, and
-renders the resulting current semantic state. This flow remains entirely in
-the browser and has no Git, SQLite, watcher, or local HTTP dependency.
+renders the resulting current semantic state. Browser and Desktop use separate
+asset builds but the same presentation behavior and Static Runtime
+Capabilities. This flow remains entirely in the Web presentation and has no
+Git, SQLite, watcher, or local HTTP dependency.
 
 ### Observation and semantic indexing
 
@@ -105,6 +109,9 @@ listener lifecycle, while frontend serving remains separate. See
 - The Web frontend uses Core for browser-only semantic work and local HTTP for
   local-history work; it never directly accesses Git, SQLite, the watcher, or
   the local filesystem.
+- The Desktop shell bundles its Web assets and exposes no guest-callable native
+  permissions. Rust owns native window, navigation, popup, and validated
+  external-opening behavior.
 - Raw capture and semantic display are independent: display filters neither
   suppress Git observations nor delete Semantic Events from SQLite.
 - Only an active Repo Session watcher is singleton for a repository. Multiple
@@ -117,6 +124,7 @@ listener lifecycle, while frontend serving remains separate. See
 Capability details live in the [Semantic Core](semantic-core.md),
 [Save History Module](save-history-module.md),
 [Repo Session](repo-session.md), and
-[Web](web.md) architecture documents. Accepted rationale is indexed in the
+[Web](web.md), and [Desktop Shell](desktop-shell.md) architecture documents.
+Accepted rationale is indexed in the
 [ADR index](../adr/README.md); those sources should be linked rather than
 duplicated here.

@@ -4,7 +4,20 @@ import type { Plugin } from "vite";
 import solid from "vite-plugin-solid";
 import { configDefaults, defineConfig } from "vitest/config";
 
+import { selectCompositionRoot } from "./vite-entry.ts";
+
 const BASE_PATH = process.env["BASE_PATH"] ?? "/silksong-git/";
+const DESKTOP_MODE = "desktop";
+
+function selectCompositionRootPlugin(mode: string): Plugin {
+  return {
+    transformIndexHtml: {
+      order: "pre",
+      handler: (html) => selectCompositionRoot(html, mode),
+    },
+    name: "select-composition-root",
+  };
+}
 
 function reloadPublicFiles(): Plugin {
   return {
@@ -23,9 +36,10 @@ function reloadPublicFiles(): Plugin {
 }
 
 export default defineConfig(({ mode }) => ({
-  base: BASE_PATH,
+  base: mode === DESKTOP_MODE ? "./" : BASE_PATH,
   plugins: [
     solid(mode === "test" ? { hot: false } : undefined),
+    selectCompositionRootPlugin(mode),
     reloadPublicFiles(),
   ],
   test: {
@@ -35,6 +49,7 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     chunkSizeWarningLimit: 700,
+    outDir: mode === DESKTOP_MODE ? "dist-desktop" : "dist",
     rolldownOptions: {
       output: {
         codeSplitting: {

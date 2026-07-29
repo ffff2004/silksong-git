@@ -24,3 +24,4 @@ rationale.
 - [ADR-0018 — Serve a secure versioned local HTTP Adapter from Repo Session](0018-secure-versioned-local-http-adapter.md)
 - [ADR-0019 — Extract Repo Session ownership above History](0019-extract-repo-session-ownership.md)
 - [ADR-0020 — Decouple Repo Session HTTP and watcher lifetimes](0020-decouple-repo-session-http-and-watcher-lifetimes.md)
+- [ADR-0021 — Bootstrap Desktop as a hardened shell around shared Web assets](0021-hardened-desktop-shell.md)

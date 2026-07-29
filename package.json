@@ -18,17 +18,19 @@
   "scripts": {
     "build": "pnpm build-cli && pnpm build-web",
     "build-cli": "pnpm --filter @silksong-git/cli build",
+    "build-desktop": "pnpm --filter @silksong-git/desktop build",
     "build-web": "pnpm --filter @silksong-git/web build",
     "dev-cli": "pnpm --filter @silksong-git/cli dev",
+    "dev-desktop": "pnpm --filter @silksong-git/desktop dev",
     "dev-web": "pnpm --filter @silksong-git/web dev",
-    "format": "tsx ./scripts/format.ts",
+    "format": "tsx ./scripts/format.ts && pnpm --filter @silksong-git/desktop format",
     "generate:openapi": "pnpm --filter @silksong-git/repo-session generate:openapi",
-    "lint": "tsx ./scripts/lint.ts",
+    "lint": "tsx ./scripts/lint.ts && pnpm --filter @silksong-git/desktop lint",
     "pack-cli": "pnpm --filter @silksong-git/cli pack",
     "preview-cli": "pnpm --filter @silksong-git/cli preview",
     "preview-web": "pnpm --filter @silksong-git/web preview",
     "test": "pnpm --recursive --if-present run test",
-    "verify": "pnpm lint && pnpm test && pnpm build-web && pnpm verify-cli-pack",
+    "verify": "pnpm lint && pnpm test && pnpm build-web && pnpm build-desktop && pnpm verify-cli-pack",
     "verify-cli-pack": "pnpm --filter @silksong-git/cli verify-pack"
   },
   "devDependencies": {
@@ -53,5 +55,15 @@
     "tsx": "4.22.4",
     "typescript": "6.0.3"
   },
-  "packageManager": "pnpm@11.9.0"
+  "packageManager": "pnpm@11.9.0",
+  "knip": {
+    "workspaces": {
+      "apps/web": {
+        "entry": [
+          "src/main.tsx",
+          "src/desktop-main.tsx"
+        ]
+      }
+    }
+  }
 }

@@ -1,5 +1,8 @@
 # Compiled output
 dist
+apps/desktop/src-tauri/gen
+apps/desktop/src-tauri/target
+apps/web/dist-desktop
 
 # Package manager lock files
 package-lock.json

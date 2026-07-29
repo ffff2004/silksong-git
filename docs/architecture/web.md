@@ -8,9 +8,11 @@ State model remain shared; feature code does not detect Tauri or inspect runtime
 globals. This follows
 [ADR-0009](../adr/0009-one-web-ui-with-static-and-local-history-modes.md).
 
-The live runtime is rooted at [`apps/web/src/main.tsx`](../../apps/web/src/main.tsx)
-and [`App.tsx`](../../apps/web/src/app/App.tsx). It uses a hash router so the
-same static build can host every view without server-side route handling.
+The Browser runtime is rooted at
+[`main.tsx`](../../apps/web/src/main.tsx), while the first Desktop runtime is
+rooted at [`desktop-main.tsx`](../../apps/web/src/desktop-main.tsx). Both
+compose [`App.tsx`](../../apps/web/src/app/App.tsx) and use a hash router so
+their static assets can host every view without server-side route handling.
 
 ## Module Boundary
 
@@ -41,10 +43,12 @@ authentication rules belong to the
 ## Runtime Composition and Routes
 
 [`main.tsx`](../../apps/web/src/main.tsx) explicitly injects the Browser Runtime
-Capabilities into [`App.tsx`](../../apps/web/src/app/App.tsx). A Desktop shell
-uses the same seam with a narrow function that supplies its in-memory Repo
-Session endpoint and token. `App.tsx` composes four application-wide providers
-around the router:
+Capabilities into [`App.tsx`](../../apps/web/src/app/App.tsx).
+`desktop-main.tsx` currently injects the same Static-only capabilities because
+the implemented Desktop shell does not yet own a Repo Session. A later Desktop
+workflow can use the existing Desktop Adapter only when it can supply a real
+in-memory Repo Session endpoint and token. `App.tsx` composes four
+application-wide providers around the router:
 
 - the Toast Store owns transient notifications;
 - the Preferences Store owns presentation preferences and may persist them in
@@ -200,11 +204,11 @@ safety.
 
 ## Current Limits
 
-This document describes the implemented Solid runtime. It does not promise a
-particular production serving mechanism: Vite currently supplies development
-and build tooling, while serving or opening the built frontend is a separate
-delivery concern. Polling is the implemented synchronization mechanism; there
-is no SSE or WebSocket event stream.
+This document describes the implemented Solid runtime. Vite produces a Browser
+build with the hosted base path and a separate relative-path Desktop build.
+The Tauri shell bundles the latter; it does not load a remote UI. Polling is
+the implemented synchronization mechanism; there is no SSE or WebSocket event
+stream.
 
 The pre-Solid DOM application and extraction notes are retained only as
 [legacy migration context](../legacy/web-before-solid/overview.md). They are

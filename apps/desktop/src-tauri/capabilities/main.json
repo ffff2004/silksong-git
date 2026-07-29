@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The unique main WebView has no guest-callable native permissions.",
+  "windows": ["main"],
+  "permissions": []
+}

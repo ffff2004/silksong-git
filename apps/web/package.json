@@ -3,11 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "pnpm run build:browser",
+    "build:browser": "vite build --mode browser",
+    "build:desktop": "vite build --mode desktop",
     "dev": "vite dev",
+    "dev:desktop": "vite dev --mode desktop --host 127.0.0.1 --port 1420 --strictPort",
     "format": "tsx ../../scripts/format.ts apps/web",
     "lint": "tsx ../../scripts/lint.ts apps/web",
-    "preview": "vite preview",
+    "preview": "vite preview --mode browser",
     "test": "pnpm run test:unit && pnpm run test:browser",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:unit": "vitest run"

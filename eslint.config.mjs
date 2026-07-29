@@ -4,9 +4,14 @@
 // @ts-check
 
 import { completeConfigBase } from "eslint-config-complete";
-import { defineConfig } from "eslint/config";
+import { defineConfig, globalIgnores } from "eslint/config";
 
 export default defineConfig(
+  globalIgnores([
+    "apps/desktop/src-tauri/gen/**",
+    "apps/desktop/src-tauri/target/**",
+    "apps/web/dist-desktop/**",
+  ]),
   ...completeConfigBase,
   {
     files: ["**/*"],

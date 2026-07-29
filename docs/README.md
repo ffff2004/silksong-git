@@ -34,6 +34,8 @@ delivery state, and preserved legacy behavior.
   independent watcher scheduling, mandatory HTTP lifecycle, and shutdown.
 - [Web](architecture/web.md) — Static Web Mode, Local History Web Mode, and
   frontend state ownership.
+- [Desktop Shell](architecture/desktop-shell.md) — shared Desktop Web assets,
+  native window lifecycle, navigation policy, CSP, and capability boundary.
 
 ## References
 
