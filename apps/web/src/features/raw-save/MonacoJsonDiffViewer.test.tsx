@@ -13,28 +13,32 @@ interface DiffModelPair {
 }
 
 const monacoMock = vi.hoisted(() => {
-  const cancel = vi.fn();
   const dispose = vi.fn();
+  const disposeModel = vi.fn();
   const setModel = vi.fn((_model: DiffModelPair) => undefined);
   const createDiffEditor = vi.fn(() => ({ dispose, setModel }));
   const createModel = vi.fn((value: string, language: string) => ({
-    dispose: vi.fn(),
+    dispose: disposeModel,
     language,
     value,
   }));
-  const initResult = Object.assign(
-    Promise.resolve({ editor: { createDiffEditor, createModel } }),
-    { cancel },
+  const loadMonaco = vi.fn(
+    async () =>
+      await Promise.resolve({ editor: { createDiffEditor, createModel } }),
   );
-  const init = vi.fn((): unknown => initResult);
 
-  return { cancel, createDiffEditor, createModel, dispose, init, setModel };
+  return {
+    createDiffEditor,
+    createModel,
+    dispose,
+    disposeModel,
+    loadMonaco,
+    setModel,
+  };
 });
 
-vi.mock("@monaco-editor/loader", () => ({
-  default: {
-    init: monacoMock.init,
-  },
+vi.mock("./load-monaco.ts", () => ({
+  loadMonaco: monacoMock.loadMonaco,
 }));
 
 describe("MonacoJsonDiffViewer", () => {
@@ -47,7 +51,7 @@ describe("MonacoJsonDiffViewer", () => {
   it("mounts the from and to JSON values as a Monaco diff model", async () => {
     vi.stubEnv("MODE", "production");
 
-    render(() => (
+    const { unmount } = render(() => (
       <MonacoJsonDiffViewer
         fromValue={'{"before":true}'}
         toValue={'{"after":true}'}
@@ -76,5 +80,41 @@ describe("MonacoJsonDiffViewer", () => {
     const model = monacoMock.setModel.mock.calls[0]?.[0];
     expect(model?.modified.value).toBe('{"after":true}');
     expect(model?.original.value).toBe('{"before":true}');
+
+    unmount();
+    expect(monacoMock.dispose).toHaveBeenCalledTimes(1);
+    expect(monacoMock.disposeModel).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not create an editor or models when unmounted before Monaco loads", async () => {
+    vi.stubEnv("MODE", "production");
+
+    const { promise: pendingLoad, resolve: resolveLoad } =
+      Promise.withResolvers<{
+        editor: {
+          createDiffEditor: typeof monacoMock.createDiffEditor;
+          createModel: typeof monacoMock.createModel;
+        };
+      }>();
+    monacoMock.loadMonaco.mockReturnValueOnce(pendingLoad);
+
+    const { unmount } = render(() => (
+      <MonacoJsonDiffViewer
+        fromValue={'{"before":true}'}
+        toValue={'{"after":true}'}
+      />
+    ));
+    unmount();
+
+    resolveLoad({
+      editor: {
+        createDiffEditor: monacoMock.createDiffEditor,
+        createModel: monacoMock.createModel,
+      },
+    });
+    await pendingLoad;
+
+    expect(monacoMock.createDiffEditor).not.toHaveBeenCalled();
+    expect(monacoMock.createModel).not.toHaveBeenCalled();
   });
 });

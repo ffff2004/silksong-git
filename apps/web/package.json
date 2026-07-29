@@ -13,7 +13,6 @@
     "test:unit": "vitest run"
   },
   "dependencies": {
-    "@monaco-editor/loader": "1.7.0",
     "@silksong-git/core": "workspace:*",
     "@silksong-git/repo-session": "workspace:*",
     "@solidjs/router": "^0.16.1",

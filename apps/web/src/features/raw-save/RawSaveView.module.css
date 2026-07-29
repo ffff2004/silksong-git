@@ -5,7 +5,7 @@
   padding: 20px 25px;
   overflow: hidden;
   color: var(--ink-2);
-  font-family: "Inter", monospace;
+  font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
   background: var(--bg-2);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-lg);
@@ -43,7 +43,7 @@
 .button {
   padding: 6px 10px;
   color: var(--bg-1);
-  font-family: "Inter", sans-serif;
+  font-family: system-ui, sans-serif;
   font-size: 0.85rem;
   cursor: pointer;
   background: var(--accent);

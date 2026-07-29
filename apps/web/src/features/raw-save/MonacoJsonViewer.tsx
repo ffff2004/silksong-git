@@ -1,29 +1,24 @@
-import loader from "@monaco-editor/loader";
 import type * as monaco from "monaco-editor";
 import { createEffect, onCleanup, onMount } from "solid-js";
 
+import { loadMonaco } from "./load-monaco.ts";
 import styles from "./MonacoViewer.module.css";
 
 interface MonacoJsonViewerProps {
   readonly value: string;
 }
 
-type MonacoInit = Promise<typeof monaco> & { cancel: () => void };
-
 export function MonacoJsonViewer(props: MonacoJsonViewerProps) {
   let container: HTMLDivElement | undefined;
   let editor: monaco.editor.IStandaloneCodeEditor | undefined;
   let isDisposed = false;
-  let monacoInit: { cancel: () => void } | undefined;
 
   onMount(() => {
     if (import.meta.env.MODE === "test") {
       return;
     }
 
-    const monacoReady = loader.init() as MonacoInit;
-    monacoInit = monacoReady;
-    monacoReady.then(
+    loadMonaco().then(
       (monacoInstance) => {
         if (isDisposed || container === undefined) {
           return;
@@ -40,7 +35,7 @@ export function MonacoJsonViewer(props: MonacoJsonViewerProps) {
           folding: true,
           foldingHighlight: true,
           fontSize: 14,
-          language: "javascript",
+          language: "json",
           lineNumbers: "on",
           matchBrackets: "always",
           minimap: { enabled: false },
@@ -69,7 +64,6 @@ export function MonacoJsonViewer(props: MonacoJsonViewerProps) {
 
   onCleanup(() => {
     isDisposed = true;
-    monacoInit?.cancel();
     editor?.dispose();
   });
 

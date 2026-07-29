@@ -1,7 +1,7 @@
-import loader from "@monaco-editor/loader";
 import type * as monaco from "monaco-editor";
 import { createEffect, onCleanup, onMount } from "solid-js";
 
+import { loadMonaco } from "./load-monaco.ts";
 import styles from "./MonacoViewer.module.css";
 
 interface MonacoJsonDiffViewerProps {
@@ -9,24 +9,19 @@ interface MonacoJsonDiffViewerProps {
   readonly toValue: string;
 }
 
-type MonacoInit = Promise<typeof monaco> & { cancel: () => void };
-
 export function MonacoJsonDiffViewer(props: MonacoJsonDiffViewerProps) {
   let container: HTMLDivElement | undefined;
   let editor: monaco.editor.IStandaloneDiffEditor | undefined;
   let originalModel: monaco.editor.ITextModel | undefined;
   let modifiedModel: monaco.editor.ITextModel | undefined;
   let isDisposed = false;
-  let monacoInit: { cancel: () => void } | undefined;
 
   onMount(() => {
     if (import.meta.env.MODE === "test") {
       return;
     }
 
-    const monacoReady = loader.init() as MonacoInit;
-    monacoInit = monacoReady;
-    monacoReady.then(
+    loadMonaco().then(
       (monacoInstance) => {
         if (isDisposed || container === undefined) {
           return;
@@ -74,7 +69,6 @@ export function MonacoJsonDiffViewer(props: MonacoJsonDiffViewerProps) {
 
   onCleanup(() => {
     isDisposed = true;
-    monacoInit?.cancel();
     editor?.dispose();
     originalModel?.dispose();
     modifiedModel?.dispose();
