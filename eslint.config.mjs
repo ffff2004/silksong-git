@@ -87,6 +87,25 @@ export default defineConfig(
     },
   },
   {
+    files: [
+      "apps/desktop-sidecar/src/**/*.ts",
+      "apps/desktop-sidecar/tsup.config.ts",
+    ],
+    rules: {
+      // The development sidecar bundles workspace packages into dist/main.js. Test-only History
+      // imports remain explicit development dependencies.
+      "import-x/no-extraneous-dependencies": [
+        "error",
+        {
+          devDependencies: [
+            "apps/desktop-sidecar/src/**/*.test.ts",
+            "apps/desktop-sidecar/tsup.config.ts",
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["**/*.ts"],
     rules: {
       // Sequential async work is common for filesystem polling and ordered IO.

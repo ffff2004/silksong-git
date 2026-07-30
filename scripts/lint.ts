@@ -26,6 +26,7 @@ function getLintCommands(
       ...getTypeScriptCommands([
         "apps/cli",
         "apps/desktop",
+        "apps/desktop-sidecar",
         "apps/web",
         "packages/core",
         "packages/history",
@@ -84,6 +85,10 @@ function getTypeScriptCommands(
         return ["tsc --project ./apps/desktop/tsconfig.json"];
       }
 
+      case "apps/desktop-sidecar": {
+        return ["tsc --project ./apps/desktop-sidecar/tsconfig.json"];
+      }
+
       case "packages/core": {
         return [
           "tsc --project ./packages/core/tsconfig.json",
@@ -114,6 +119,7 @@ function getScopedLintCommands(scope: string): readonly LintCommand[] {
   switch (scope) {
     case "apps/cli":
     case "apps/desktop":
+    case "apps/desktop-sidecar":
     case "packages/history":
     case "packages/repo-session":
     case "scripts": {

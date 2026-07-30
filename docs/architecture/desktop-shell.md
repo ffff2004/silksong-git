@@ -5,6 +5,12 @@ presentation. It currently supports Static Save inspection only. It does not
 own Repo Session, History, Git, SQLite, filesystem watching, native file
 selection, or repository layout.
 
+The separate
+[`apps/desktop-sidecar`](../../apps/desktop-sidecar) development executable
+now provides the machine-process seam needed to open one Repo Session, but the
+Rust shell does not yet spawn, supervise, or package it. That integration does
+not change the current Static-only Desktop Runtime Capabilities.
+
 ## Composition and Build
 
 [`apps/desktop`](../../apps/desktop) owns native lifecycle and packaging.
@@ -69,6 +75,23 @@ This boundary implements
 [ADR-0021](../adr/0021-hardened-desktop-shell.md). The shared presentation and
 Runtime Capabilities seam remain owned by the
 [Web architecture](web.md).
+
+## Repo Session Process Boundary
+
+The private Desktop sidecar accepts versioned JSONL lifecycle commands on stdin
+and reserves stdout for responses and safe lifecycle events. It calls only the
+public `@silksong-git/repo-session` Interface. One process opens at most one
+Repo Session; History reads and mutations remain behind that session's
+authenticated loopback HTTP endpoints instead of becoming process RPC.
+
+The successful open response discloses the in-memory HTTP credential exactly
+once. Watcher events are projected without paths, raw exceptions, credentials,
+commit details, or Semantic Events. Graceful process shutdown is acknowledged
+only after Repo Session has drained admitted HTTP and watcher work. The exact
+wire and exit contract belongs to the
+[Desktop Sidecar Process Protocol](../reference/desktop-sidecar-protocol.md)
+and follows
+[ADR-0022](../adr/0022-use-a-private-versioned-desktop-sidecar.md).
 
 ## Validation
 

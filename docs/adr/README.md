@@ -25,3 +25,4 @@ rationale.
 - [ADR-0019 — Extract Repo Session ownership above History](0019-extract-repo-session-ownership.md)
 - [ADR-0020 — Decouple Repo Session HTTP and watcher lifetimes](0020-decouple-repo-session-http-and-watcher-lifetimes.md)
 - [ADR-0021 — Bootstrap Desktop as a hardened shell around shared Web assets](0021-hardened-desktop-shell.md)
+- [ADR-0022 — Use a private versioned process Adapter for Desktop Repo Sessions](0022-use-a-private-versioned-desktop-sidecar.md)

@@ -7,6 +7,7 @@ these details.
 ## References
 
 - [CLI Reference](cli.md)
+- [Desktop Sidecar Process Protocol](desktop-sidecar-protocol.md)
 - [Local HTTP API Reference](local-http-api.md)
 
 The public TypeScript Interfaces remain owned by the package-root exports:

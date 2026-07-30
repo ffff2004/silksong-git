@@ -97,6 +97,22 @@ importers:
         specifier: 4.22.4
         version: 4.22.4
 
+  apps/desktop-sidecar:
+    dependencies:
+      '@silksong-git/repo-session':
+        specifier: workspace:*
+        version: link:../../packages/repo-session
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@silksong-git/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.15)(tsx@4.22.4)(typescript@6.0.3)(yaml@2.9.0)
+
   apps/web:
     dependencies:
       '@silksong-git/core':
