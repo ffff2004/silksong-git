@@ -43,7 +43,7 @@ Claim the ticket before implementation; the claim is the session's first tracker
 write.
 
 Do not rely on chat history for project state. Record changing delivery state
-in GitHub; commits, pull requests, and CI own implementation and verification
+in GitHub; commits, issues and pull requests own implementation and verification
 history.
 
 ## Architecture Guardrails
