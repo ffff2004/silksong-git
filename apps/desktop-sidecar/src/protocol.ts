@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const desktopSidecarProtocolVersion = 2 as const;
+export const desktopSidecarProtocolVersion = 3 as const;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -10,6 +10,7 @@ export const desktopSidecarErrorCodes = [
   "invalid_repo_path",
   "repository_inspect_failed",
   "repository_migrate_failed",
+  "repository_rebuild_failed",
   "session_already_open",
   "session_not_open",
   "session_open_failed",
@@ -57,6 +58,13 @@ export const repositoryMigrateCommandSchema = z
   })
   .strict();
 
+export const repositoryRebuildCommandSchema = z
+  .object({
+    type: z.literal("repository.rebuild"),
+    repoPath: z.string().min(1).max(4096),
+  })
+  .strict();
+
 export const watcherStartCommandSchema = z
   .object({
     type: z.literal("watcher.start"),
@@ -90,9 +98,8 @@ const repositoryCapabilitySchema = z.enum([
   "watch",
 ]);
 
-const repositoryInspectionSchema = z
+const repositoryStatusSchema = z
   .object({
-    inspectionId: z.string().min(1).max(128),
     status: z.enum([
       "ready",
       "rebuildRequired",
@@ -109,6 +116,20 @@ const repositoryInspectionSchema = z
       "chooseAnotherDirectory",
     ]),
     capabilities: z.array(repositoryCapabilitySchema),
+  })
+  .strict();
+
+const repositoryInspectionSchema = repositoryStatusSchema
+  .extend({ inspectionId: z.string().min(1).max(128) })
+  .strict();
+
+const rebuildSemanticReadModelResultSchema = z
+  .object({
+    observationCount: z.number().int().nonnegative(),
+    recognizedObservationCount: z.number().int().nonnegative(),
+    unrecognizedObservationCount: z.number().int().nonnegative(),
+    snapshotCount: z.number().int().nonnegative(),
+    eventCount: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -155,6 +176,13 @@ const successResultSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("repository.migrationResult"),
       migration: repositoryMigrationResultSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("repository.rebuilt"),
+      rebuild: rebuildSemanticReadModelResultSchema,
+      repository: repositoryStatusSchema,
     })
     .strict(),
   z.object({ type: z.literal("watcher.started") }).strict(),
@@ -279,7 +307,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 2;
+    readonly protocolVersion: 3;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },

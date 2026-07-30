@@ -21,7 +21,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 2,
+  "protocolVersion": 3,
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +36,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 2,
+  "protocolVersion": 3,
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,11 +49,12 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 2 accepts these commands:
+Version 3 accepts these commands:
 
 - `repository.inspect` with one absolute `repoPath`;
 - `repository.migrate` with one absolute `repoPath`, a prior opaque inspection
   ID, and the literal migration confirmation;
+- `repository.rebuild` with one absolute `repoPath`;
 - `session.open` with one absolute `repoPath`;
 - `watcher.start`;
 - `watcher.stop`; and
@@ -65,6 +66,12 @@ capabilities. It does not contain config, Git, SQLite, or lock details.
 `repository.migrate` returns History's safe migration result, including an
 explicit stale-inspection or confirmation rejection when applicable. The
 sidecar never evaluates repository versions or carries out migration itself.
+`repository.rebuild` calls only History's public Semantic Read Model rebuild
+workflow. History decides whether rebuilding is currently permitted and holds
+its write serialization. A successful response returns rebuild counts and the
+post-rebuild safe repository status—status, required action, and capabilities—
+without an inspection ID or persistence details. Rebuild never rewrites
+canonical Git Raw Save Observation history.
 
 A process may open at most one Repo Session. A successful `session.open`
 response is emitted after authenticated loopback HTTP is ready and while the
@@ -73,7 +80,7 @@ compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 2,
+  "protocolVersion": 3,
   "kind": "response",
   "requestId": "open-1",
   "ok": true,

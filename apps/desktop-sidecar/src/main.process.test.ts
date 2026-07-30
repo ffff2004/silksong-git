@@ -8,7 +8,11 @@ import path from "node:path";
 import type { TestContext } from "node:test";
 import test from "node:test";
 
-import { initSaveHistory, queryRawObservations } from "@silksong-git/history";
+import {
+  initSaveHistory,
+  observeSave,
+  queryRawObservations,
+} from "@silksong-git/history";
 
 import type { DesktopSidecarResponse } from "./protocol.ts";
 import {
@@ -82,15 +86,24 @@ async function createHistoryRepo(
   return { repoPath, watchedSavePath };
 }
 
-async function createLegacyRepositoryFixture(repo: HistoryRepoFixture) {
-  // Fixture construction only: the public migration Interface intentionally does not permit a test
-  // to manufacture a legacy durable format.
+async function setRepositoryFormatVersionFixture(
+  repo: HistoryRepoFixture,
+  repositoryFormatVersion: number | undefined,
+) {
+  // Fixture construction only: the public History Interface intentionally does not permit a test to
+  // manufacture legacy, older, or newer durable formats.
   const configPath = path.join(repo.repoPath, ".silksong-git/config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as Record<
     string,
     unknown
   >;
-  delete config["repositoryFormatVersion"];
+
+  if (repositoryFormatVersion === undefined) {
+    delete config["repositoryFormatVersion"];
+  } else {
+    config["repositoryFormatVersion"] = repositoryFormatVersion;
+  }
+
   await writeFile(configPath, `${JSON.stringify(config)}\n`);
 }
 
@@ -300,7 +313,7 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
     },
   });
 
-  sidecar.send(command("future-version", { type: "watcher.start" }, 3));
+  sidecar.send(command("future-version", { type: "watcher.start" }, 4));
   assert.deepEqual(await sidecar.readMessage(), {
     protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
@@ -434,10 +447,28 @@ test("opens one session, delivers its credential once, and controls watching", a
 
 test("inspects and confirms repository migration before opening a Repo Session", async (t) => {
   const repo = await createHistoryRepo(t);
-  await createLegacyRepositoryFixture(repo);
+  await setRepositoryFormatVersionFixture(repo, undefined);
 
   const sidecar = spawnSidecar(t);
   await readReady(sidecar);
+
+  sidecar.send(
+    command("rebuild-legacy", {
+      type: "repository.rebuild",
+      repoPath: repo.repoPath,
+    }),
+  );
+  assert.deepEqual(await readResponse(sidecar, "rebuild-legacy"), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "response",
+    requestId: "rebuild-legacy",
+    ok: false,
+    error: {
+      code: "repository_rebuild_failed",
+      message: "The Semantic Read Model could not be rebuilt.",
+    },
+  });
+
   sidecar.send(
     command("open-legacy", { type: "session.open", repoPath: repo.repoPath }),
   );
@@ -480,6 +511,94 @@ test("inspects and confirms repository migration before opening a Repo Session",
   );
   const opened = parseSuccessfulResponse(
     await readResponse(sidecar, "open-current"),
+  );
+  assert.equal(opened.result.type, "session.opened");
+  await shutDown(sidecar);
+});
+
+test("refuses sidecar rebuilds for older and newer durable formats", async (t) => {
+  const olderRepo = await createHistoryRepo(t);
+  const newerRepo = await createHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(olderRepo, 0);
+  await setRepositoryFormatVersionFixture(newerRepo, 2);
+
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  for (const [requestId, repo] of [
+    ["rebuild-older", olderRepo],
+    ["rebuild-newer", newerRepo],
+  ] as const) {
+    sidecar.send(
+      command(requestId, {
+        type: "repository.rebuild",
+        repoPath: repo.repoPath,
+      }),
+    );
+    assert.deepEqual(await readResponse(sidecar, requestId), {
+      protocolVersion: desktopSidecarProtocolVersion,
+      kind: "response",
+      requestId,
+      ok: false,
+      error: {
+        code: "repository_rebuild_failed",
+        message: "The Semantic Read Model could not be rebuilt.",
+      },
+    });
+  }
+
+  await shutDown(sidecar);
+});
+
+test("rebuilds a Semantic Read Model through the sidecar before opening a Repo Session", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await observeSave({ repoPath: repo.repoPath });
+  const rawBefore = await queryRawObservations({ repoPath: repo.repoPath });
+  await rm(path.join(repo.repoPath, ".silksong-git/read-model.sqlite"));
+
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+  sidecar.send(
+    command("inspect-rebuild", {
+      type: "repository.inspect",
+      repoPath: repo.repoPath,
+    }),
+  );
+  const inspection = parseSuccessfulResponse(
+    await readResponse(sidecar, "inspect-rebuild"),
+  );
+  assert.equal(inspection.result.type, "repository.inspected");
+  assert.equal(inspection.result.inspection.status, "rebuildRequired");
+
+  sidecar.send(
+    command("rebuild", {
+      type: "repository.rebuild",
+      repoPath: repo.repoPath,
+    }),
+  );
+  const rebuilt = parseSuccessfulResponse(
+    await readResponse(sidecar, "rebuild"),
+  );
+  assert.equal(rebuilt.result.type, "repository.rebuilt");
+  assert.equal(rebuilt.result.rebuild.observationCount, 1);
+  assert.deepEqual(rebuilt.result.repository, {
+    status: "ready",
+    requiredAction: "open",
+    capabilities: ["read", "observe", "restore", "rebuildReadModel", "watch"],
+  });
+  assert.equal("inspectionId" in rebuilt.result.repository, false);
+
+  const rawAfter = await queryRawObservations({ repoPath: repo.repoPath });
+  assert.deepEqual(rawAfter, rawBefore);
+
+  sidecar.send(
+    command("open-after-rebuild", {
+      type: "session.open",
+      repoPath: repo.repoPath,
+    }),
+  );
+  const opened = parseSuccessfulResponse(
+    await readResponse(sidecar, "open-after-rebuild"),
   );
   assert.equal(opened.result.type, "session.opened");
   await shutDown(sidecar);

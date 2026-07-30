@@ -5,11 +5,13 @@ import type { Writable } from "node:stream";
 
 import type {
   MigrateSaveHistoryRepositoryResult,
+  RebuildSemanticReadModelResult,
   SaveHistoryRepositoryInspection,
 } from "@silksong-git/history";
 import {
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
+  rebuildSemanticReadModel,
 } from "@silksong-git/history";
 import type { RepoSession, RepoSessionEvent } from "@silksong-git/repo-session";
 import { openRepoSession } from "@silksong-git/repo-session";
@@ -29,6 +31,7 @@ import {
   processShutdownCommandSchema,
   repositoryInspectCommandSchema,
   repositoryMigrateCommandSchema,
+  repositoryRebuildCommandSchema,
   sessionOpenCommandSchema,
   watcherStartCommandSchema,
   watcherStopCommandSchema,
@@ -175,6 +178,16 @@ export async function runDesktopSidecarProcess(
       case "repository.migrate": {
         return {
           response: await migrateRepository(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
+      case "repository.rebuild": {
+        return {
+          response: await rebuildRepository(
             envelope.requestId,
             envelope.command,
           ),
@@ -347,6 +360,49 @@ export async function runDesktopSidecarProcess(
         requestId,
         "repository_migrate_failed",
         "The Save History Repository could not be migrated.",
+      );
+    }
+  }
+
+  async function rebuildRepository(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult = repositoryRebuildCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.rebuild command is invalid.",
+      );
+    }
+    if (!path.isAbsolute(commandResult.data.repoPath)) {
+      return createFailureResponse(
+        requestId,
+        "invalid_repo_path",
+        "The repository path must be absolute.",
+      );
+    }
+
+    try {
+      const rebuild = await rebuildSemanticReadModel({
+        repoPath: commandResult.data.repoPath,
+      });
+      const inspection = await inspectSaveHistoryRepository({
+        repoPath: commandResult.data.repoPath,
+      });
+
+      return createSuccessResponse(requestId, {
+        type: "repository.rebuilt",
+        rebuild: toProtocolRebuild(rebuild),
+        repository: toProtocolRepositoryStatus(inspection),
+      });
+    } catch {
+      writeDiagnostic("Repository Semantic Read Model rebuild failed.");
+      return createFailureResponse(
+        requestId,
+        "repository_rebuild_failed",
+        "The Semantic Read Model could not be rebuilt.",
       );
     }
   }
@@ -525,6 +581,20 @@ function toProtocolMigration(result: MigrateSaveHistoryRepositoryResult) {
   return {
     ...result,
     inspection: toProtocolInspection(result.inspection),
+  };
+}
+
+function toProtocolRebuild(result: RebuildSemanticReadModelResult) {
+  return { ...result };
+}
+
+function toProtocolRepositoryStatus(
+  inspection: SaveHistoryRepositoryInspection,
+) {
+  return {
+    status: inspection.status,
+    requiredAction: inspection.requiredAction,
+    capabilities: [...inspection.capabilities],
   };
 }
 
