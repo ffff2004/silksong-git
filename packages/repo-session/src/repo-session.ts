@@ -9,7 +9,11 @@ import type {
   ObserveSaveResult,
   SaveHistoryWatcher,
 } from "@silksong-git/history";
-import { acquireSaveHistoryWatcher } from "@silksong-git/history";
+import {
+  acquireSaveHistoryWatcher,
+  inspectSaveHistoryRepository,
+  SaveHistoryRepositoryIncompatibleError,
+} from "@silksong-git/history";
 
 import { RepoSessionHttpServerStartError } from "./errors.ts";
 import { createLocalHttpApp } from "./http-app.ts";
@@ -30,6 +34,17 @@ import { createWatchObservationCoordinator } from "./watch-observation-coordinat
 export async function openRepoSession(
   input: OpenRepoSessionInput,
 ): Promise<RepoSession> {
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: input.repoPath,
+  });
+  if (inspection.status !== "ready") {
+    throw new SaveHistoryRepositoryIncompatibleError({
+      status: inspection.status,
+      requiredAction: inspection.requiredAction,
+      capabilities: inspection.capabilities,
+    });
+  }
+
   const emit = input.onEvent ?? (() => undefined);
   const admission = createHttpAdmission();
   let watcherState: RepoSessionWatcherStatus["status"] = "inactive";

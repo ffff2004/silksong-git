@@ -14,6 +14,38 @@ Interface and behavior-test boundary follow
 [ADR-0013](../adr/0013-history-module-interface-and-testing.md). Exact callable
 types remain in the package export rather than being duplicated here.
 
+## Repository Compatibility and Migration
+
+History inspects a candidate repository through its public Interface before a
+caller opens a session or changes durable state. Inspection is read-only and
+returns a safe status, a user action, an opaque short-lived inspection ID, and
+only the capabilities that History has proved safe. It does not reveal Project
+Config contents, Git layout, lock state, or SQLite details.
+
+The durable Project Config owns the monotonic `repositoryFormatVersion`.
+The currently supported value is `1`. A valid unversioned config is a strict
+`legacyConfig`; a known lower value is `migrationRequired`; and a valid higher
+value is `newerIncompatible`. Malformed candidates, corrupt repositories, and
+non-repositories are `invalid`. A newer incompatible repository exposes no
+ordinary read or write capability by default; a caller must use a compatible
+newer application rather than relying on an incidental parse of its files.
+
+An explicitly confirmed migration consumes the inspection ID under History's
+write serialization. History re-inspects the candidate, rejects stale IDs,
+creates a recoverable config backup, and atomically persists the supported
+format version. It never uses this workflow to alter Git Raw Save
+Observations. All ordinary writers—including observation, watcher acquisition,
+restore, and read-model rebuild—pass through the same compatibility guard.
+Initialization likewise refuses to overwrite an existing incompatible
+repository.
+
+Semantic Read Model schema metadata is intentionally separate from the durable
+repository format. Missing, stale, corrupt, or newer SQLite state in an
+otherwise compatible repository yields `rebuildRequired`, not
+`newerIncompatible`. Rebuild remains the only permitted maintenance action for
+that state and replaces derived SQLite state without changing canonical Git
+history.
+
 ## Boundary and Ownership
 
 History owns the persistence rules and adapters behind its public Interface:
@@ -126,6 +158,8 @@ It preserves unrecognized observations as raw history without inventing
 snapshots or events for them, reports rebuild counts, and holds `write.lock`
 while replacing the read model. Project Config Display Semantic Event Filters
 apply later at query time; rebuild never rewrites canonical Git history.
+It is admitted only when repository inspection grants the rebuild capability;
+the caller must explicitly rebuild before ordinary writers resume.
 
 ### Restore
 

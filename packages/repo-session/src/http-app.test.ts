@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
-import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
@@ -62,6 +62,27 @@ async function startLocalHttpSession(
       await fetch(new URL(requestPath, http.endpoint), init),
     token: http.token,
   };
+}
+
+async function removeSemanticReadModelFixture(repoPath: string) {
+  // Fixture construction only: public Repo Session behavior deliberately offers no operation that
+  // corrupts or removes a derived Semantic Read Model.
+  await rm(path.join(repoPath, ".silksong-git/read-model.sqlite"));
+}
+
+async function setRepositoryFormatVersionFixture(
+  repoPath: string,
+  repositoryFormatVersion: number,
+) {
+  // Fixture construction only: the public migration Interface intentionally does not permit a test
+  // to manufacture another durable format.
+  const configPath = path.join(repoPath, ".silksong-git/config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  config["repositoryFormatVersion"] = repositoryFormatVersion;
+  await writeFile(configPath, `${JSON.stringify(config)}\n`);
 }
 
 interface OpenApiDocumentProbe {
@@ -137,6 +158,8 @@ test("OpenAPI describes the complete authenticated Local History API", () => {
   assert.ok(errorObjectSchema);
   assert.ok(errorCodeSchema);
   assert.equal(errorCodeSchema.enum?.includes("restore_conflict"), true);
+  assert.equal(errorCodeSchema.enum.includes("repository_incompatible"), true);
+  assert.ok(errorObjectSchema.properties["repository"]);
   assert.equal(
     document.paths["/api/v1/export"]?.get.responses["200"]?.content[
       "application/octet-stream"
@@ -438,6 +461,7 @@ test("HTTP emits sanitized request events for 5xx failures but not 4xx responses
   await initSaveHistory({ repoPath, watchedSavePath });
   const events: RepoSessionEvent[] = [];
   const http = await startLocalHttpSession(t, repoPath, events);
+  await removeSemanticReadModelFixture(repoPath);
   const { token } = http;
   const authorization = { Authorization: `Bearer ${token}` };
   const invalid = await http.request("/api/v1/history?limit=0", {
@@ -449,6 +473,17 @@ test("HTTP emits sanitized request events for 5xx failures but not 4xx responses
 
   assert.equal(invalid.status, 400);
   assert.equal(unavailable.status, 503);
+  assert.deepEqual(await unavailable.json(), {
+    error: {
+      code: "repository_incompatible",
+      message: "The Save History Repository requires attention.",
+      repository: {
+        status: "rebuildRequired",
+        requiredAction: "rebuildReadModel",
+        capabilities: ["rebuildReadModel"],
+      },
+    },
+  });
   const requestErrors = events.flatMap((event) =>
     event.type === "httpRequestError" ? [event.error] : [],
   );
@@ -458,8 +493,53 @@ test("HTTP emits sanitized request events for 5xx failures but not 4xx responses
       method: "GET",
       path: "/api/v1/history",
       status: 503,
-      code: "read_model_unavailable",
-      message: "Semantic Read Model is unavailable.",
+      code: "repository_incompatible",
+      message: "The Save History Repository requires attention.",
+    },
+  ]);
+});
+
+test("HTTP does not misrepresent a post-session repository incompatibility as read-model unavailability", async (t) => {
+  const tempDirectory = await mkdtemp(
+    path.join(tmpdir(), "silksong-http-test-"),
+  );
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "user1.dat");
+
+  t.after(async () => {
+    await rm(tempDirectory, { recursive: true, force: true });
+  });
+  await initSaveHistory({ repoPath, watchedSavePath });
+  const events: RepoSessionEvent[] = [];
+  const http = await startLocalHttpSession(t, repoPath, events);
+  await setRepositoryFormatVersionFixture(repoPath, 2);
+
+  const response = await http.request("/api/v1/history", {
+    headers: { Authorization: `Bearer ${http.token}` },
+  });
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: {
+      code: "repository_incompatible",
+      message: "The Save History Repository requires attention.",
+      repository: {
+        status: "newerIncompatible",
+        requiredAction: "useNewerApp",
+        capabilities: [],
+      },
+    },
+  });
+  const requestErrors = events.flatMap((event) =>
+    event.type === "httpRequestError" ? [event.error] : [],
+  );
+  assert.deepEqual(requestErrors, [
+    {
+      method: "GET",
+      path: "/api/v1/history",
+      status: 503,
+      code: "repository_incompatible",
+      message: "The Save History Repository requires attention.",
     },
   ]);
 });

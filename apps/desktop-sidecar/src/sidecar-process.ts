@@ -3,6 +3,14 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import type { Writable } from "node:stream";
 
+import type {
+  MigrateSaveHistoryRepositoryResult,
+  SaveHistoryRepositoryInspection,
+} from "@silksong-git/history";
+import {
+  inspectSaveHistoryRepository,
+  migrateSaveHistoryRepository,
+} from "@silksong-git/history";
 import type { RepoSession, RepoSessionEvent } from "@silksong-git/repo-session";
 import { openRepoSession } from "@silksong-git/repo-session";
 
@@ -19,6 +27,8 @@ import {
   desktopSidecarProtocolVersion,
   incomingCommandEnvelopeSchema,
   processShutdownCommandSchema,
+  repositoryInspectCommandSchema,
+  repositoryMigrateCommandSchema,
   sessionOpenCommandSchema,
   watcherStartCommandSchema,
   watcherStopCommandSchema,
@@ -152,6 +162,26 @@ export async function runDesktopSidecarProcess(
     }
 
     switch (envelope.command.type) {
+      case "repository.inspect": {
+        return {
+          response: await inspectRepository(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
+      case "repository.migrate": {
+        return {
+          response: await migrateRepository(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
       case "session.open": {
         return {
           response: await openSession(envelope.requestId, envelope.command),
@@ -241,6 +271,82 @@ export async function runDesktopSidecarProcess(
         requestId,
         "session_open_failed",
         "The Repo Session could not be opened.",
+      );
+    }
+  }
+
+  async function inspectRepository(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult = repositoryInspectCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.inspect command is invalid.",
+      );
+    }
+    if (!path.isAbsolute(commandResult.data.repoPath)) {
+      return createFailureResponse(
+        requestId,
+        "invalid_repo_path",
+        "The repository path must be absolute.",
+      );
+    }
+
+    try {
+      return createSuccessResponse(requestId, {
+        type: "repository.inspected",
+        inspection: toProtocolInspection(
+          await inspectSaveHistoryRepository({
+            repoPath: commandResult.data.repoPath,
+          }),
+        ),
+      });
+    } catch {
+      writeDiagnostic("Repository inspection failed.");
+      return createFailureResponse(
+        requestId,
+        "repository_inspect_failed",
+        "The Save History Repository could not be inspected.",
+      );
+    }
+  }
+
+  async function migrateRepository(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult = repositoryMigrateCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.migrate command is invalid.",
+      );
+    }
+    if (!path.isAbsolute(commandResult.data.repoPath)) {
+      return createFailureResponse(
+        requestId,
+        "invalid_repo_path",
+        "The repository path must be absolute.",
+      );
+    }
+
+    try {
+      return createSuccessResponse(requestId, {
+        type: "repository.migrationResult",
+        migration: toProtocolMigration(
+          await migrateSaveHistoryRepository(commandResult.data),
+        ),
+      });
+    } catch {
+      writeDiagnostic("Repository migration failed.");
+      return createFailureResponse(
+        requestId,
+        "repository_migrate_failed",
+        "The Save History Repository could not be migrated.",
       );
     }
   }
@@ -402,6 +508,24 @@ export async function runDesktopSidecarProcess(
   function writeDiagnostic(message: string) {
     input.diagnostics.write(`[desktop-sidecar] ${message}\n`);
   }
+}
+
+function toProtocolInspection(inspection: SaveHistoryRepositoryInspection) {
+  return {
+    ...inspection,
+    capabilities: [...inspection.capabilities],
+  };
+}
+
+function toProtocolMigration(result: MigrateSaveHistoryRepositoryResult) {
+  if (result.status !== "migrated") {
+    return result;
+  }
+
+  return {
+    ...result,
+    inspection: toProtocolInspection(result.inspection),
+  };
 }
 
 function projectRepoSessionEvent(

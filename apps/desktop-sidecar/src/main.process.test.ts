@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,6 +10,7 @@ import test from "node:test";
 
 import { initSaveHistory, queryRawObservations } from "@silksong-git/history";
 
+import type { DesktopSidecarResponse } from "./protocol.ts";
 import {
   desktopSidecarOutputEnvelopeSchema,
   desktopSidecarProtocolVersion,
@@ -79,6 +80,18 @@ async function createHistoryRepo(
   });
 
   return { repoPath, watchedSavePath };
+}
+
+async function createLegacyRepositoryFixture(repo: HistoryRepoFixture) {
+  // Fixture construction only: the public migration Interface intentionally does not permit a test
+  // to manufacture a legacy durable format.
+  const configPath = path.join(repo.repoPath, ".silksong-git/config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  delete config["repositoryFormatVersion"];
+  await writeFile(configPath, `${JSON.stringify(config)}\n`);
 }
 
 function spawnSidecar(t: TestContext): SpawnedSidecar {
@@ -221,6 +234,17 @@ async function readResponse(
   }
 }
 
+function parseSuccessfulResponse(
+  message: unknown,
+): Extract<DesktopSidecarResponse, { readonly ok: true }> {
+  const parsed = desktopSidecarOutputEnvelopeSchema.parse(message);
+  if (parsed.kind !== "response" || !parsed.ok) {
+    throw new Error("Expected a successful Desktop sidecar response.");
+  }
+
+  return parsed;
+}
+
 async function shutDown(sidecar: SpawnedSidecar, requestId = "shutdown") {
   sidecar.send(command(requestId, { type: "process.shutdown" }));
   const response = await readResponse(sidecar, requestId);
@@ -265,7 +289,7 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
 
   sidecar.sendLine("{not-json");
   assert.deepEqual(await sidecar.readMessage(), {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
     // eslint-disable-next-line unicorn/no-null
     requestId: null,
@@ -276,9 +300,9 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
     },
   });
 
-  sidecar.send(command("future-version", { type: "watcher.start" }, 2));
+  sidecar.send(command("future-version", { type: "watcher.start" }, 3));
   assert.deepEqual(await sidecar.readMessage(), {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
     requestId: "future-version",
     ok: false,
@@ -290,7 +314,7 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
 
   sidecar.send(command("unknown", { type: "history.query" }));
   assert.deepEqual(await sidecar.readMessage(), {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
     requestId: "unknown",
     ok: false,
@@ -307,7 +331,7 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
     }),
   );
   assert.deepEqual(await sidecar.readMessage(), {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
     requestId: "invalid-shutdown",
     ok: false,
@@ -358,7 +382,7 @@ test("opens one session, delivers its credential once, and controls watching", a
     command("open-again", { type: "session.open", repoPath: repo.repoPath }),
   );
   assert.deepEqual(await readResponse(sidecar, "open-again"), {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
     requestId: "open-again",
     ok: false,
@@ -370,7 +394,7 @@ test("opens one session, delivers its credential once, and controls watching", a
 
   sidecar.send(command("start", { type: "watcher.start" }));
   assert.deepEqual(await readResponse(sidecar, "start"), {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
     requestId: "start",
     ok: true,
@@ -378,7 +402,7 @@ test("opens one session, delivers its credential once, and controls watching", a
   });
   const observation = await sidecar.readMessage();
   assert.deepEqual(observation, {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "event",
     event: {
       type: "watcher.observation",
@@ -391,7 +415,7 @@ test("opens one session, delivers its credential once, and controls watching", a
 
   sidecar.send(command("stop", { type: "watcher.stop" }));
   assert.deepEqual(await readResponse(sidecar, "stop"), {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
     requestId: "stop",
     ok: true,
@@ -408,9 +432,62 @@ test("opens one session, delivers its credential once, and controls watching", a
   assert.equal(sidecar.spawnArguments.includes(repo.repoPath), false);
 });
 
+test("inspects and confirms repository migration before opening a Repo Session", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await createLegacyRepositoryFixture(repo);
+
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+  sidecar.send(
+    command("open-legacy", { type: "session.open", repoPath: repo.repoPath }),
+  );
+  assert.deepEqual(await readResponse(sidecar, "open-legacy"), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "response",
+    requestId: "open-legacy",
+    ok: false,
+    error: {
+      code: "session_open_failed",
+      message: "The Repo Session could not be opened.",
+    },
+  });
+
+  sidecar.send(
+    command("inspect", { type: "repository.inspect", repoPath: repo.repoPath }),
+  );
+  const inspected = parseSuccessfulResponse(
+    await readResponse(sidecar, "inspect"),
+  );
+  assert.equal(inspected.result.type, "repository.inspected");
+  assert.equal(inspected.result.inspection.status, "legacyConfig");
+
+  sidecar.send(
+    command("migrate", {
+      type: "repository.migrate",
+      repoPath: repo.repoPath,
+      inspectionId: inspected.result.inspection.inspectionId,
+      confirmation: "migrate-save-history-repository",
+    }),
+  );
+  const migration = parseSuccessfulResponse(
+    await readResponse(sidecar, "migrate"),
+  );
+  assert.equal(migration.result.type, "repository.migrationResult");
+  assert.equal(migration.result.migration.status, "migrated");
+
+  sidecar.send(
+    command("open-current", { type: "session.open", repoPath: repo.repoPath }),
+  );
+  const opened = parseSuccessfulResponse(
+    await readResponse(sidecar, "open-current"),
+  );
+  assert.equal(opened.result.type, "session.opened");
+  await shutDown(sidecar);
+});
+
 test("compatible consumers can ignore an unknown future event fixture", () => {
   const futureEvent = {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "event",
     event: {
       type: "watcher.capabilityAdded",
@@ -425,7 +502,7 @@ test("compatible consumers can ignore an unknown future event fixture", () => {
 
   assert.throws(() =>
     desktopSidecarOutputEnvelopeSchema.parse({
-      protocolVersion: 1,
+      protocolVersion: desktopSidecarProtocolVersion,
       kind: "event",
       event: {
         type: "watcher.observation",
@@ -467,14 +544,14 @@ test("graceful shutdown drains an active watcher observation", async (t) => {
 
   sidecar.send(command("shutdown-active", { type: "process.shutdown" }));
   assert.deepEqual(await readResponse(sidecar, "shutdown-active"), {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
     requestId: "shutdown-active",
     ok: true,
     result: { type: "process.shutdownComplete" },
   });
   assert.deepEqual(await sidecar.readMessage(), {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "event",
     event: {
       type: "watcher.observation",
@@ -583,7 +660,7 @@ test("graceful shutdown waits for an admitted HTTP mutation", async (t) => {
   socket.end(checkpointBody);
   await socketClosed;
   assert.deepEqual(await shutdownResponse, {
-    protocolVersion: 1,
+    protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
     requestId: "shutdown-http-drain",
     ok: true,

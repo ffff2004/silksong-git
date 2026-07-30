@@ -119,6 +119,14 @@ machine-readable cases in the executable contract. A `repository_busy`
 response includes `Retry-After: 1`; other failures do not imply that repeating
 a request unchanged is safe or useful.
 
+If a repository becomes incompatible after the Repo Session opens, affected
+endpoints return `503 repository_incompatible` with the safe public
+`repository` projection: `status`, `requiredAction`, and `capabilities`. The
+projection never contains the opaque inspection identifier, repository path,
+configuration, Git or SQLite details, locks, raw errors, or migration
+authority. Callers use these values to decide their next UI state; they must
+not treat the response as permission to migrate or alter the repository.
+
 The bundled Web client validates every JSON success response and every
 non-authentication JSON error response against the runtime schemas. It treats a
 `401` response as an intentionally opaque authentication failure without

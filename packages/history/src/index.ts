@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createProjectConfig, serializeProjectConfig } from "./config.ts";
+import { SaveHistoryRepositoryIncompatibleError } from "./errors.ts";
 import { prepareManagedGitRepository, runGit } from "./git-store.ts";
 import {
   defaultGitAttributesContent,
@@ -7,13 +8,17 @@ import {
   getRepositoryLayout,
 } from "./layout.ts";
 import { rebuildReadModel } from "./read-model.ts";
+import {
+  hasExistingSaveHistoryRepository,
+  inspectSaveHistoryRepository,
+  withRepositoryWriteCapability,
+} from "./repository-compatibility.ts";
 import type {
   InitSaveHistoryInput,
   InitSaveHistoryResult,
   RebuildSemanticReadModelInput,
   RebuildSemanticReadModelResult,
 } from "./types.ts";
-import { withHistoryWriteLock } from "./write-lock.ts";
 
 export {
   diffCommits,
@@ -22,6 +27,10 @@ export {
   queryRawObservations,
   searchSemanticEvents,
 } from "./history-interface.ts";
+export {
+  inspectSaveHistoryRepository,
+  migrateSaveHistoryRepository,
+} from "./repository-compatibility.ts";
 export { acquireSaveHistoryWatcher } from "./save-history-watcher.ts";
 export { getSaveState, readEncodedSave } from "./save-state.ts";
 
@@ -37,6 +46,7 @@ export {
   RestoreWriteFailedError,
   RestoreWriteVerificationError,
   SaveHistoryRepositoryBusyError,
+  SaveHistoryRepositoryIncompatibleError,
   SaveHistoryWatcherAlreadyAcquiredError,
 } from "./errors.ts";
 
@@ -52,6 +62,9 @@ export type {
   HistoryResult,
   InitSaveHistoryInput,
   InitSaveHistoryResult,
+  InspectSaveHistoryRepositoryInput,
+  MigrateSaveHistoryRepositoryInput,
+  MigrateSaveHistoryRepositoryResult,
   ObservationTrigger,
   ObserveSaveHistoryWatcherInput,
   ObserveSaveInput,
@@ -70,6 +83,10 @@ export type {
   RestoreEncodedSaveInput,
   RestoreEncodedSaveResult,
   RestoreTarget,
+  SaveHistoryRepositoryCapability,
+  SaveHistoryRepositoryInspection,
+  SaveHistoryRepositoryRequiredAction,
+  SaveHistoryRepositoryStatus,
   SaveHistoryWatcher,
   SearchSemanticEventsInput,
   SearchSemanticEventsResult,
@@ -82,6 +99,21 @@ export async function initSaveHistory(
 ): Promise<InitSaveHistoryResult> {
   const layout = getRepositoryLayout(input.repoPath);
 
+  if (await hasExistingSaveHistoryRepository(input.repoPath)) {
+    const inspection = await inspectSaveHistoryRepository({
+      repoPath: input.repoPath,
+    });
+    if (inspection.status !== "ready") {
+      throw new SaveHistoryRepositoryIncompatibleError({
+        status: inspection.status,
+        requiredAction: inspection.requiredAction,
+        capabilities: inspection.capabilities,
+      });
+    }
+
+    throw new Error("A Save History Repository already exists at this path.");
+  }
+
   await mkdir(input.repoPath, { recursive: true });
   await runGit(input.repoPath, ["init"]);
   await prepareManagedGitRepository(input.repoPath);
@@ -93,6 +125,7 @@ export async function initSaveHistory(
     layout.configPath,
     serializeProjectConfig(createProjectConfig(input)),
   );
+  await rebuildReadModel(input.repoPath);
 
   return {
     repoPath: input.repoPath,
@@ -103,8 +136,9 @@ export async function initSaveHistory(
 export async function rebuildSemanticReadModel(
   input: RebuildSemanticReadModelInput,
 ): Promise<RebuildSemanticReadModelResult> {
-  return await withHistoryWriteLock(
+  return await withRepositoryWriteCapability(
     input.repoPath,
+    "rebuildReadModel",
     async () => await rebuildReadModel(input.repoPath),
   );
 }

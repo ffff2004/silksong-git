@@ -14,11 +14,11 @@
     "test": "pnpm run build && tsx --test --test-reporter=dot src/**/*.test.ts"
   },
   "dependencies": {
+    "@silksong-git/history": "workspace:*",
     "@silksong-git/repo-session": "workspace:*",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@silksong-git/history": "workspace:*",
     "tsup": "^8.5.1"
   }
 }

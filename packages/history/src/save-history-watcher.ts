@@ -1,5 +1,9 @@
 import { readProjectConfig } from "./config.ts";
 import { observeSaveUsingConfig } from "./observe-save.ts";
+import {
+  assertRepositoryCapability,
+  withRepositoryWriteCapability,
+} from "./repository-compatibility.ts";
 import type {
   AcquireSaveHistoryWatcherInput,
   ObserveSaveHistoryWatcherInput,
@@ -8,11 +12,11 @@ import type {
   SaveHistoryWatcher,
 } from "./types.ts";
 import { acquireWatchLock } from "./watch-lock.ts";
-import { withHistoryWriteLock } from "./write-lock.ts";
 
 export async function acquireSaveHistoryWatcher(
   input: AcquireSaveHistoryWatcherInput,
 ): Promise<SaveHistoryWatcher> {
+  await assertRepositoryCapability(input.repoPath, "watch");
   const config = snapshotProjectConfig(await readProjectConfig(input.repoPath));
   const watchLock = await acquireWatchLock({
     repoPath: input.repoPath,
@@ -33,8 +37,9 @@ export async function acquireSaveHistoryWatcher(
         throw new Error("Save History Watcher is closing.");
       }
 
-      const observation = withHistoryWriteLock(
+      const observation = withRepositoryWriteCapability(
         input.repoPath,
+        "observe",
         async () =>
           await observeSaveUsingConfig({
             config,

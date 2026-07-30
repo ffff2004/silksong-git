@@ -13,6 +13,7 @@ import {
   RestoreWriteFailedError,
   RestoreWriteVerificationError,
   SaveHistoryRepositoryBusyError,
+  SaveHistoryRepositoryIncompatibleError,
   searchSemanticEvents,
 } from "@silksong-git/history";
 import type { Command } from "commander";
@@ -564,6 +565,40 @@ function handleHistoryCommandError(
     runtime.writeStderr(`${error.message}\n`);
     runtime.setExitCode(exitCodes.usage);
     return true;
+  }
+
+  if (error instanceof SaveHistoryRepositoryIncompatibleError) {
+    runtime.setExitCode(exitCodes.readModelUnavailable);
+
+    switch (error.requiredAction) {
+      case "rebuildReadModel": {
+        runtime.writeStderr(
+          "semantic read model unavailable\nnext: silksong-git history rebuild\n",
+        );
+        return true;
+      }
+
+      case "confirmMigration": {
+        runtime.writeStderr(
+          "save history repository migration is required\nnext: open the repository in Silksong Git Desktop and confirm migration\n",
+        );
+        return true;
+      }
+
+      case "useNewerApp": {
+        runtime.writeStderr(
+          "a newer Silksong Git version is required\nnext: update Silksong Git\n",
+        );
+        return true;
+      }
+
+      case "chooseAnotherDirectory": {
+        runtime.writeStderr(
+          "not a valid Save History Repository\nnext: choose another repository\n",
+        );
+        return true;
+      }
+    }
   }
 
   if (error instanceof ReadModelUnavailableError) {

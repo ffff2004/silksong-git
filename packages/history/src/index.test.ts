@@ -20,16 +20,18 @@ import {
   diffCommits,
   getSaveState,
   initSaveHistory,
+  inspectSaveHistoryRepository,
   InvalidRestoreBackupDirectoryError,
+  migrateSaveHistoryRepository,
   observeSave,
   queryHistory,
   queryRawObservations,
   readEncodedSave,
-  ReadModelUnavailableError,
   rebuildSemanticReadModel,
   RestoreConflictError,
   restoreEncodedSave,
   RestoreTargetExistsError,
+  SaveHistoryRepositoryIncompatibleError,
   SaveHistoryWatcherAlreadyAcquiredError,
   searchSemanticEvents,
 } from "./index.ts";
@@ -109,6 +111,34 @@ async function createHistoryRepo(
   };
 }
 
+async function setRepositoryFormatVersion(
+  repo: HistoryRepoFixture,
+  repositoryFormatVersion: number | undefined,
+) {
+  // Fixture construction only: the public migration Interface intentionally does not permit a test
+  // to manufacture an older durable format.
+  const config = JSON.parse(await readFile(repo.configPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+
+  if (repositoryFormatVersion === undefined) {
+    delete config["repositoryFormatVersion"];
+  } else {
+    config["repositoryFormatVersion"] = repositoryFormatVersion;
+  }
+
+  await writeFile(repo.configPath, `${JSON.stringify(config)}\n`);
+}
+
+async function removeSemanticReadModelFixture(repo: HistoryRepoFixture) {
+  // Fixture construction only: public History behavior deliberately offers no operation that
+  // corrupts or removes a derived Semantic Read Model.
+  await rm(path.join(repo.repoPath, ".silksong-git/read-model.sqlite"), {
+    force: true,
+  });
+}
+
 async function observeFixture(
   repo: HistoryRepoFixture,
   fixturePath: string,
@@ -181,6 +211,215 @@ test("initSaveHistory creates a Save History Repository project config", async (
 
   assert.equal(config.watchedSavePath, minimalEncodedSavePath);
   assert.equal("localApi" in config, false);
+});
+
+test("inspectSaveHistoryRepository classifies durable compatibility separately from the Semantic Read Model", async (t) => {
+  const ready = await createHistoryRepo(t);
+  const readyInspection = await inspectSaveHistoryRepository({
+    repoPath: ready.repoPath,
+  });
+  assert.equal(readyInspection.status, "ready");
+  assert.equal(readyInspection.requiredAction, "open");
+  assert.deepEqual(readyInspection.capabilities, [
+    "read",
+    "observe",
+    "restore",
+    "rebuildReadModel",
+    "watch",
+  ]);
+
+  const invalidInspection = await inspectSaveHistoryRepository({
+    repoPath: path.join(ready.tempDirectory, "not-a-repository"),
+  });
+  assert.equal(invalidInspection.status, "invalid");
+  assert.equal(invalidInspection.requiredAction, "chooseAnotherDirectory");
+
+  const legacy = await createHistoryRepo(t);
+  await setRepositoryFormatVersion(legacy, undefined);
+  const legacyInspection = await inspectSaveHistoryRepository({
+    repoPath: legacy.repoPath,
+  });
+  assert.equal(legacyInspection.status, "legacyConfig");
+  assert.equal(legacyInspection.requiredAction, "confirmMigration");
+
+  const older = await createHistoryRepo(t);
+  await setRepositoryFormatVersion(older, 0);
+  const olderInspection = await inspectSaveHistoryRepository({
+    repoPath: older.repoPath,
+  });
+  assert.equal(olderInspection.status, "migrationRequired");
+  assert.equal(olderInspection.requiredAction, "confirmMigration");
+
+  const rebuild = await createHistoryRepo(t);
+  const observation = await observeSave({ repoPath: rebuild.repoPath });
+  assert.equal(observation.status, "committed");
+  const encodedBefore = await readEncodedSave({
+    repoPath: rebuild.repoPath,
+    commitRef: observation.observation.commit.ref,
+  });
+  await removeSemanticReadModelFixture(rebuild);
+  const rebuildInspection = await inspectSaveHistoryRepository({
+    repoPath: rebuild.repoPath,
+  });
+  assert.equal(rebuildInspection.status, "rebuildRequired");
+  assert.equal(rebuildInspection.requiredAction, "rebuildReadModel");
+  assert.deepEqual(rebuildInspection.capabilities, ["rebuildReadModel"]);
+  const assertRebuildRequired = (error: unknown) => {
+    assert.ok(error instanceof SaveHistoryRepositoryIncompatibleError);
+    assert.equal(error.status, "rebuildRequired");
+    assert.deepEqual(error.capabilities, ["rebuildReadModel"]);
+    return true;
+  };
+  await assert.rejects(
+    queryHistory({ repoPath: rebuild.repoPath }),
+    assertRebuildRequired,
+  );
+  await assert.rejects(
+    queryRawObservations({ repoPath: rebuild.repoPath }),
+    assertRebuildRequired,
+  );
+  await assert.rejects(
+    diffCommits({
+      repoPath: rebuild.repoPath,
+      fromRef: observation.observation.commit.ref,
+      toRef: observation.observation.commit.ref,
+    }),
+    assertRebuildRequired,
+  );
+  await assert.rejects(
+    searchSemanticEvents({ repoPath: rebuild.repoPath, query: {} }),
+    assertRebuildRequired,
+  );
+  await assert.rejects(
+    getSaveState({ repoPath: rebuild.repoPath, selector: { kind: "latest" } }),
+    assertRebuildRequired,
+  );
+  await assert.rejects(
+    readEncodedSave({
+      repoPath: rebuild.repoPath,
+      commitRef: observation.observation.commit.ref,
+    }),
+    assertRebuildRequired,
+  );
+  await rebuildSemanticReadModel({ repoPath: rebuild.repoPath });
+  const encodedAfter = await readEncodedSave({
+    repoPath: rebuild.repoPath,
+    commitRef: observation.observation.commit.ref,
+  });
+  assert.deepEqual(encodedAfter.encodedBytes, encodedBefore.encodedBytes);
+
+  const newer = await createHistoryRepo(t);
+  await setRepositoryFormatVersion(newer, 2);
+  const newerInspection = await inspectSaveHistoryRepository({
+    repoPath: newer.repoPath,
+  });
+  assert.equal(newerInspection.status, "newerIncompatible");
+  assert.equal(newerInspection.requiredAction, "useNewerApp");
+  assert.deepEqual(newerInspection.capabilities, []);
+});
+
+test("migrateSaveHistoryRepository requires confirmation, a fresh inspection, and creates a recoverable backup", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await setRepositoryFormatVersion(repo, undefined);
+  const initialInspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  assert.equal(initialInspection.status, "legacyConfig");
+
+  const unconfirmed = await migrateSaveHistoryRepository({
+    repoPath: repo.repoPath,
+    inspectionId: initialInspection.inspectionId,
+    confirmation: "not-confirmed",
+  });
+  assert.deepEqual(unconfirmed, {
+    status: "rejected",
+    reason: "confirmationRequired",
+  });
+
+  await setRepositoryFormatVersion(repo, 0);
+  const stale = await migrateSaveHistoryRepository({
+    repoPath: repo.repoPath,
+    inspectionId: initialInspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+  assert.deepEqual(stale, { status: "rejected", reason: "staleInspection" });
+
+  const freshInspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  const migrated = await migrateSaveHistoryRepository({
+    repoPath: repo.repoPath,
+    inspectionId: freshInspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+  assert.equal(migrated.status, "migrated");
+  assert.equal(migrated.backupCreated, true);
+  assert.equal(migrated.inspection.status, "ready");
+
+  const consumedToken = await migrateSaveHistoryRepository({
+    repoPath: repo.repoPath,
+    inspectionId: freshInspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+  assert.deepEqual(consumedToken, {
+    status: "rejected",
+    reason: "staleInspection",
+  });
+});
+
+test("newer incompatible repositories refuse reads and every public write workflow", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const observation = await observeSave({ repoPath: repo.repoPath });
+  assert.equal(observation.status, "committed");
+  const rawBefore = await queryRawObservations({ repoPath: repo.repoPath });
+  const restorePath = path.join(repo.tempDirectory, "restored.dat");
+
+  await setRepositoryFormatVersion(repo, 2);
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  assert.equal(inspection.status, "newerIncompatible");
+
+  const assertIncompatible = (error: unknown) => {
+    assert.ok(error instanceof SaveHistoryRepositoryIncompatibleError);
+    assert.equal(error.status, "newerIncompatible");
+    assert.deepEqual(error.capabilities, []);
+    return true;
+  };
+  await assert.rejects(
+    queryRawObservations({ repoPath: repo.repoPath }),
+    assertIncompatible,
+  );
+  await assert.rejects(
+    observeSave({ repoPath: repo.repoPath }),
+    assertIncompatible,
+  );
+  await assert.rejects(
+    rebuildSemanticReadModel({ repoPath: repo.repoPath }),
+    assertIncompatible,
+  );
+  await assert.rejects(
+    acquireSaveHistoryWatcher({ repoPath: repo.repoPath }),
+    assertIncompatible,
+  );
+  await assert.rejects(
+    restoreEncodedSave({
+      repoPath: repo.repoPath,
+      commitRef: observation.observation.commit.ref,
+      target: { kind: "path", path: restorePath },
+    }),
+    assertIncompatible,
+  );
+  await assert.rejects(
+    initSaveHistory({
+      repoPath: repo.repoPath,
+      watchedSavePath: repo.watchedSavePath,
+    }),
+    assertIncompatible,
+  );
+  await setRepositoryFormatVersion(repo, 1);
+  const rawAfter = await queryRawObservations({ repoPath: repo.repoPath });
+  assert.deepEqual(rawAfter, rawBefore);
 });
 
 test("observeSave commits a recognized Raw Save Observation", async (t) => {
@@ -354,7 +593,7 @@ test("observeSave records Unrecognized Schema Observations without interrupting 
   assert.equal(rawUnrecognizedEntry.snapshotSummary, null);
 });
 
-test("observeSave rebuilds a missing Semantic Read Model before appending", async (t) => {
+test("observeSave requires an explicit rebuild when the Semantic Read Model is missing", async (t) => {
   const repo = await createHistoryRepo(t, minimalEncodedSavePath);
   const beforeResult = await observeSave({
     repoPath: repo.repoPath,
@@ -363,10 +602,20 @@ test("observeSave rebuilds a missing Semantic Read Model before appending", asyn
 
   assert.equal(beforeResult.status, "committed");
 
-  await rm(path.join(repo.repoPath, ".silksong-git/read-model.sqlite"), {
-    force: true,
-  });
+  await removeSemanticReadModelFixture(repo);
   await copyFile(maskShard2CollectedEncodedSavePath, repo.watchedSavePath);
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+
+  assert.equal(inspection.status, "rebuildRequired");
+  await assert.rejects(
+    observeSave({
+      repoPath: repo.repoPath,
+      observedAt: new Date("2026-06-30T12:01:00.000Z"),
+    }),
+  );
+  await rebuildSemanticReadModel({ repoPath: repo.repoPath });
   const afterResult = await observeSave({
     repoPath: repo.repoPath,
     observedAt: new Date("2026-06-30T12:01:00.000Z"),
@@ -500,17 +749,14 @@ test("getSaveState keeps unrecognized Decoded Save inspectable and reports missi
 
   const recognizedRepo = await createHistoryRepo(t);
   await observeSave({ repoPath: recognizedRepo.repoPath });
-  await rm(
-    path.join(recognizedRepo.repoPath, ".silksong-git/read-model.sqlite"),
-    { force: true },
-  );
+  await removeSemanticReadModelFixture(recognizedRepo);
 
   await assert.rejects(
     getSaveState({
       repoPath: recognizedRepo.repoPath,
       selector: { kind: "latest" },
     }),
-    ReadModelUnavailableError,
+    SaveHistoryRepositoryIncompatibleError,
   );
 });
 

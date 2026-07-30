@@ -74,6 +74,39 @@ async function createCliHistoryRepo(
   };
 }
 
+async function removeSemanticReadModelFixture(repo: CliHistoryRepoFixture) {
+  // Fixture construction only: public CLI behavior deliberately offers no operation that corrupts
+  // or removes a derived Semantic Read Model.
+  await rm(path.join(repo.repoPath, ".silksong-git/read-model.sqlite"));
+}
+
+async function setRepositoryFormatVersionFixture(
+  repo: CliHistoryRepoFixture,
+  repositoryFormatVersion: number | undefined,
+) {
+  // Fixture construction only: the public migration Interface intentionally does not permit a test
+  // to manufacture another durable format.
+  const configPath = path.join(repo.repoPath, ".silksong-git/config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+
+  if (repositoryFormatVersion === undefined) {
+    delete config["repositoryFormatVersion"];
+  } else {
+    config["repositoryFormatVersion"] = repositoryFormatVersion;
+  }
+
+  await writeFile(configPath, `${JSON.stringify(config)}\n`);
+}
+
+async function removeManagedGitRepositoryFixture(repo: CliHistoryRepoFixture) {
+  // Fixture construction only: the public CLI intentionally offers no operation that corrupts a
+  // managed Git repository.
+  await rm(path.join(repo.repoPath, ".git"), { recursive: true, force: true });
+}
+
 function parseStdoutJson(result: InProcessCliResult): unknown {
   return JSON.parse(result.stdout) as unknown;
 }
@@ -429,14 +462,15 @@ test("history list validates pagination limit", async (t) => {
   assert.match(result.stderr, /limit must be an integer from 1 to 1000/v);
 });
 
-test("history list reports when the Semantic Read Model is unavailable", async (t) => {
-  const { repoPath } = await createCliHistoryRepo(t);
+test("history list guides a required Semantic Read Model rebuild", async (t) => {
+  const repo = await createCliHistoryRepo(t);
+  await removeSemanticReadModelFixture(repo);
 
   const result = await runCli([
     "history",
     "list",
     "--repo",
-    repoPath,
+    repo.repoPath,
     "--json",
   ]);
 
@@ -444,6 +478,68 @@ test("history list reports when the Semantic Read Model is unavailable", async (
   assert.match(result.stderr, /history rebuild/v);
   assert.equal(result.exitCode, 5);
   assert.equal(result.stdout, "");
+});
+
+test("history list directs legacy and older repository formats to Desktop migration", async (t) => {
+  for (const repositoryFormatVersion of [undefined, 0]) {
+    const repo = await createCliHistoryRepo(t);
+    await setRepositoryFormatVersionFixture(repo, repositoryFormatVersion);
+
+    const result = await runCli([
+      "history",
+      "list",
+      "--repo",
+      repo.repoPath,
+      "--json",
+    ]);
+
+    assert.equal(result.exitCode, 5);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /repository migration is required/v);
+    assert.match(
+      result.stderr,
+      /open the repository in Silksong Git Desktop and confirm migration/v,
+    );
+    assert.doesNotMatch(result.stderr, /history rebuild/v);
+  }
+});
+
+test("history list directs newer repository formats to update Silksong Git", async (t) => {
+  const repo = await createCliHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(repo, 2);
+
+  const result = await runCli([
+    "history",
+    "list",
+    "--repo",
+    repo.repoPath,
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 5);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /newer Silksong Git version is required/v);
+  assert.match(result.stderr, /update Silksong Git/v);
+  assert.doesNotMatch(result.stderr, /migration|rebuild/v);
+});
+
+test("history list directs invalid repositories to choose another repository", async (t) => {
+  const repo = await createCliHistoryRepo(t);
+  await removeManagedGitRepositoryFixture(repo);
+
+  const result = await runCli([
+    "history",
+    "list",
+    "--repo",
+    repo.repoPath,
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 5);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /not a valid Save History Repository/v);
+  assert.match(result.stderr, /choose another repository/v);
+  assert.doesNotMatch(result.stderr, /migration|newer|rebuild/iv);
 });
 
 test("history search supports structured fields and event text", async (t) => {

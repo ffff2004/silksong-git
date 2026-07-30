@@ -5,6 +5,7 @@ import {
   getBuiltinMappingData,
   parseDecodedSave,
 } from "@silksong-git/core";
+import { stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
@@ -59,7 +60,10 @@ import type {
 
 const requireNodeModule = createRequire(import.meta.url);
 const { DatabaseSync } = requireNodeModule("node:sqlite") as {
-  readonly DatabaseSync: new (filename: string) => DatabaseSyncType;
+  readonly DatabaseSync: new (
+    filename: string,
+    options?: { readonly readOnly?: boolean },
+  ) => DatabaseSyncType;
 };
 
 interface GitObservationRecord {
@@ -156,6 +160,20 @@ export async function prepareReadModelForAppend(
   }
 
   await rebuildReadModel(repoPath);
+}
+
+export async function isSemanticReadModelCurrent(
+  repoPath: string,
+  expectedSourceHeadRef: string,
+): Promise<boolean> {
+  try {
+    await stat(getRepositoryLayout(repoPath).readModelPath);
+    using db = openReadOnlyReadModel(repoPath);
+
+    return hasCurrentReadModelMetadata(db, expectedSourceHeadRef);
+  } catch {
+    return false;
+  }
 }
 
 export function appendObservationToReadModel(input: {
@@ -338,6 +356,12 @@ async function readGitTextBlob(
 
 function openReadModel(repoPath: string): DatabaseSyncType {
   return new DatabaseSync(getRepositoryLayout(repoPath).readModelPath);
+}
+
+function openReadOnlyReadModel(repoPath: string): DatabaseSyncType {
+  return new DatabaseSync(getRepositoryLayout(repoPath).readModelPath, {
+    readOnly: true,
+  });
 }
 
 function isReadModelCurrent(

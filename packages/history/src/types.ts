@@ -8,6 +8,7 @@ import type {
 } from "@silksong-git/core";
 
 export interface ProjectConfig {
+  readonly repositoryFormatVersion: number;
   readonly watchedSavePath: string;
   readonly capturePolicy: {
     readonly debounceWriteMs: number;
@@ -43,6 +44,85 @@ export interface InitSaveHistoryResult {
   readonly repoPath: string;
   readonly configPath: string;
 }
+
+export type SaveHistoryRepositoryStatus =
+  | "ready"
+  | "rebuildRequired"
+  | "legacyConfig"
+  | "migrationRequired"
+  | "newerIncompatible"
+  | "invalid";
+
+export type SaveHistoryRepositoryRequiredAction =
+  | "open"
+  | "rebuildReadModel"
+  | "confirmMigration"
+  | "useNewerApp"
+  | "chooseAnotherDirectory";
+
+export type SaveHistoryRepositoryCapability =
+  | "read"
+  | "observe"
+  | "restore"
+  | "rebuildReadModel"
+  | "watch";
+
+interface SaveHistoryRepositoryInspectionBase {
+  readonly inspectionId: string;
+  readonly status: SaveHistoryRepositoryStatus;
+  readonly requiredAction: SaveHistoryRepositoryRequiredAction;
+  readonly capabilities: readonly SaveHistoryRepositoryCapability[];
+}
+
+export type SaveHistoryRepositoryInspection =
+  | (SaveHistoryRepositoryInspectionBase & {
+      readonly status: "ready";
+      readonly requiredAction: "open";
+    })
+  | (SaveHistoryRepositoryInspectionBase & {
+      readonly status: "rebuildRequired";
+      readonly requiredAction: "rebuildReadModel";
+    })
+  | (SaveHistoryRepositoryInspectionBase & {
+      readonly status: "legacyConfig" | "migrationRequired";
+      readonly requiredAction: "confirmMigration";
+    })
+  | (SaveHistoryRepositoryInspectionBase & {
+      readonly status: "newerIncompatible";
+      readonly requiredAction: "useNewerApp";
+    })
+  | (SaveHistoryRepositoryInspectionBase & {
+      readonly status: "invalid";
+      readonly requiredAction: "chooseAnotherDirectory";
+    });
+
+export interface InspectSaveHistoryRepositoryInput {
+  readonly repoPath: string;
+}
+
+export interface MigrateSaveHistoryRepositoryInput {
+  readonly repoPath: string;
+  readonly inspectionId: string;
+  readonly confirmation: string;
+}
+
+export type MigrateSaveHistoryRepositoryResult =
+  | {
+      readonly status: "migrated";
+      readonly inspection: SaveHistoryRepositoryInspection;
+      readonly backupCreated: true;
+    }
+  | {
+      readonly status: "rejected";
+      readonly reason:
+        | "confirmationRequired"
+        | "staleInspection"
+        | "migrationNotRequired";
+    }
+  | {
+      readonly status: "failed";
+      readonly reason: "backupFailed" | "repositoryBusy" | "migrationFailed";
+    };
 
 export interface ObserveSaveInput {
   readonly repoPath: string;

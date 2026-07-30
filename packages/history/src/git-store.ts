@@ -136,6 +136,30 @@ export async function readCurrentHead(
   }
 }
 
+export async function isUsableGitRepository(
+  repoPath: string,
+): Promise<boolean> {
+  try {
+    return await validateGitRepository(repoPath);
+  } catch {
+    return false;
+  }
+}
+
+async function validateGitRepository(repoPath: string): Promise<boolean> {
+  const insideWorkTree = await runGitOutput(repoPath, [
+    "rev-parse",
+    "--is-inside-work-tree",
+  ]);
+  if (insideWorkTree !== "true") {
+    return false;
+  }
+
+  await runGitOutput(repoPath, ["fsck", "--no-dangling", "--no-reflogs"]);
+
+  return true;
+}
+
 export async function readHistoryCommit(
   repoPath: string,
   ref: string,

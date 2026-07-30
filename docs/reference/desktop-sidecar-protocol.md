@@ -21,7 +21,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +36,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,20 +49,31 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 1 accepts these commands:
+Version 2 accepts these commands:
 
+- `repository.inspect` with one absolute `repoPath`;
+- `repository.migrate` with one absolute `repoPath`, a prior opaque inspection
+  ID, and the literal migration confirmation;
 - `session.open` with one absolute `repoPath`;
 - `watcher.start`;
 - `watcher.stop`; and
 - `process.shutdown`.
 
+A `repository.inspect` response projects History's safe compatibility result:
+the repository status, required user action, opaque inspection ID, and allowed
+capabilities. It does not contain config, Git, SQLite, or lock details.
+`repository.migrate` returns History's safe migration result, including an
+explicit stale-inspection or confirmation rejection when applicable. The
+sidecar never evaluates repository versions or carries out migration itself.
+
 A process may open at most one Repo Session. A successful `session.open`
 response is emitted after authenticated loopback HTTP is ready and while the
-watcher remains inactive:
+watcher remains inactive. Opening is refused unless Repo Session's History
+compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "kind": "response",
   "requestId": "open-1",
   "ok": true,

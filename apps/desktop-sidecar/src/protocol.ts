@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const desktopSidecarProtocolVersion = 1 as const;
+export const desktopSidecarProtocolVersion = 2 as const;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -8,6 +8,8 @@ export const desktopSidecarErrorCodes = [
   "unknown_command",
   "invalid_command",
   "invalid_repo_path",
+  "repository_inspect_failed",
+  "repository_migrate_failed",
   "session_already_open",
   "session_not_open",
   "session_open_failed",
@@ -39,6 +41,22 @@ export const sessionOpenCommandSchema = z
   })
   .strict();
 
+export const repositoryInspectCommandSchema = z
+  .object({
+    type: z.literal("repository.inspect"),
+    repoPath: z.string().min(1).max(4096),
+  })
+  .strict();
+
+export const repositoryMigrateCommandSchema = z
+  .object({
+    type: z.literal("repository.migrate"),
+    repoPath: z.string().min(1).max(4096),
+    inspectionId: z.string().min(1).max(128),
+    confirmation: z.literal("migrate-save-history-repository"),
+  })
+  .strict();
+
 export const watcherStartCommandSchema = z
   .object({
     type: z.literal("watcher.start"),
@@ -64,11 +82,79 @@ const connectionSchema = z
   })
   .strict();
 
+const repositoryCapabilitySchema = z.enum([
+  "read",
+  "observe",
+  "restore",
+  "rebuildReadModel",
+  "watch",
+]);
+
+const repositoryInspectionSchema = z
+  .object({
+    inspectionId: z.string().min(1).max(128),
+    status: z.enum([
+      "ready",
+      "rebuildRequired",
+      "legacyConfig",
+      "migrationRequired",
+      "newerIncompatible",
+      "invalid",
+    ]),
+    requiredAction: z.enum([
+      "open",
+      "rebuildReadModel",
+      "confirmMigration",
+      "useNewerApp",
+      "chooseAnotherDirectory",
+    ]),
+    capabilities: z.array(repositoryCapabilitySchema),
+  })
+  .strict();
+
+const repositoryMigrationResultSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("migrated"),
+      inspection: repositoryInspectionSchema,
+      backupCreated: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("rejected"),
+      reason: z.enum([
+        "confirmationRequired",
+        "staleInspection",
+        "migrationNotRequired",
+      ]),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      reason: z.enum(["backupFailed", "repositoryBusy", "migrationFailed"]),
+    })
+    .strict(),
+]);
+
 const successResultSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("session.opened"),
       connection: connectionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("repository.inspected"),
+      inspection: repositoryInspectionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("repository.migrationResult"),
+      migration: repositoryMigrationResultSchema,
     })
     .strict(),
   z.object({ type: z.literal("watcher.started") }).strict(),
@@ -193,7 +279,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 1;
+    readonly protocolVersion: 2;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },

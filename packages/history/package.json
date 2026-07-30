@@ -16,6 +16,7 @@
     "test:verbose": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@silksong-git/core": "workspace:*"
+    "@silksong-git/core": "workspace:*",
+    "complete-common": "2.29.0"
   }
 }

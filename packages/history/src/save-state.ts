@@ -9,6 +9,7 @@ import {
 import { sha256Hex } from "./hash.ts";
 import { decodedSaveArtifactPath, encodedSaveArtifactPath } from "./layout.ts";
 import { readRawSaveObservation, readSemanticSnapshot } from "./read-model.ts";
+import { assertRepositoryCapability } from "./repository-compatibility.ts";
 import type {
   GetSaveStateInput,
   GetSaveStateResult,
@@ -19,6 +20,7 @@ import type {
 export async function getSaveState(
   input: GetSaveStateInput,
 ): Promise<GetSaveStateResult> {
+  await assertRepositoryCapability(input.repoPath, "read");
   const selectedRef =
     input.selector.kind === "latest"
       ? await readCurrentHead(input.repoPath)
@@ -54,6 +56,7 @@ export async function getSaveState(
 export async function readEncodedSave(
   input: ReadEncodedSaveInput,
 ): Promise<ReadEncodedSaveResult> {
+  await assertRepositoryCapability(input.repoPath, "read");
   const commit = await readHistoryCommit(input.repoPath, input.commitRef);
   const encodedBytes = await readGitBlob(
     input.repoPath,

@@ -36,6 +36,7 @@ export const localHttpErrorCodes = [
   "internal_error",
   "watched_save_unavailable",
   "read_model_unavailable",
+  "repository_incompatible",
   "session_stopping",
 ] as const;
 
@@ -56,13 +57,44 @@ export function createLocalHttpWireSchemas(
   zod: ZodNamespace,
   decorate: LocalHttpSchemaDecorator = (schema) => schema,
 ) {
+  const repositoryCompatibilitySchema = zod
+    .object({
+      status: zod.enum([
+        "rebuildRequired",
+        "legacyConfig",
+        "migrationRequired",
+        "newerIncompatible",
+        "invalid",
+      ]),
+      requiredAction: zod.enum([
+        "rebuildReadModel",
+        "confirmMigration",
+        "useNewerApp",
+        "chooseAnotherDirectory",
+      ]),
+      capabilities: zod.array(
+        zod.enum(["read", "observe", "restore", "rebuildReadModel", "watch"]),
+      ),
+    })
+    .strict();
   const localHttpErrorSchema = decorate(
-    zod.object({
-      error: zod.object({
-        code: zod.enum(localHttpErrorCodes),
-        message: zod.string(),
-      }),
-    }),
+    zod
+      .object({
+        error: zod
+          .object({
+            code: zod.enum(localHttpErrorCodes),
+            message: zod.string(),
+            repository: repositoryCompatibilitySchema.optional(),
+          })
+          .strict()
+          .refine(
+            (error) =>
+              (error.code === "repository_incompatible")
+              === (error.repository !== undefined),
+            "Repository compatibility details must accompany repository_incompatible errors only.",
+          ),
+      })
+      .strict(),
     "LocalHttpError",
   );
 

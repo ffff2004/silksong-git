@@ -13,24 +13,27 @@ import {
 import { readGitBlob, readHistoryCommit } from "./git-store.ts";
 import { sha256Hex } from "./hash.ts";
 import { encodedSaveArtifactPath } from "./layout.ts";
+import { withRepositoryWriteCapability } from "./repository-compatibility.ts";
 import type {
   RestoreEncodedSaveInput,
   RestoreEncodedSaveResult,
 } from "./types.ts";
-import { withHistoryWriteLock } from "./write-lock.ts";
 
 export async function restoreEncodedSave(
   input: RestoreEncodedSaveInput,
 ): Promise<RestoreEncodedSaveResult> {
-  const { target } = input;
-
-  if (target.kind === "path") {
-    return await restoreToPath({ ...input, target });
-  }
-
-  return await withHistoryWriteLock(
+  return await withRepositoryWriteCapability(
     input.repoPath,
-    async () => await restoreInPlace({ ...input, target }),
+    "restore",
+    async () => {
+      const { target } = input;
+
+      if (target.kind === "path") {
+        return await restoreToPath({ ...input, target });
+      }
+
+      return await restoreInPlace({ ...input, target });
+    },
   );
 }
 

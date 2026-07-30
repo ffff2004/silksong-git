@@ -9,4 +9,5 @@ export { RestoreTargetExistsError } from "./errors/restore-target-exists-error.t
 export { RestoreWriteFailedError } from "./errors/restore-write-failed-error.ts";
 export { RestoreWriteVerificationError } from "./errors/restore-write-verification-error.ts";
 export { SaveHistoryRepositoryBusyError } from "./errors/save-history-repository-busy-error.ts";
+export { SaveHistoryRepositoryIncompatibleError } from "./errors/save-history-repository-incompatible-error.ts";
 export { SaveHistoryWatcherAlreadyAcquiredError } from "./errors/save-history-watcher-already-acquired-error.ts";

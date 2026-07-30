@@ -25,10 +25,12 @@ import {
   RestoreWriteFailedError,
   RestoreWriteVerificationError,
   SaveHistoryRepositoryBusyError,
+  SaveHistoryRepositoryIncompatibleError,
   searchSemanticEvents,
 } from "@silksong-git/history";
 import type { LocalHttpErrorCode } from "./http-contract.ts";
 import { localHttpRoutes } from "./http-contract.ts";
+import { localHttpErrorSchema } from "./http-wire.ts";
 import type { RepoSessionWatcherStatus } from "./types.ts";
 
 /*
@@ -38,6 +40,11 @@ import type { RepoSessionWatcherStatus } from "./types.ts";
  */
 
 const authorizationPattern = /^Bearer (?<token>[\w\-]+)$/v;
+
+type RepositoryCompatibilityProjection = Pick<
+  SaveHistoryRepositoryIncompatibleError,
+  "status" | "requiredAction" | "capabilities"
+>;
 
 function validationHook(
   result: { readonly success: boolean },
@@ -304,11 +311,19 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
       input.onRequestError?.({
         method: c.req.method,
         path: c.req.path,
-        ...mapped,
+        status: mapped.status,
+        code: mapped.code,
+        message: mapped.message,
       });
     }
 
-    return errorResponse(c, mapped.status, mapped.code, mapped.message);
+    return errorResponse(
+      c,
+      mapped.status,
+      mapped.code,
+      mapped.message,
+      mapped.repository,
+    );
   });
 
   return routedApp;
@@ -358,14 +373,25 @@ function errorResponse(
   status: number,
   code: LocalHttpErrorCode,
   message: string,
+  repository?: RepositoryCompatibilityProjection,
 ) {
-  return c.json({ error: { code, message } }, status);
+  return c.json(
+    localHttpErrorSchema.parse({
+      error: {
+        code,
+        message,
+        ...(repository !== undefined && { repository }),
+      },
+    }),
+    status,
+  );
 }
 
 function mapError(error: unknown): {
   readonly status: number;
   readonly code: LocalHttpErrorCode;
   readonly message: string;
+  readonly repository?: RepositoryCompatibilityProjection;
 } {
   if (error instanceof InvalidCommitRefError) {
     return {
@@ -414,6 +440,18 @@ function mapError(error: unknown): {
       status: 503,
       code: "read_model_unavailable",
       message: "Semantic Read Model is unavailable.",
+    };
+  }
+  if (error instanceof SaveHistoryRepositoryIncompatibleError) {
+    return {
+      status: 503,
+      code: "repository_incompatible",
+      message: "The Save History Repository requires attention.",
+      repository: {
+        status: error.status,
+        requiredAction: error.requiredAction,
+        capabilities: error.capabilities,
+      },
     };
   }
   if (error instanceof InvalidRestoreBackupDirectoryError) {
