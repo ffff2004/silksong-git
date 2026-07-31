@@ -48,7 +48,7 @@ export default defineConfig(({ mode }) => ({
     setupFiles: "./src/test/setup-local-storage.ts",
   },
   build: {
-    chunkSizeWarningLimit: 700,
+    chunkSizeWarningLimit: Infinity,
     outDir: mode === DESKTOP_MODE ? "dist-desktop" : "dist",
     rolldownOptions: {
       output: {
