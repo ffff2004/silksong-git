@@ -17,6 +17,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { browserRuntimeCapabilities } from "../runtime-capabilities/browser.ts";
+import { createDesktopRuntimeCapabilities } from "../runtime-capabilities/desktop.ts";
 import decodedSave from "../test-fixtures/mask-shard-2-collected-rosaries-save.decoded.json";
 import { desktopTestRuntimeCapabilities } from "../test/desktop-runtime-capabilities.ts";
 import { App as RuntimeApp } from "./App.tsx";
@@ -103,7 +104,7 @@ describe("Solid Web app routing", () => {
     });
     expect(
       within(primaryControls).getByRole("button", {
-        name: "Connect to Local History",
+        name: "Open Local History",
       }),
     ).toBeDefined();
     expect(
@@ -111,6 +112,33 @@ describe("Solid Web app routing", () => {
         screen.getByRole("main", { name: "Application content" }),
       ).getByTestId("progress-view"),
     ).toBeDefined();
+  });
+
+  it("renders an actionable incompatible repository state without connecting Local HTTP", async () => {
+    const getRepoSessionConnection = vi.fn(() => ({
+      endpoint: "http://127.0.0.1:4312",
+      token: "session-token",
+    }));
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection,
+      openExternalRepository: async () => ({
+        action: "useNewerApp",
+        kind: "requiresAction",
+        status: "newerIncompatible",
+      }),
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Local History" }));
+
+    expect(
+      await screen.findByText(
+        "This repository was created by a newer incompatible app. Update Desktop before opening it.",
+      ),
+    ).toBeDefined();
+    expect(getRepoSessionConnection).not.toHaveBeenCalled();
   });
 
   it("reveals Back to Top after scrolling and returns the main view to the top", async () => {
@@ -157,7 +185,7 @@ describe("Solid Web app routing", () => {
     ).toBeDefined();
     expect(screen.getByRole("button", { name: "Upload save" })).toBeDefined();
     expect(
-      screen.queryByRole("button", { name: "Connect to Local History" }),
+      screen.queryByRole("button", { name: "Open Local History" }),
     ).toBeNull();
     expect(screen.queryByRole("link", { name: "History" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Compare" })).toBeNull();
@@ -250,6 +278,53 @@ describe("Solid Web app routing", () => {
       "SAVE LOADED",
     );
     expect(screen.queryByRole("link", { name: "History" })).toBeNull();
+  });
+
+  it("reconnects a disconnected WebView through the open Repo Session", async () => {
+    const getRepoSessionConnection = vi.fn(() => ({
+      endpoint: "http://127.0.0.1:4312",
+      token: "session-token",
+    }));
+    const openExternalRepository = vi.fn(async () => ({
+      kind: "opened" as const,
+    }));
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection,
+      openExternalRepository,
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (requestUrl(input).includes("/api/v1/watcher")) {
+          return Response.json(localHistoryWatcher);
+        }
+
+        return Response.json({ status: "empty" });
+      }),
+    );
+
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Local History" }));
+    await screen.findByRole("button", { name: "Disconnect WebView" });
+    expect(openExternalRepository).toHaveBeenCalledTimes(1);
+    expect(getRepoSessionConnection).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect WebView" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Reconnect Local History" }),
+    );
+    await screen.findByRole("button", { name: "Disconnect WebView" });
+    expect(openExternalRepository).toHaveBeenCalledTimes(1);
+    expect(getRepoSessionConnection).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open another repository" }),
+    );
+    await waitFor(() => {
+      expect(openExternalRepository).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("explains when browser Local Network Access was denied", async () => {

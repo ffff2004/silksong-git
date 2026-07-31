@@ -19,6 +19,7 @@
     "@silksong-git/core": "workspace:*",
     "@silksong-git/repo-session": "workspace:*",
     "@solidjs/router": "^0.16.1",
+    "@tauri-apps/api": "2.11.1",
     "complete-common": "2.29.0",
     "monaco-editor": "0.55.1",
     "solid-js": "^1.9.14"

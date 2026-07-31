@@ -9,7 +9,7 @@ packages do not depend on applications.
 ```txt
 Static Web Mode ----------------------> @silksong-git/core
 Desktop Static Mode ----shared Web----> @silksong-git/core
-Desktop Rust ---future JSONL---> Desktop sidecar ---> @silksong-git/repo-session
+Desktop Rust -------JSONL------> Desktop sidecar ---> @silksong-git/repo-session
 Local History Web Mode --HTTP client--> @silksong-git/repo-session/http-wire
 CLI --------------------+-------------> @silksong-git/history
                         +-------------> @silksong-git/repo-session
@@ -25,8 +25,8 @@ CLI --------------------+-------------> @silksong-git/history
 | [`packages/repo-session`](../../packages/repo-session/src/index.ts) | Owns the long-running repository reader process, mandatory loopback HTTP Adapter, independently controlled watcher scheduling, executable HTTP contract, and browser-safe wire contract. It calls only public History workflows.                                                          |
 | [`apps/cli`](../../apps/cli/src/main.ts)                            | Parses commands and renders terminal or JSON output. Save inspection calls Core; repository, history, and restore commands call History, while `watch start` starts a Repo Session. It does not own persistence rules.                                                                    |
 | [`apps/web`](../../apps/web/src/main.tsx)                           | Runs one Solid frontend in Static Web Mode or Local History Web Mode. Static mode calls Core in the browser. Local mode uses Repo Session's browser-safe HTTP wire contract and an authenticated HTTP client; it does not import a Node runtime or access local storage systems directly. |
-| [`apps/desktop`](../../apps/desktop/src-tauri/src/lib.rs)           | Runs the single-instance Tauri shell around a dedicated build of the shared Web source. Its only implemented application capability is Static Save inspection; it owns the one native window, bundled-content boundary, navigation policy, and external opening.                          |
-| [`apps/desktop-sidecar`](../../apps/desktop-sidecar/src/main.ts)    | Provides the private versioned JSONL process Adapter over the public Repo Session Interface. It is a development executable; current Desktop Rust does not yet spawn or package it.                                                                                                       |
+| [`apps/desktop`](../../apps/desktop/src-tauri/src/lib.rs)           | Runs the single-instance Tauri shell around a dedicated build of the shared Web source. It owns the one native window, bundled-content boundary, navigation policy, external opening, external repository selection, and the one sidecar-backed Repo Session runtime.                     |
+| [`apps/desktop-sidecar`](../../apps/desktop-sidecar/src/main.ts)    | Provides the private versioned JSONL process Adapter over the public Repo Session Interface. Desktop Rust spawns its fixed development entry through Node and communicates over its stdin/stdout protocol.                                                                                |
 
 The package split follows
 [ADR-0011](../adr/0011-workspace-package-architecture.md). Exact callable

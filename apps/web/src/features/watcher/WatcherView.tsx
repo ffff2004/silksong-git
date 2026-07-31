@@ -25,6 +25,8 @@ function WatcherView() {
   const [checkpointResult, setCheckpointResult] =
     createSignal<LocalHttpCheckpointResult>();
   const [checkpointError, setCheckpointError] = createSignal<string>();
+  const [watchControlPending, setWatchControlPending] = createSignal(false);
+  const [watchControlError, setWatchControlError] = createSignal<string>();
   const status = () => {
     const connection = localHistory.connection();
     return connection.kind === "connected"
@@ -37,6 +39,47 @@ function WatcherView() {
     return value?.status === "running" || value?.status === "stopping"
       ? value
       : undefined;
+  };
+  const refreshWatcherStatus = async () => {
+    const connection = localHistory.connection();
+    if (connection.kind !== "connected") {
+      return;
+    }
+
+    const nextStatus = await connection.session.client.getWatcher();
+    localHistory.updateWatcherStatus(nextStatus);
+    localHistory.reportRequestSuccess();
+  };
+  const controlWatcher = async (action: "start" | "stop") => {
+    if (watchControlPending()) {
+      return;
+    }
+
+    setWatchControlPending(true);
+    setWatchControlError(undefined);
+    try {
+      try {
+        if (action === "start") {
+          await localHistory.startWatching();
+        } else {
+          await localHistory.stopWatching();
+        }
+      } catch (error) {
+        // Desktop watcher control is independent from the authenticated Local HTTP reader session.
+        // A rejected watcher lease must not make browsing stale or pause its polling.
+        setWatchControlError(getWatchControlErrorMessage(error, action));
+        return;
+      }
+
+      try {
+        await refreshWatcherStatus();
+      } catch (error) {
+        localHistory.reportRequestFailure(error);
+        setWatchControlError(getWatchControlErrorMessage(error, action));
+      }
+    } finally {
+      setWatchControlPending(false);
+    }
   };
 
   return (
@@ -85,6 +128,37 @@ function WatcherView() {
             </Show>
           </dl>
         )}
+      </Show>
+      <Show when={status()?.status === "inactive"}>
+        <button
+          class={buttonStyles["primary"]}
+          type="button"
+          disabled={watchControlPending()}
+          onClick={() => {
+            controlWatcher("start").catch((error: unknown) => {
+              console.error("[watcher] Unexpected start failure:", error);
+            });
+          }}
+        >
+          {watchControlPending() ? "Starting watcher…" : "Start Watching"}
+        </button>
+      </Show>
+      <Show when={status()?.status === "running"}>
+        <button
+          class={buttonStyles["danger"]}
+          type="button"
+          disabled={watchControlPending()}
+          onClick={() => {
+            controlWatcher("stop").catch((error: unknown) => {
+              console.error("[watcher] Unexpected stop failure:", error);
+            });
+          }}
+        >
+          {watchControlPending() ? "Stopping watcher…" : "Stop Watching"}
+        </button>
+      </Show>
+      <Show when={watchControlError()}>
+        {(message) => <p role="alert">{message()}</p>}
       </Show>
       <form
         onSubmit={(event) => {
@@ -155,6 +229,19 @@ function WatcherView() {
       </Show>
     </section>
   );
+}
+
+function getWatchControlErrorMessage(
+  error: unknown,
+  action: "start" | "stop",
+): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return action === "start"
+    ? "Watching could not be started."
+    : "Watching could not be stopped.";
 }
 
 function getWatcherErrorMessage(

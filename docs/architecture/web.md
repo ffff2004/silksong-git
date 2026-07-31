@@ -44,10 +44,10 @@ authentication rules belong to the
 
 [`main.tsx`](../../apps/web/src/main.tsx) explicitly injects the Browser Runtime
 Capabilities into [`App.tsx`](../../apps/web/src/app/App.tsx).
-`desktop-main.tsx` currently injects the same Static-only capabilities because
-the implemented Desktop shell does not yet own a Repo Session. A later Desktop
-workflow can use the existing Desktop Adapter only when it can supply a real
-in-memory Repo Session endpoint and token. `App.tsx` composes four
+`desktop-main.tsx` explicitly injects Desktop Runtime Capabilities backed by
+four narrow Tauri intent commands: choose and open an external repository,
+obtain the current in-memory Repo Session connection, and start or stop its
+watcher. `App.tsx` composes four
 application-wide providers around the router:
 
 - the Toast Store owns transient notifications;
@@ -136,10 +136,13 @@ History responsibility and therefore does not apply in Static Web Mode.
 
 ## Local History Web Mode
 
-The Desktop user enters Local History Web Mode through the Topbar connection
-control. Its injected capability supplies the Repo Session endpoint and token;
-the presentation never asks the user to type either value. A successful
-authenticated `/api/v1/watcher` request creates a local session,
+The Desktop user enters Local History Web Mode through the Topbar Open Local
+History control. Its injected capability opens a Rust-owned native directory
+picker and returns structured cancellation or safe compatibility states; the
+presentation never receives the selected path. Only after Rust has inspected
+and opened a ready repository does the Web capability supply the current Repo
+Session endpoint and token; the presentation never asks the user to type either
+value. A successful authenticated `/api/v1/watcher` request creates a local session,
 seeds its initial watcher status, and clears any uploaded Static Save before
 Local History loads its own state.
 The Local History runtime then fetches either:
@@ -154,8 +157,10 @@ unrecognized observation can still provide Decoded Save JSON while omitting a
 Semantic Snapshot, so views must tolerate semantic state being unavailable.
 
 Disconnecting clears the displayed Save State and returns to an empty Static
-Web Mode at `/progress`. The application never retains an uploaded Static Save
-and a Local History Save State as competing sources.
+Web Mode at `/progress`. It does not close the Rust Repo Session, so a later
+reconnect obtains the current in-memory connection without reopening the
+directory picker. The application never retains an uploaded Static Save and a
+Local History Save State as competing sources.
 
 ## Latest and Historical Transitions
 
@@ -192,9 +197,11 @@ it does not mutate the application Save Store.
 
 Watcher presents inactive and transitional states as well as the active
 watcher's activity, Capture Policy, last observation, and latest Watcher Error.
-Its Manual Checkpoint action is
-an authenticated HTTP mutation. The Web application does not watch files or
-perform the checkpoint itself.
+Start Watching and Stop Watching invoke the Desktop Runtime Capability for the
+already-open Repo Session and therefore never carry a repository path; a failed
+watch acquisition keeps Local History browsing connected. Its Manual Checkpoint
+action is an authenticated HTTP mutation. The Web application does not watch
+files or perform the checkpoint itself.
 
 History, Diff, and Watcher are frontend workflows over the Local HTTP Adapter.
 The [Save History Module](save-history-module.md) and
@@ -206,7 +213,8 @@ safety.
 
 This document describes the implemented Solid runtime. Vite produces a Browser
 build with the hosted base path and a separate relative-path Desktop build.
-The Tauri shell bundles the latter; it does not load a remote UI. Polling is
+The Tauri shell bundles the latter; it does not load a remote UI. Browser
+remains Static-only and exposes no Local History connection control. Polling is
 the implemented synchronization mechanism; there is no SSE or WebSocket event
 stream.
 

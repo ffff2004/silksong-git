@@ -10,7 +10,10 @@ import {
   LocalHistoryClientError,
   createLocalHistoryClient,
 } from "../features/local-history/local-history-client.ts";
-import type { RuntimeCapabilities } from "../runtime-capabilities/interface.ts";
+import type {
+  OpenExternalRepositoryResult,
+  RuntimeCapabilities,
+} from "../runtime-capabilities/interface.ts";
 
 interface LocalHistorySession {
   readonly client: LocalHistoryClient;
@@ -43,8 +46,11 @@ interface LocalHistoryStore {
   readonly connection: () => LocalHistoryConnection;
   readonly disconnect: () => void;
   readonly isSupported: boolean;
+  readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
   readonly reportRequestFailure: (error: unknown) => void;
   readonly reportRequestSuccess: () => void;
+  readonly startWatching: () => Promise<void>;
+  readonly stopWatching: () => Promise<void>;
   readonly updateLatestSaveState: (state: LocalHttpSaveState) => void;
   readonly updateWatcherStatus: (status: LocalHttpWatcherStatus) => void;
 }
@@ -114,6 +120,13 @@ export function LocalHistoryProvider(props: {
       setConnection({ kind: "disconnected" });
     },
     isSupported: props.runtimeCapabilities.kind === "desktop",
+    async openExternalRepository() {
+      if (props.runtimeCapabilities.kind !== "desktop") {
+        throw new Error("Local History is unavailable in this runtime.");
+      }
+
+      return await props.runtimeCapabilities.openExternalRepository();
+    },
     reportRequestFailure(error) {
       const current = connection();
       if (current.kind !== "connected") {
@@ -143,6 +156,20 @@ export function LocalHistoryProvider(props: {
           availability: { kind: "available" },
         });
       }
+    },
+    async startWatching() {
+      if (props.runtimeCapabilities.kind !== "desktop") {
+        throw new Error("Watching is unavailable in this runtime.");
+      }
+
+      await props.runtimeCapabilities.startWatching();
+    },
+    async stopWatching() {
+      if (props.runtimeCapabilities.kind !== "desktop") {
+        throw new Error("Watching is unavailable in this runtime.");
+      }
+
+      await props.runtimeCapabilities.stopWatching();
     },
     updateLatestSaveState(state) {
       const updateState = setLatestSaveState;

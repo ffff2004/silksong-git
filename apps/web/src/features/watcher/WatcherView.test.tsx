@@ -8,6 +8,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App as RuntimeApp } from "../../app/App.tsx";
+import { createDesktopRuntimeCapabilities } from "../../runtime-capabilities/desktop.ts";
 import { desktopTestRuntimeCapabilities } from "../../test/desktop-runtime-capabilities.ts";
 
 const App = () => (
@@ -108,6 +109,153 @@ describe("Watcher view", () => {
     expect(await screen.findByText("inactive")).toBeDefined();
     expect(screen.queryByText("Watched path")).toBeNull();
     expect(screen.queryByText("Capture Policy")).toBeNull();
+  });
+
+  it("starts and stops only the current Desktop Repo Session", async () => {
+    let watching = false;
+    const startWatching = vi.fn(async () => {
+      watching = true;
+    });
+    const stopWatching = vi.fn(async () => {
+      watching = false;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json(
+            watching
+              ? {
+                  status: "running",
+                  activity: "idle",
+                  observationRevision: 0,
+                  startedAt: "2026-07-16T00:00:00.000Z",
+                  repoPath: "/tmp/history-repo",
+                  watchedSavePath: "/tmp/user1.dat",
+                  capturePolicy: {
+                    debounceWriteMs: 500,
+                    minCommitIntervalMs: 0,
+                  },
+                }
+              : {
+                  status: "inactive",
+                  observationRevision: 0,
+                  repoPath: "/tmp/history-repo",
+                },
+          );
+        }
+
+        throw new Error(`Unexpected Local HTTP request: ${url}`);
+      }),
+    );
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      startWatching,
+      stopWatching,
+    });
+
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    connectLocalHistory();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Start Watching" }),
+    );
+
+    await waitFor(() => {
+      expect(startWatching).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByRole("button", { name: "Stop Watching" }),
+      ).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop Watching" }));
+    await waitFor(() => {
+      expect(stopWatching).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByRole("button", { name: "Start Watching" }),
+      ).toBeDefined();
+    });
+  });
+
+  it("keeps Local History connected and polling when another process owns the watcher", async () => {
+    let watcherRequests = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          watcherRequests++;
+          return Response.json({
+            status: "inactive",
+            observationRevision: 0,
+            repoPath: "/tmp/history-repo",
+          });
+        }
+
+        throw new Error(`Unexpected Local HTTP request: ${url}`);
+      }),
+    );
+    const startWatching = vi.fn(async () => {
+      throw new Error(
+        "Watching could not start. Another process may already be watching this repository; history browsing is still available.",
+      );
+    });
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      startWatching,
+      stopWatching: async () => undefined,
+    });
+
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    connectLocalHistory();
+    expect(await screen.findByTestId("watcher-view")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Start Watching" }));
+
+    expect(
+      await screen.findByText(
+        "Watching could not start. Another process may already be watching this repository; history browsing is still available.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByTestId("watcher-view")).toBeDefined();
+    expect(screen.getByText("Local History connected")).toBeDefined();
+    expect(screen.queryByText("Local History stale")).toBeNull();
+    const startButton = screen.getByRole("button", {
+      name: "Start Watching",
+    });
+    expect(startButton.getAttribute("disabled")).toBeNull();
+    fireEvent.click(startButton);
+    await waitFor(() => {
+      expect(startWatching).toHaveBeenCalledTimes(2);
+    });
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => {
+      expect(watcherRequests).toBe(2);
+    });
+    expect(screen.getByText("Local History connected")).toBeDefined();
   });
 
   it("submits an optional Manual Checkpoint message once and renders every result", async () => {

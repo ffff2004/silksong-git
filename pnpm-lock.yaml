@@ -124,6 +124,9 @@ importers:
       '@solidjs/router':
         specifier: ^0.16.1
         version: 0.16.1(solid-js@1.9.14)
+      '@tauri-apps/api':
+        specifier: 2.11.1
+        version: 2.11.1
       complete-common:
         specifier: 2.29.0
         version: 2.29.0
@@ -1602,6 +1605,9 @@ packages:
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
     peerDependencies:
       eslint: ^9.0.0 || ^10.0.0
+
+  '@tauri-apps/api@2.11.1':
+    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
 
   '@tauri-apps/cli-darwin-arm64@2.11.4':
     resolution: {integrity: sha512-1ryOF3ZhpZ/nemHV5zVwBQBz9jDGKmKPvWPADOhc83ig0P4bMc2iER4NbC6r9sjeIZ6RVQ4g3RZIYvezhcl4TQ==}
@@ -5070,6 +5076,8 @@ snapshots:
       espree: 10.4.0
       estraverse: 5.3.0
       picomatch: 4.0.4
+
+  '@tauri-apps/api@2.11.1': {}
 
   '@tauri-apps/cli-darwin-arm64@2.11.4':
     optional: true

@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The unique main WebView has no guest-callable native permissions.",
+  "description": "The unique main WebView can use only the Desktop Local History intent commands.",
   "windows": ["main"],
-  "permissions": []
+  "permissions": [
+    "allow-desktop-get-repo-session-connection",
+    "allow-desktop-open-external-repository",
+    "allow-desktop-start-watching",
+    "allow-desktop-stop-watching"
+  ]
 }

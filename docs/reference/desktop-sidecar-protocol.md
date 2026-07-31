@@ -1,8 +1,8 @@
 # Desktop Sidecar Process Protocol
 
 The private `@silksong-git/desktop-sidecar` workspace application adapts the
-public Repo Session Interface for a future Tauri Rust caller. It is currently a
-Node.js development executable, not a packaged Tauri external binary. The
+public Repo Session Interface for the Tauri Rust caller. It is a Node.js
+development executable and is not a packaged Tauri external binary. The
 executable protocol schemas in
 [`protocol.ts`](../../apps/desktop-sidecar/src/protocol.ts) are authoritative.
 

@@ -1,3 +1,4 @@
+mod desktop_runtime;
 mod security;
 
 use tauri::{
@@ -6,6 +7,8 @@ use tauri::{
     webview::{NewWindowResponse, WebviewWindowBuilder},
 };
 use tauri_plugin_opener::OpenerExt;
+
+use crate::desktop_runtime::DesktopRuntime;
 
 const MAIN_WINDOW_LABEL: &str = "main";
 
@@ -21,6 +24,14 @@ pub fn run() {
                 .open_js_links_on_click(false)
                 .build(),
         )
+        .plugin(tauri_plugin_dialog::init())
+        .manage(DesktopRuntime::default())
+        .invoke_handler(tauri::generate_handler![
+            desktop_runtime::desktop_get_repo_session_connection,
+            desktop_runtime::desktop_open_external_repository,
+            desktop_runtime::desktop_start_watching,
+            desktop_runtime::desktop_stop_watching,
+        ])
         .setup(|app| {
             let app_handle = app.handle().clone();
             WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
@@ -39,8 +50,13 @@ pub fn run() {
                 .build()?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("failed to run Silksong Git");
+        .build(tauri::generate_context!())
+        .expect("failed to build Silksong Git")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                let _ = app.state::<DesktopRuntime>().shutdown();
+            }
+        });
 }
 
 fn focus_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
@@ -96,10 +112,18 @@ mod tests {
     }
 
     #[test]
-    fn main_window_capability_grants_no_guest_permissions() {
+    fn main_window_capability_grants_only_desktop_local_history_intents() {
         let capability: Value = serde_json::from_str(CAPABILITY).expect("valid capability");
 
         assert_eq!(capability["windows"], serde_json::json!(["main"]));
-        assert_eq!(capability["permissions"], serde_json::json!([]));
+        assert_eq!(
+            capability["permissions"],
+            serde_json::json!([
+                "allow-desktop-get-repo-session-connection",
+                "allow-desktop-open-external-repository",
+                "allow-desktop-start-watching",
+                "allow-desktop-stop-watching",
+            ])
+        );
     }
 }

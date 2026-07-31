@@ -1,22 +1,26 @@
 # Desktop Shell Architecture
 
 The Desktop application is a Tauri v2 delivery Adapter around the shared Solid
-presentation. It currently supports Static Save inspection only. It does not
-own Repo Session, History, Git, SQLite, filesystem watching, native file
-selection, or repository layout.
+presentation. It supports Static Save inspection and one temporary external
+Save History Repository session. It does not own Repo Session, History, Git,
+SQLite, watcher scheduling, or repository layout.
 
-The separate
-[`apps/desktop-sidecar`](../../apps/desktop-sidecar) development executable
-now provides the machine-process seam needed to open one Repo Session, but the
-Rust shell does not yet spawn, supervise, or package it. That integration does
-not change the current Static-only Desktop Runtime Capabilities.
+The Rust shell owns native directory selection, canonicalization, and the
+private [`apps/desktop-sidecar`](../../apps/desktop-sidecar) process lifecycle.
+Debug builds run Node with the fixed
+`apps/desktop-sidecar/dist/main.js` entry, which must exist before Desktop
+starts. Non-debug builds resolve the fixed `silksong-git-desktop-sidecar`
+executable beneath the application resource directory and report Local History
+as unavailable when it is absent. A selected repository path is sent only in
+JSONL `repository.inspect` and `session.open` messages, never as a spawn
+argument.
 
 ## Composition and Build
 
 [`apps/desktop`](../../apps/desktop) owns native lifecycle and packaging.
 [`desktop-main.tsx`](../../apps/web/src/desktop-main.tsx) is the Desktop Web
-composition root and explicitly injects the same Static-only
-`browserRuntimeCapabilities` as the Browser entry. Both entry points reuse
+composition root and explicitly injects Desktop Runtime Capabilities. The
+Browser entry injects Static-only browser capabilities. Both entry points reuse
 `App`, the Save Store, and the Progress, Map, and Raw Save feature Modules.
 
 Vite creates two outputs from the one Web source:
@@ -66,10 +70,12 @@ The opener plugin is registered only for its Rust Interface. Its automatic
 JavaScript link handling is disabled, and the WebView receives no opener
 permission.
 
-The unique `main` capability has an empty permission list and the global Tauri
-object is disabled. The CSP allows bundled application resources, the Tauri IPC
-origin, and future IPv4-loopback connections. It grants no generic filesystem,
-shell, process, arbitrary HTTP, or native command Interface.
+The global Tauri object is disabled. The unique `main` capability allows only
+four application intent commands: open an external repository, obtain the
+current Repo Session connection, and start or stop watching for that current
+session. It grants no generic filesystem, shell, process, arbitrary HTTP, or
+native command Interface. The CSP allows bundled application resources, the
+Tauri IPC origin, and IPv4-loopback connections.
 
 This boundary implements
 [ADR-0021](../adr/0021-hardened-desktop-shell.md). The shared presentation and
@@ -84,11 +90,31 @@ public `@silksong-git/repo-session` Interface. One process opens at most one
 Repo Session; History reads and mutations remain behind that session's
 authenticated loopback HTTP endpoints instead of becoming process RPC.
 
-The successful open response discloses the in-memory HTTP credential exactly
-once. Watcher events are projected without paths, raw exceptions, credentials,
-commit details, or Semantic Events. Graceful process shutdown is acknowledged
-only after Repo Session has drained admitted HTTP and watcher work. The exact
-wire and exit contract belongs to the
+Opening is ordered deliberately: Rust waits for a native directory selection,
+canonicalizes it, starts a candidate sidecar, and sends `repository.inspect`.
+Only a `ready` result may replace the current session; Rust gracefully shuts
+down the prior sidecar and then sends `session.open`, which re-inspects through
+the Repo Session Interface. Invalid, migration-required, rebuild-required, and
+newer-incompatible selections return structured actionable states without
+opening a session. The temporary external path is neither copied, persisted,
+registered, nor reopened after exit.
+
+The session endpoint and bearer token are held in the Rust runtime state. The
+WebView can obtain them only through the one narrow connection command, where
+the Web Runtime Capability captures them in its in-memory authenticated Local
+HTTP client closure. They are never returned by the picker or watcher commands,
+put in a URL, or persisted. Disconnecting the WebView drops only that closure;
+it can request the current connection again without reopening a directory.
+Start and stop watcher commands carry no repository path and act only on the
+current sidecar session. A watch-lock conflict leaves that reader session and
+its HTTP browsing capability intact. Session replacement and App exit request
+sidecar shutdown and wait for its graceful acknowledgment.
+
+The successful sidecar open response discloses the in-memory HTTP credential to
+Rust exactly once. Watcher events are projected without paths, raw exceptions,
+credentials, commit details, or Semantic Events. Graceful process shutdown is
+acknowledged only after Repo Session has drained admitted HTTP and watcher work.
+The exact wire and exit contract belongs to the
 [Desktop Sidecar Process Protocol](../reference/desktop-sidecar-protocol.md)
 and follows
 [ADR-0022](../adr/0022-use-a-private-versioned-desktop-sidecar.md).

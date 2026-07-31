@@ -28,7 +28,7 @@ function ConnectionRequiredState() {
   return (
     <section class={viewStyles["view"]} data-testid="local-connection-required">
       <h2 class={viewStyles["heading"]}>Local History connection required</h2>
-      <p>Connect to Local History from the Topbar to open this view.</p>
+      <p>Open Local History from the Topbar to open this view.</p>
     </section>
   );
 }

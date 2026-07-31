@@ -1,7 +1,12 @@
+import { invoke } from "@tauri-apps/api/core";
 import { render } from "solid-js/web";
 
 import { App } from "./app/App.tsx";
-import { browserRuntimeCapabilities } from "./runtime-capabilities/browser.ts";
+import { createDesktopRuntimeCapabilities } from "./runtime-capabilities/desktop.ts";
+import type {
+  OpenExternalRepositoryResult,
+  RepoSessionConnection,
+} from "./runtime-capabilities/interface.ts";
 // Vite applies the root stylesheet through this import side effect.
 // eslint-disable-next-line import-x/no-unassigned-import
 import "./app/global.css";
@@ -11,6 +16,19 @@ if (root === null) {
   throw new Error("Failed to find Solid root element for Desktop.");
 }
 
-// Desktop initially uses Static Save capabilities. A later Repo Session slice can replace this
-// composition root.
-render(() => <App runtimeCapabilities={browserRuntimeCapabilities} />, root);
+const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
+  getRepoSessionConnection: async () =>
+    await invoke<RepoSessionConnection>("desktop_get_repo_session_connection"),
+  openExternalRepository: async () =>
+    await invoke<OpenExternalRepositoryResult>(
+      "desktop_open_external_repository",
+    ),
+  startWatching: async () => {
+    await invoke("desktop_start_watching");
+  },
+  stopWatching: async () => {
+    await invoke("desktop_stop_watching");
+  },
+});
+
+render(() => <App runtimeCapabilities={desktopRuntimeCapabilities} />, root);
