@@ -580,7 +580,7 @@ function handleHistoryCommandError(
 
       case "confirmMigration": {
         runtime.writeStderr(
-          "save history repository migration is required\nnext: open the repository in Silksong Git Desktop and confirm migration\n",
+          "save history repository migration is required\nnext: silksong-git repo migrate --repo <history-repo> --confirm-migration\n",
         );
         return true;
       }

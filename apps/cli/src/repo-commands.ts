@@ -2,7 +2,15 @@ import type { Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { initSaveHistory } from "@silksong-git/history";
+import type {
+  MigrateSaveHistoryRepositoryResult,
+  SaveHistoryRepositoryInspection,
+} from "@silksong-git/history";
+import {
+  initSaveHistory,
+  inspectSaveHistoryRepository,
+  migrateSaveHistoryRepository,
+} from "@silksong-git/history";
 import type { Command } from "commander";
 
 import type { CliRuntime } from "./cli-runtime.ts";
@@ -14,6 +22,41 @@ interface InitCommandOptions {
   readonly repo?: string;
   readonly json?: boolean;
 }
+
+interface InspectCommandOptions {
+  readonly repo?: string;
+  readonly json?: boolean;
+}
+
+interface MigrateCommandOptions extends InspectCommandOptions {
+  readonly confirmMigration?: boolean;
+}
+
+interface SafeRepositoryInspection {
+  readonly status: SaveHistoryRepositoryInspection["status"];
+  readonly requiredAction: SaveHistoryRepositoryInspection["requiredAction"];
+  readonly capabilities: readonly string[];
+}
+
+type SafeMigrationResult =
+  | {
+      readonly status: "migrated";
+      readonly inspection: SafeRepositoryInspection;
+      readonly backupCreated: true;
+    }
+  | {
+      readonly status: "rejected";
+      readonly reason:
+        | "confirmationRequired"
+        | "staleInspection"
+        | "migrationNotRequired";
+      readonly inspection: SafeRepositoryInspection;
+    }
+  | {
+      readonly status: "failed";
+      readonly reason: "backupFailed" | "repositoryBusy" | "migrationFailed";
+      readonly inspection: SafeRepositoryInspection;
+    };
 
 export function registerRepoCommands(
   program: Command,
@@ -28,6 +71,23 @@ export function registerRepoCommands(
     .option("--json")
     .action(async (options: InitCommandOptions) => {
       await runInitCommand(options, runtime);
+    });
+
+  repoCommand
+    .command("inspect")
+    .requiredOption("--repo <history-repo>")
+    .option("--json")
+    .action(async (options: InspectCommandOptions) => {
+      await runInspectCommand(options, runtime);
+    });
+
+  repoCommand
+    .command("migrate")
+    .requiredOption("--repo <history-repo>")
+    .option("--confirm-migration")
+    .option("--json")
+    .action(async (options: MigrateCommandOptions) => {
+      await runMigrateCommand(options, runtime);
     });
 }
 
@@ -71,6 +131,165 @@ async function runInitCommandOrThrow(
   runtime.writeStdout(
     `initialized save history repository\nrepo: ${result.repoPath}\nconfig: ${result.configPath}\nnext: silksong-git history checkpoint --repo ${result.repoPath}\n`,
   );
+}
+
+async function runInspectCommand(
+  options: InspectCommandOptions,
+  runtime: CliRuntime,
+) {
+  const repoPath = path.resolve(requireOption(options.repo, "--repo"));
+  const inspection = await inspectSaveHistoryRepository({ repoPath });
+  const output = projectInspection(inspection);
+
+  if (options.json === true) {
+    runtime.writeStdout(formatJson(output));
+  } else {
+    runtime.writeStdout(formatInspection(output, repoPath));
+  }
+
+  if (inspection.status !== "ready") {
+    runtime.setExitCode(exitCodes.readModelUnavailable);
+  }
+}
+
+async function runMigrateCommand(
+  options: MigrateCommandOptions,
+  runtime: CliRuntime,
+) {
+  if (options.confirmMigration !== true) {
+    runtime.writeStderr(
+      "error: migration requires --confirm-migration\nnext: rerun with --confirm-migration to create a recoverable config backup before updating the repository format\n",
+    );
+    runtime.setExitCode(exitCodes.usage);
+    return;
+  }
+
+  const repoPath = path.resolve(requireOption(options.repo, "--repo"));
+  const inspection = await inspectSaveHistoryRepository({ repoPath });
+  const result = await migrateSaveHistoryRepository({
+    repoPath,
+    inspectionId: inspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+  const currentInspection =
+    result.status === "migrated"
+      ? result.inspection
+      : await inspectSaveHistoryRepository({ repoPath });
+  const output = projectMigrationResult(result, currentInspection);
+
+  if (options.json === true) {
+    runtime.writeStdout(formatJson(output));
+  } else {
+    runtime.writeStdout(formatMigrationResult(output, repoPath));
+  }
+
+  if (output.status === "failed" && output.reason === "repositoryBusy") {
+    runtime.setExitCode(exitCodes.repositoryBusy);
+    return;
+  }
+
+  if (output.status !== "migrated" && output.inspection.status !== "ready") {
+    runtime.setExitCode(exitCodes.readModelUnavailable);
+  }
+}
+
+function projectInspection(
+  inspection: SaveHistoryRepositoryInspection,
+): SafeRepositoryInspection {
+  return {
+    status: inspection.status,
+    requiredAction: inspection.requiredAction,
+    capabilities: inspection.capabilities,
+  };
+}
+
+function projectMigrationResult(
+  result: MigrateSaveHistoryRepositoryResult,
+  currentInspection: SaveHistoryRepositoryInspection,
+): SafeMigrationResult {
+  return { ...result, inspection: projectInspection(currentInspection) };
+}
+
+function formatInspection(
+  inspection: SafeRepositoryInspection,
+  repoPath: string,
+): string {
+  return [
+    "repository inspection",
+    `status: ${inspection.status}`,
+    `required action: ${inspection.requiredAction}`,
+    `capabilities: ${formatCapabilities(inspection.capabilities)}`,
+    `next: ${formatInspectionNext(inspection, repoPath)}`,
+    "",
+  ].join("\n");
+}
+
+function formatMigrationResult(
+  result: SafeMigrationResult,
+  repoPath: string,
+): string {
+  if (result.status === "migrated") {
+    return [
+      "repository migration complete",
+      "backup: created",
+      `status: ${result.inspection.status}`,
+      `next: silksong-git repo inspect --repo ${repoPath}`,
+      "",
+    ].join("\n");
+  }
+
+  return [
+    `repository migration ${result.status}`,
+    `reason: ${result.reason}`,
+    `status: ${result.inspection.status}`,
+    `next: ${formatMigrationNext(result, repoPath)}`,
+    "",
+  ].join("\n");
+}
+
+function formatCapabilities(capabilities: readonly string[]): string {
+  return capabilities.length === 0 ? "none" : capabilities.join(", ");
+}
+
+function formatInspectionNext(
+  inspection: SafeRepositoryInspection,
+  repoPath: string,
+): string {
+  switch (inspection.requiredAction) {
+    case "open": {
+      return "repository is ready";
+    }
+
+    case "rebuildReadModel": {
+      return `silksong-git history rebuild --repo ${repoPath}`;
+    }
+
+    case "confirmMigration": {
+      return `silksong-git repo migrate --repo ${repoPath} --confirm-migration`;
+    }
+
+    case "useNewerApp": {
+      return "update Silksong Git";
+    }
+
+    case "chooseAnotherDirectory": {
+      return "choose another repository";
+    }
+  }
+}
+
+function formatMigrationNext(
+  result: Exclude<SafeMigrationResult, { readonly status: "migrated" }>,
+  repoPath: string,
+): string {
+  if (
+    result.reason === "staleInspection"
+    && result.inspection.requiredAction === "confirmMigration"
+  ) {
+    return `silksong-git repo inspect --repo ${repoPath}`;
+  }
+
+  return formatInspectionNext(result.inspection, repoPath);
 }
 
 function requireOption(value: string | undefined, optionName: string): string {

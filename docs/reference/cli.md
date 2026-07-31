@@ -16,6 +16,8 @@ commands, SQLite tables, repository layout helpers, or internal handlers.
 
 ```txt
 silksong-git repo init --save <save.dat> --repo <history-repo> [--json]
+silksong-git repo inspect --repo <history-repo> [--json]
+silksong-git repo migrate --repo <history-repo> --confirm-migration [--json]
 
 silksong-git save decode <save.dat> [--compact] [--out <decoded-save.json>] [--schema-check]
 silksong-git save snapshot <save.dat> --json
@@ -46,8 +48,9 @@ in this order:
 An explicit `--repo` always wins. It must already identify a Save History
 Repository; an invalid path is not initialized automatically. Cwd discovery
 does not treat an unrelated Git repository as a Save History Repository.
-`repo init` is different because it creates the repository and therefore
-always requires an explicit `--repo`.
+The `repo` commands always require an explicit `--repo`: `repo init` creates a
+repository, while `repo inspect` and `repo migrate` deliberately do not use
+cwd repository discovery.
 
 One-shot history commands are Offline Commands: they call the public History
 Interface directly and do not require `watch start` to be running. History
@@ -73,6 +76,45 @@ the Watched Save or create an initial Raw Save Observation.
   existing directory must be empty.
 - `--json` writes the public initialization result as JSON to stdout. Without
   it, stdout contains a human-readable summary and checkpoint hint.
+
+### `repo inspect`
+
+```txt
+silksong-git repo inspect --repo <history-repo> [--json]
+```
+
+Inspects the explicit candidate through History without changing durable state.
+It reports History's runtime-validated status, required action, and safe
+capabilities. It never reveals Project Config, Git, SQLite, lock, or raw error
+details. `--json` writes those safe fields to stdout; the opaque inspection ID
+is intentionally not exposed by the CLI.
+
+Use this diagnostic command before choosing a recovery action. A missing or
+stale Semantic Read Model directs `history rebuild`; legacy and older durable
+formats direct `repo migrate`; newer incompatible repositories require a newer
+Silksong Git version. It exits successfully only when the repository is
+`ready`; every other reported status exits with repository-attention status 5
+after writing its safe inspection output.
+
+### `repo migrate`
+
+```txt
+silksong-git repo migrate --repo <history-repo> --confirm-migration [--json]
+```
+
+Confirms migration of an explicit legacy or older-format repository. The CLI
+obtains a fresh inspection ID from History and immediately consumes it in the
+same command invocation; inspection IDs cannot be transferred between CLI
+processes. `--confirm-migration` is required. History creates a recoverable
+Project Config backup before atomically recording the supported repository
+format and does not change Raw Save Observations.
+
+The command refuses migration when a rebuild is required, the repository is
+newer than this application, or the candidate is invalid, and prints the safe
+next action. After a successful migration, inspect the repository again; a
+derived read model may still need rebuilding. `--json` writes only the safe
+migration outcome plus status, required action, and capabilities, never the
+inspection ID or repository internals.
 
 ### `save decode`
 
@@ -237,14 +279,14 @@ shutdown guarantees, including known gaps, live in the
 
 ## Safety and Side Effects
 
-| Class                      | Commands and effects                                                                                                                                                  |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Read-only                  | `save decode`, `save snapshot`, `history list`, `history diff`, and `history search` only read inputs or repository state when used without a file-output option.     |
-| Explicit filesystem write  | `save decode --out` writes or replaces exactly the requested JSON path. `history restore --to` writes a new explicit target and refuses an existing path.             |
-| Repository creation        | `repo init` creates or initializes the explicit empty repository directory and writes Project Config; it does not observe the save.                                   |
-| Repository mutation        | `history checkpoint` may commit Git artifacts and update SQLite. `history rebuild` replaces only the rebuildable SQLite read model. Both use History's write lock.    |
-| Process start and mutation | `watch start` opens reader HTTP, then acquires watcher ownership and may continuously commit observations and update SQLite. `--http` only discloses connection data. |
-| High-risk in-place restore | `history restore --in-place --confirm-in-place` backs up, overwrites, and verifies the configured Watched Save under History's write lock.                            |
+| Class                      | Commands and effects                                                                                                                                                                                                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read-only                  | `repo inspect`, `save decode`, `save snapshot`, `history list`, `history diff`, and `history search` only read inputs or repository state when used without a file-output option.                                                                                                                 |
+| Explicit filesystem write  | `save decode --out` writes or replaces exactly the requested JSON path. `history restore --to` writes a new explicit target and refuses an existing path.                                                                                                                                         |
+| Repository creation        | `repo init` creates or initializes the explicit empty repository directory and writes Project Config; it does not observe the save.                                                                                                                                                               |
+| Repository mutation        | `repo migrate` atomically updates only confirmed compatible Project Config format metadata after creating a recoverable backup. `history checkpoint` may commit Git artifacts and update SQLite. `history rebuild` replaces only the rebuildable SQLite read model. All use History's write lock. |
+| Process start and mutation | `watch start` opens reader HTTP, then acquires watcher ownership and may continuously commit observations and update SQLite. `--http` only discloses connection data.                                                                                                                             |
+| High-risk in-place restore | `history restore --in-place --confirm-in-place` backs up, overwrites, and verifies the configured Watched Save under History's write lock.                                                                                                                                                        |
 
 Display Semantic Event Filters affect only list, diff, and search visibility;
 they never decide checkpoint or watcher commits and never delete events from
@@ -252,12 +294,12 @@ SQLite.
 
 ## Output Contracts
 
-| Mode                  | Contract                                                                                                                                                                         |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Human-readable text   | Default for most one-shot commands. Intended for interactive use; exact wording and layout are not a byte-stable automation contract.                                            |
-| `--json`              | One pretty-printed JSON value on stdout for supported commands, normally the corresponding public Interface result. `save snapshot` currently requires this mode.                |
-| Raw decode JSON       | `save decode` always emits the raw Decoded Save object, pretty by default or compact with `--compact`, either to stdout or `--out`. This raw shape is not a stable semantic API. |
-| `watch start --jsonl` | Compact JSON Lines on stdout. Events are adapter summaries, not copies of internal Repo Session objects.                                                                         |
+| Mode                  | Contract                                                                                                                                                                                                                                                                    |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Human-readable text   | Default for most one-shot commands. Intended for interactive use; exact wording and layout are not a byte-stable automation contract.                                                                                                                                       |
+| `--json`              | One pretty-printed JSON value on stdout for supported commands, normally the corresponding public Interface result. `repo inspect` and `repo migrate` project only their safe status, action, capability, and outcome fields. `save snapshot` currently requires this mode. |
+| Raw decode JSON       | `save decode` always emits the raw Decoded Save object, pretty by default or compact with `--compact`, either to stdout or `--out`. This raw shape is not a stable semantic API.                                                                                            |
+| `watch start --jsonl` | Compact JSON Lines on stdout. Events are adapter summaries, not copies of internal Repo Session objects.                                                                                                                                                                    |
 
 In JSONL mode, `started` includes repository, Watched Save, Capture Policy,
 and, only with `--http`, HTTP endpoint/token fields added by the CLI Adapter.
@@ -272,14 +314,14 @@ diagnostic stderr output.
 
 ## Errors and Exit Status
 
-| Exit | User-level meaning and current examples                                                                                                                                                                                                                                                                                                |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | Success, including a valid query with no matching events, an unchanged checkpoint skip, and clean watch shutdown. `save decode --schema-check` also exits successfully when decoding works but the schema is unrecognized.                                                                                                             |
-| `1`  | Usage, configuration, or general command failure: invalid/missing repository context; invalid search, pagination, target, or HTTP options; invalid commit refs; existing restore targets; restore backup/write/verification failures; invalid repo initialization; watch ownership/listener startup, fatal runtime, or output failure. |
-| `2`  | The Encoded Save could not be decoded by `save decode` or `save snapshot`, or the checkpoint candidate could not be read or decoded; no decoded/snapshot/checkpoint output is produced.                                                                                                                                                |
-| `3`  | `save snapshot` decoded the file but did not recognize its Save Schema Version. Stderr suggests `save decode` for raw inspection.                                                                                                                                                                                                      |
-| `4`  | A one-shot History mutation could not acquire the Save History Repository write lock.                                                                                                                                                                                                                                                  |
-| `5`  | A History command requires repository attention. A missing Semantic Read Model suggests `history rebuild`; a legacy or older durable format directs migration confirmation in Silksong Git Desktop; a newer format directs updating Silksong Git; and an invalid repository directs choosing another repository.                       |
+| Exit | User-level meaning and current examples                                                                                                                                                                                                                                                                                                 |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success, including a valid query with no matching events, an unchanged checkpoint skip, and clean watch shutdown. `save decode --schema-check` also exits successfully when decoding works but the schema is unrecognized.                                                                                                              |
+| `1`  | Usage, configuration, or general command failure: invalid/missing repository context; invalid search, pagination, target, or HTTP options; invalid commit refs; existing restore targets; restore backup/write/verification failures; invalid repo initialization; watch ownership/listener startup, fatal runtime, or output failure.  |
+| `2`  | The Encoded Save could not be decoded by `save decode` or `save snapshot`, or the checkpoint candidate could not be read or decoded; no decoded/snapshot/checkpoint output is produced.                                                                                                                                                 |
+| `3`  | `save snapshot` decoded the file but did not recognize its Save Schema Version. Stderr suggests `save decode` for raw inspection.                                                                                                                                                                                                       |
+| `4`  | A one-shot History mutation could not acquire the Save History Repository write lock.                                                                                                                                                                                                                                                   |
+| `5`  | A History command or non-ready `repo inspect` result requires repository attention. A missing Semantic Read Model suggests `history rebuild`; a legacy or older durable format directs `repo migrate --confirm-migration`; a newer format directs updating Silksong Git; and an invalid repository directs choosing another repository. |
 
 History commands normalize repository-context errors to exit 1. `watch start`
 currently lets a repository-context error reach the top-level process rather

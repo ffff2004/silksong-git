@@ -7,6 +7,8 @@ import path from "node:path";
 import type { TestContext } from "node:test";
 import test from "node:test";
 
+import { setRepositoryFormatVersionFixture } from "./repository-test-fixtures.ts";
+
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const cliEntryPoint = path.join(repoRoot, "apps/cli/dist/main.js");
 const fixtureDirectory = path.join(
@@ -248,6 +250,57 @@ async function createCliHistoryRepo(
     repoPath,
   };
 }
+
+test("repo migrate succeeds in one built CLI process", async (t) => {
+  const { repoPath } = await createCliHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(repoPath, undefined);
+
+  const result = await runBuiltCli([
+    "repo",
+    "migrate",
+    "--repo",
+    repoPath,
+    "--confirm-migration",
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  const migration = JSON.parse(result.stdout) as {
+    readonly status?: unknown;
+    readonly backupCreated?: unknown;
+    readonly inspection?: Record<string, unknown>;
+  };
+
+  assert.equal(migration.status, "migrated");
+  assert.equal(migration.backupCreated, true);
+  assert.equal(migration.inspection?.["status"], "ready");
+  assert.equal("inspectionId" in (migration.inspection ?? {}), false);
+});
+
+test("repo inspect reports safe JSON and repository attention in a built process", async (t) => {
+  const { repoPath } = await createCliHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(repoPath, 2);
+
+  const result = await runBuiltCli([
+    "repo",
+    "inspect",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 5);
+  assert.equal(result.stderr, "");
+  const inspection = JSON.parse(result.stdout) as Record<string, unknown>;
+
+  assert.deepEqual(inspection, {
+    status: "newerIncompatible",
+    requiredAction: "useNewerApp",
+    capabilities: [],
+  });
+  assert.equal("inspectionId" in inspection, false);
+});
 
 test(
   "watch start --jsonl emits JSON Lines and exits cleanly on SIGTERM",

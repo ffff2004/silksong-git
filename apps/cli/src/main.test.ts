@@ -5,6 +5,7 @@ import path from "node:path";
 import type { TestContext } from "node:test";
 import test from "node:test";
 
+import { setRepositoryFormatVersionFixture } from "./repository-test-fixtures.ts";
 import type { InProcessCliResult } from "./test-harness.ts";
 import { runCliInProcess } from "./test-harness.ts";
 
@@ -78,27 +79,6 @@ async function removeSemanticReadModelFixture(repo: CliHistoryRepoFixture) {
   // Fixture construction only: public CLI behavior deliberately offers no operation that corrupts
   // or removes a derived Semantic Read Model.
   await rm(path.join(repo.repoPath, ".silksong-git/read-model.sqlite"));
-}
-
-async function setRepositoryFormatVersionFixture(
-  repo: CliHistoryRepoFixture,
-  repositoryFormatVersion: number | undefined,
-) {
-  // Fixture construction only: the public migration Interface intentionally does not permit a test
-  // to manufacture another durable format.
-  const configPath = path.join(repo.repoPath, ".silksong-git/config.json");
-  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<
-    string,
-    unknown
-  >;
-
-  if (repositoryFormatVersion === undefined) {
-    delete config["repositoryFormatVersion"];
-  } else {
-    config["repositoryFormatVersion"] = repositoryFormatVersion;
-  }
-
-  await writeFile(configPath, `${JSON.stringify(config)}\n`);
 }
 
 async function removeManagedGitRepositoryFixture(repo: CliHistoryRepoFixture) {
@@ -197,6 +177,171 @@ test("repo init refuses a non-empty repository directory", async (t) => {
   assert.equal(result.exitCode, 1);
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /repository path must be empty/v);
+});
+
+test("repo inspect reports every safe compatibility status and exit code", async (t) => {
+  const readyRepo = await createCliHistoryRepo(t);
+  const rebuildRepo = await createCliHistoryRepo(t);
+  await removeSemanticReadModelFixture(rebuildRepo);
+  const legacyRepo = await createCliHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(legacyRepo.repoPath, undefined);
+  const migrationRepo = await createCliHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(migrationRepo.repoPath, 0);
+  const newerRepo = await createCliHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(newerRepo.repoPath, 2);
+  const invalidRepo = await createCliHistoryRepo(t);
+  await removeManagedGitRepositoryFixture(invalidRepo);
+
+  const cases = [
+    {
+      repoPath: readyRepo.repoPath,
+      exitCode: 0,
+      inspection: {
+        status: "ready",
+        requiredAction: "open",
+        capabilities: [
+          "read",
+          "observe",
+          "restore",
+          "rebuildReadModel",
+          "watch",
+        ],
+      },
+    },
+    {
+      repoPath: rebuildRepo.repoPath,
+      exitCode: 5,
+      inspection: {
+        status: "rebuildRequired",
+        requiredAction: "rebuildReadModel",
+        capabilities: ["rebuildReadModel"],
+      },
+    },
+    {
+      repoPath: legacyRepo.repoPath,
+      exitCode: 5,
+      inspection: {
+        status: "legacyConfig",
+        requiredAction: "confirmMigration",
+        capabilities: [],
+      },
+    },
+    {
+      repoPath: migrationRepo.repoPath,
+      exitCode: 5,
+      inspection: {
+        status: "migrationRequired",
+        requiredAction: "confirmMigration",
+        capabilities: [],
+      },
+    },
+    {
+      repoPath: newerRepo.repoPath,
+      exitCode: 5,
+      inspection: {
+        status: "newerIncompatible",
+        requiredAction: "useNewerApp",
+        capabilities: [],
+      },
+    },
+    {
+      repoPath: invalidRepo.repoPath,
+      exitCode: 5,
+      inspection: {
+        status: "invalid",
+        requiredAction: "chooseAnotherDirectory",
+        capabilities: [],
+      },
+    },
+  ] as const;
+
+  for (const { repoPath, exitCode, inspection: expectedInspection } of cases) {
+    const result = await runCli([
+      "repo",
+      "inspect",
+      "--repo",
+      repoPath,
+      "--json",
+    ]);
+
+    assert.equal(result.exitCode, exitCode);
+    assert.equal(result.stderr, "");
+    const inspection = parseStdoutJson(result) as Record<string, unknown>;
+
+    assert.deepEqual(inspection, expectedInspection);
+    assert.equal("inspectionId" in inspection, false);
+  }
+});
+
+test("repo migrate requires explicit confirmation", async (t) => {
+  const repo = await createCliHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(repo.repoPath, undefined);
+
+  const result = await runCli(["repo", "migrate", "--repo", repo.repoPath]);
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /migration requires --confirm-migration/v);
+});
+
+test("repo migrate performs inspection and migration in one command", async (t) => {
+  const repo = await createCliHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(repo.repoPath, undefined);
+
+  const result = await runCli([
+    "repo",
+    "migrate",
+    "--repo",
+    repo.repoPath,
+    "--confirm-migration",
+    "--json",
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  const migration = parseStdoutJson(result) as {
+    readonly status?: unknown;
+    readonly backupCreated?: unknown;
+    readonly inspection?: Record<string, unknown>;
+  };
+
+  assert.equal(migration.status, "migrated");
+  assert.equal(migration.backupCreated, true);
+  assert.deepEqual(migration.inspection, {
+    status: "ready",
+    requiredAction: "open",
+    capabilities: ["read", "observe", "restore", "rebuildReadModel", "watch"],
+  });
+  assert.equal("inspectionId" in (migration.inspection ?? {}), false);
+});
+
+test("repo migrate safely guides read-model rebuild and newer incompatible repositories", async (t) => {
+  const rebuildRepo = await createCliHistoryRepo(t);
+  await removeSemanticReadModelFixture(rebuildRepo);
+  const newerRepo = await createCliHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(newerRepo.repoPath, 2);
+
+  const rebuildResult = await runCli([
+    "repo",
+    "migrate",
+    "--repo",
+    rebuildRepo.repoPath,
+    "--confirm-migration",
+  ]);
+  const newerResult = await runCli([
+    "repo",
+    "migrate",
+    "--repo",
+    newerRepo.repoPath,
+    "--confirm-migration",
+  ]);
+
+  assert.equal(rebuildResult.exitCode, 5);
+  assert.match(rebuildResult.stdout, /migration rejected/v);
+  assert.match(rebuildResult.stdout, /history rebuild/v);
+  assert.equal(newerResult.exitCode, 5);
+  assert.match(newerResult.stdout, /migration rejected/v);
+  assert.match(newerResult.stdout, /update Silksong Git/v);
 });
 
 test("watch start validates HTTP option combinations and port syntax", async (t) => {
@@ -480,10 +625,13 @@ test("history list guides a required Semantic Read Model rebuild", async (t) => 
   assert.equal(result.stdout, "");
 });
 
-test("history list directs legacy and older repository formats to Desktop migration", async (t) => {
+test("history list directs legacy and older repository formats to CLI migration", async (t) => {
   for (const repositoryFormatVersion of [undefined, 0]) {
     const repo = await createCliHistoryRepo(t);
-    await setRepositoryFormatVersionFixture(repo, repositoryFormatVersion);
+    await setRepositoryFormatVersionFixture(
+      repo.repoPath,
+      repositoryFormatVersion,
+    );
 
     const result = await runCli([
       "history",
@@ -496,17 +644,14 @@ test("history list directs legacy and older repository formats to Desktop migrat
     assert.equal(result.exitCode, 5);
     assert.equal(result.stdout, "");
     assert.match(result.stderr, /repository migration is required/v);
-    assert.match(
-      result.stderr,
-      /open the repository in Silksong Git Desktop and confirm migration/v,
-    );
+    assert.match(result.stderr, /repo migrate --repo .* --confirm-migration/v);
     assert.doesNotMatch(result.stderr, /history rebuild/v);
   }
 });
 
 test("history list directs newer repository formats to update Silksong Git", async (t) => {
   const repo = await createCliHistoryRepo(t);
-  await setRepositoryFormatVersionFixture(repo, 2);
+  await setRepositoryFormatVersionFixture(repo.repoPath, 2);
 
   const result = await runCli([
     "history",
