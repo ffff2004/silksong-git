@@ -39,8 +39,6 @@ dependencies, claims, and execution state.
 
 Before implementation, start from the global frontier and follow the complete
 [issue tracker lifecycle](docs/agents/issue-tracker.md#implementation-lifecycle).
-Claim the ticket before implementation; the claim is the session's first tracker
-write.
 
 Do not rely on chat history for project state. Record changing delivery state
 in GitHub; commits, issues and pull requests own implementation and verification
@@ -103,7 +101,7 @@ Choose the right place for explanation:
 
 - Use the commit body to explain why this commit makes this change now.
 - Use an ADR for long-lived design decisions, trade-offs, rejected alternatives, or constraints future work must preserve.
-- Use a code comment for local, non-obvious implementation constraints near the code.
+- Use a code comment for local, non-obvious implementation constraints near the code (explain why, not what).
 
 When both an ADR and a commit body are needed, the ADR records the durable decision and the commit body explains how this commit applies it.
 
