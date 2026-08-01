@@ -26,3 +26,4 @@ rationale.
 - [ADR-0020 — Decouple Repo Session HTTP and watcher lifetimes](0020-decouple-repo-session-http-and-watcher-lifetimes.md)
 - [ADR-0021 — Bootstrap Desktop as a hardened shell around shared Web assets](0021-hardened-desktop-shell.md)
 - [ADR-0022 — Use a private versioned process Adapter for Desktop Repo Sessions](0022-use-a-private-versioned-desktop-sidecar.md)
+- [ADR-0023 — Use App-managed placement for read-only repository archives](0023-app-managed-read-only-archives.md)

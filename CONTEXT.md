@@ -101,6 +101,18 @@ _Avoid_: Effective config
 A local Git repository created for one watched save file. It stores Raw Save Observations made of Encoded Saves, Decoded Saves, and observation metadata for durable history and restore workflows.
 _Avoid_: Backup folder, cache
 
+**Managed Repository**:
+A Save History Repository that the Desktop App stores directly beneath its managed `repositories/` root. A compatible Managed Repository may use the App's mutable repository workflows. Duplicate Watched Save checks apply only among Managed Repositories, not archived or external repositories.
+_Avoid_: Active watcher, registry entry
+
+**Archived Repository**:
+An App-managed repository or repository snapshot stored directly beneath the managed `archives/` root. Archive placement is an App-only, read-only lifecycle classification, not a Project Config field, save-generation claim, or provenance record. The App may inspect, browse, diff, search, and export a compatible Archived Repository, but never watches, checkpoints, relinks, restores in place, migrates, or rebuilds it.
+_Avoid_: Deleted repository, inactive watcher, old save generation
+
+**Archive Snapshot**:
+A complete, verified copy of a Managed Repository made by the Desktop App before a confirmed durable repository migration. It becomes an Archived Repository and remains retained whether that migration succeeds or fails.
+_Avoid_: Git backup, config backup
+
 **Watched Save**:
 The single local `.dat` save file tracked by one Save History Repository.
 _Avoid_: Save slot, save group
