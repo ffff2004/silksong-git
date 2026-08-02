@@ -38,32 +38,28 @@ gh issue view <number> --comments \
 Fetch its parent, child summary, and dependency summary:
 
 ```sh
-gh api repos/ffff2004/silksong-git/issues/<number> \
-  --jq '{parent, sub_issues_summary, issue_dependencies_summary}'
+gh issue view <number> \
+  --json parent,subIssuesSummary,blockedBy,blocking
 ```
 
 List the ticket's blockers and children:
 
 ```sh
-gh api repos/ffff2004/silksong-git/issues/<number>/dependencies/blocked_by \
-  --jq '[.[] | {number, title, state}]'
-gh api repos/ffff2004/silksong-git/issues/<number>/sub_issues --paginate \
-  --jq '.[] | {number, title, state}'
+gh issue view <number> --json blockedBy \
+  --jq '.blockedBy[] | {number, title, state}'
+gh issue view <number> --json subIssues \
+  --jq '.subIssues[] | {number, title, state}'
 ```
 
-GitHub relationship writes use numeric database IDs, not issue numbers or
-`node_id` values. Read one with
-`gh api repos/ffff2004/silksong-git/issues/<number> --jq .id`, then:
+GitHub relationship writes use issue numbers (or issue URLs):
 
-- add a child with
-  `gh api --method POST repos/ffff2004/silksong-git/issues/<parent>/sub_issues -F sub_issue_id=<child-db-id>`;
-- add a blocker with
-  `gh api --method POST repos/ffff2004/silksong-git/issues/<ticket>/dependencies/blocked_by -F issue_id=<blocker-db-id>`; and
+- add a child with `gh issue edit <parent> --add-sub-issue <child>`;
+- add a blocker with `gh issue edit <ticket> --add-blocked-by <blocker>`; and
 - claim with
   `gh issue edit <number> --add-assignee @me`.
 
 Create related issues before wiring relationships so every edge can use a real
-tracker identity.
+issue number.
 
 ## Implementation lifecycle
 
