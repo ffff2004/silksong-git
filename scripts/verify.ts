@@ -236,7 +236,9 @@ async function main() {
 
   if (reporter === "agent") {
     console.log(`verify run: ${formatRelativePath(runDirectory)}`);
-    console.log(`status file: ${formatRelativePath(runPath)}. You can get run status, current step, exit code, step statuses, and log paths in it.`);
+    console.log(
+      `status file: ${formatRelativePath(runPath)}. You can get run status, current step, exit code, step statuses, and log paths in it.`,
+    );
   }
 
   const interruption: {

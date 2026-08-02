@@ -99,6 +99,9 @@ importers:
 
   apps/desktop-sidecar:
     dependencies:
+      '@silksong-git/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@silksong-git/history':
         specifier: workspace:*
         version: link:../../packages/history

@@ -1,10 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { render } from "solid-js/web";
 
 import { App } from "./app/App.tsx";
 import { createDesktopRuntimeCapabilities } from "./runtime-capabilities/desktop.ts";
 import type {
   OpenExternalRepositoryResult,
+  PickStaticEncodedSaveResult,
   RepoSessionConnection,
   RepositoryLibrary,
 } from "./runtime-capabilities/interface.ts";
@@ -23,6 +25,17 @@ const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
   openExternalRepository: async () =>
     await invoke<OpenExternalRepositoryResult>(
       "desktop_open_external_repository",
+    ),
+  pickStaticEncodedSave: async () =>
+    await invoke<PickStaticEncodedSaveResult>(
+      "desktop_pick_static_encoded_save",
+    ),
+  onStaticEncodedSavePicked: async (listener) =>
+    await listen<PickStaticEncodedSaveResult>(
+      "desktop://static-save-picked",
+      (event) => {
+        listener(event.payload);
+      },
     ),
   closeRepository: async () => {
     await invoke("desktop_close_repository");

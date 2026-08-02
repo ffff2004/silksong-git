@@ -135,6 +135,15 @@ Unrecognized uploaded schemas currently surface as an invalid/corrupted-file
 failure in this UI flow; preserving an Unrecognized Schema Observation is a
 History responsibility and therefore does not apply in Static Web Mode.
 
+Desktop does not render the Browser upload control. Its File menu and
+repository landing page instead invoke one native Encoded Save picker. The
+Desktop capability returns only a safe picker outcome and, on success, decoded
+JSON; the shared Save Store performs the normal parse, mapping, and Snapshot
+construction. Only after that succeeds does Desktop disconnect the Web Local
+History client and replace the displayed source with `static`. It does not
+close the Rust-owned Repo Session. Conversely, opening a repository clears the
+Static Save before Local History loading begins.
+
 ## Local History Web Mode
 
 The Desktop user enters Local History Web Mode through the Topbar Open Local

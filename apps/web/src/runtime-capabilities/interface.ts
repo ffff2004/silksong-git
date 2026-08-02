@@ -44,6 +44,14 @@ export type OpenExternalRepositoryResult =
         | "rebuildRequired";
     };
 
+export type PickStaticEncodedSaveResult =
+  | { readonly kind: "cancelled" }
+  | { readonly decodedSave: unknown; readonly kind: "loaded" }
+  | { readonly kind: "invalidFile" }
+  | { readonly kind: "decodeFailed" }
+  /** Safe native picker or sidecar failure reported by the File menu event. */
+  | { readonly kind: "failed"; readonly message: string };
+
 export type RuntimeCapabilities =
   | { readonly kind: "browser" }
   | {
@@ -58,6 +66,12 @@ export type RuntimeCapabilities =
         readonly name: string;
       }) => Promise<OpenExternalRepositoryResult>;
       readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
+      /** Opens the native Encoded Save picker without exposing filesystem authority. */
+      readonly pickStaticEncodedSave: () => Promise<PickStaticEncodedSaveResult>;
+      /** Receives the outcome of the native File menu's equivalent picker action. */
+      readonly onStaticEncodedSavePicked?: (
+        listener: (result: PickStaticEncodedSaveResult) => void,
+      ) => Promise<() => void>;
       /** Reopens only an explicitly invalidated in-memory Desktop selection. */
       readonly reopenRepository?: () => Promise<OpenExternalRepositoryResult>;
       readonly startWatching: () => Promise<void>;

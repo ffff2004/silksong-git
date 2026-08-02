@@ -11,6 +11,7 @@ import { WatcherRoute } from "../features/watcher/WatcherView.tsx";
 import type { RuntimeCapabilities } from "../runtime-capabilities/interface.ts";
 import { LocalHistoryProvider } from "../state/local-history-store.tsx";
 import { PreferencesProvider } from "../state/preferences-store.tsx";
+import { RuntimeCapabilitiesProvider } from "../state/runtime-capabilities.tsx";
 import { SaveProvider } from "../state/save-store.tsx";
 import { ToastProvider } from "../state/toast-store.tsx";
 import { AppShell } from "./AppShell.tsx";
@@ -19,56 +20,62 @@ export function App(props: {
   readonly runtimeCapabilities: RuntimeCapabilities;
 }) {
   return (
-    <ToastProvider>
-      <PreferencesProvider>
-        <SaveProvider>
-          <LocalHistoryProvider runtimeCapabilities={props.runtimeCapabilities}>
-            <HashRouter root={AppShell}>
-              <Route
-                path="/"
-                component={() =>
-                  props.runtimeCapabilities.kind === "desktop" ? (
-                    <RepositoryLibraryView />
-                  ) : (
+    <RuntimeCapabilitiesProvider
+      runtimeCapabilities={props.runtimeCapabilities}
+    >
+      <ToastProvider>
+        <PreferencesProvider>
+          <SaveProvider>
+            <LocalHistoryProvider
+              runtimeCapabilities={props.runtimeCapabilities}
+            >
+              <HashRouter root={AppShell}>
+                <Route
+                  path="/"
+                  component={() =>
+                    props.runtimeCapabilities.kind === "desktop" ? (
+                      <RepositoryLibraryView />
+                    ) : (
+                      <CurrentSaveRoute>
+                        <ProgressView />
+                      </CurrentSaveRoute>
+                    )
+                  }
+                />
+                <Route path="/repositories" component={RepositoryLibraryView} />
+                <Route
+                  path="/progress"
+                  component={() => (
                     <CurrentSaveRoute>
                       <ProgressView />
                     </CurrentSaveRoute>
-                  )
-                }
-              />
-              <Route path="/repositories" component={RepositoryLibraryView} />
-              <Route
-                path="/progress"
-                component={() => (
-                  <CurrentSaveRoute>
-                    <ProgressView />
-                  </CurrentSaveRoute>
-                )}
-              />
-              <Route
-                path="/map"
-                component={() => (
-                  <CurrentSaveRoute>
-                    <MapView />
-                  </CurrentSaveRoute>
-                )}
-              />
-              <Route
-                path="/raw-save"
-                component={() => (
-                  <CurrentSaveRoute>
-                    <RawSaveView />
-                  </CurrentSaveRoute>
-                )}
-              />
-              <Route path="/history" component={HistoryRoute} />
-              <Route path="/diff" component={DiffRoute} />
-              <Route path="/watcher" component={WatcherRoute} />
-              <Route path="*404" component={ProgressView} />
-            </HashRouter>
-          </LocalHistoryProvider>
-        </SaveProvider>
-      </PreferencesProvider>
-    </ToastProvider>
+                  )}
+                />
+                <Route
+                  path="/map"
+                  component={() => (
+                    <CurrentSaveRoute>
+                      <MapView />
+                    </CurrentSaveRoute>
+                  )}
+                />
+                <Route
+                  path="/raw-save"
+                  component={() => (
+                    <CurrentSaveRoute>
+                      <RawSaveView />
+                    </CurrentSaveRoute>
+                  )}
+                />
+                <Route path="/history" component={HistoryRoute} />
+                <Route path="/diff" component={DiffRoute} />
+                <Route path="/watcher" component={WatcherRoute} />
+                <Route path="*404" component={ProgressView} />
+              </HashRouter>
+            </LocalHistoryProvider>
+          </SaveProvider>
+        </PreferencesProvider>
+      </ToastProvider>
+    </RuntimeCapabilitiesProvider>
   );
 }

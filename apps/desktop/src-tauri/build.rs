@@ -3,6 +3,7 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "desktop_get_repo_session_connection",
             "desktop_open_external_repository",
+            "desktop_pick_static_encoded_save",
             "desktop_reopen_repository",
             "desktop_start_watching",
             "desktop_stop_watching",

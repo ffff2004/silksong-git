@@ -7,7 +7,10 @@ import type { JSX } from "solid-js";
 import { createContext, createMemo, createSignal, useContext } from "solid-js";
 
 import type { SaveMode } from "../features/current-save/load-current-save.ts";
-import { loadCurrentSave } from "../features/current-save/load-current-save.ts";
+import {
+  loadCurrentSave,
+  loadDecodedSave,
+} from "../features/current-save/load-current-save.ts";
 
 interface SaveStore {
   readonly decodedSave: () => unknown;
@@ -18,6 +21,7 @@ interface SaveStore {
     state: LocalHttpSaveState,
     source?: Extract<DisplayedSaveSource, { readonly kind: "localCommit" }>,
   ) => void;
+  readonly loadDecodedSave: (decodedSave: unknown) => LoadFileResult;
   readonly mode: () => SaveMode;
   readonly semanticItem: (itemId: string) => SemanticSnapshotItem | undefined;
   readonly snapshot: () => SemanticSnapshot | undefined;
@@ -96,6 +100,20 @@ export function SaveProvider(props: { readonly children: JSX.Element }) {
           : "normal",
       );
       setSource(localSource ?? { kind: "localLatest" });
+    },
+    loadDecodedSave(decoded) {
+      try {
+        const loadedSave = loadDecodedSave(decoded);
+        setDecodedSave(() => loadedSave.decodedSave);
+        setSnapshot(loadedSave.snapshot);
+        setSemanticItemsById(loadedSave.semanticItemsById);
+        setMode(loadedSave.mode);
+        setSource({ kind: "static" });
+        return { ok: true };
+      } catch (error) {
+        console.error("[save] Parse error:", error);
+        return { message: "Error processing save file.", ok: false };
+      }
     },
     mode,
     semanticItem: (itemId) => semanticItemsById().get(itemId),

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const desktopSidecarProtocolVersion = 3 as const;
+export const desktopSidecarProtocolVersion = 4 as const;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -65,6 +65,13 @@ export const repositoryRebuildCommandSchema = z
   .object({
     type: z.literal("repository.rebuild"),
     repoPath: z.string().min(1).max(4096),
+  })
+  .strict();
+
+export const saveInspectCommandSchema = z
+  .object({
+    type: z.literal("save.inspect"),
+    savePath: z.string().min(1).max(4096),
   })
   .strict();
 
@@ -163,6 +170,14 @@ const repositoryMigrationResultSchema = z.discriminatedUnion("status", [
 ]);
 
 const successResultSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("save.inspected"),
+      decodedSave: z.unknown(),
+    })
+    .strict(),
+  z.object({ type: z.literal("save.invalidFile") }).strict(),
+  z.object({ type: z.literal("save.decodeFailed") }).strict(),
   z
     .object({
       type: z.literal("session.opened"),
@@ -319,7 +334,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 3;
+    readonly protocolVersion: 4;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },

@@ -88,7 +88,14 @@ export function LocalHistoryProvider(props: {
   });
   let setWatcherStatus: Setter<LocalHttpWatcherStatus | undefined> | undefined;
   let setLatestSaveState: Setter<LocalHttpSaveState | undefined> | undefined;
+  // Each connection attempt owns one generation. A disconnect (including a successful Static Save
+  // selection) invalidates every unfinished attempt before its native or HTTP work can publish a
+  // Local History session.
+  let connectionGeneration = 0;
+  const isCurrentConnectionGeneration = (generation: number) =>
+    connectionGeneration === generation;
   const discardSession = () => {
+    connectionGeneration++;
     setLatestSaveState = undefined;
     setWatcherStatus = undefined;
     setConnection({ kind: "disconnected" });
@@ -116,6 +123,10 @@ export function LocalHistoryProvider(props: {
       discardSession();
     },
     async connect() {
+      connectionGeneration++;
+      const generation = connectionGeneration;
+      setLatestSaveState = undefined;
+      setWatcherStatus = undefined;
       setConnection({ kind: "connecting" });
 
       try {
@@ -124,8 +135,14 @@ export function LocalHistoryProvider(props: {
         }
         const input =
           await props.runtimeCapabilities.getRepoSessionConnection();
+        if (!isCurrentConnectionGeneration(generation)) {
+          return false;
+        }
         const client = createLocalHistoryClient(input);
         const initialWatcherStatus = await client.getWatcher();
+        if (!isCurrentConnectionGeneration(generation)) {
+          return false;
+        }
         const [watcherStatus, setNextWatcherStatus] = createSignal<
           LocalHttpWatcherStatus | undefined
         >(initialWatcherStatus);
@@ -149,6 +166,9 @@ export function LocalHistoryProvider(props: {
 
         return true;
       } catch (error) {
+        if (!isCurrentConnectionGeneration(generation)) {
+          return false;
+        }
         const clientError = toLocalHistoryClientError(
           error,
           "Local History connection failed.",

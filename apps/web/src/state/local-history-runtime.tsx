@@ -62,7 +62,9 @@ export function LocalHistoryRuntime() {
 
     if (connection.kind === "disconnected" && hadLocalSession) {
       hadLocalSession = false;
-      saveStore.clear();
+      if (saveStore.source().kind.startsWith("local")) {
+        saveStore.clear();
+      }
       navigate("/progress");
     }
   });

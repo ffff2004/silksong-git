@@ -24,6 +24,8 @@ export const desktopTestRuntimeCapabilities = createDesktopRuntimeCapabilities({
     access: "readWrite",
   }),
   openExternalRepository: async () => await Promise.resolve({ kind: "opened" }),
+  pickStaticEncodedSave: async () =>
+    await Promise.resolve({ kind: "cancelled" }),
   closeRepository: async () => {
     await Promise.resolve();
   },

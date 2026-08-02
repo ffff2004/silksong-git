@@ -9,8 +9,10 @@
     "allow-desktop-open-library-entry",
     "allow-desktop-close-repository",
     "allow-desktop-open-external-repository",
+    "allow-desktop-pick-static-encoded-save",
     "allow-desktop-reopen-repository",
     "allow-desktop-start-watching",
-    "allow-desktop-stop-watching"
+    "allow-desktop-stop-watching",
+    "core:event:default"
   ]
 }

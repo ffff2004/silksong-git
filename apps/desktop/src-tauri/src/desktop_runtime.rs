@@ -17,7 +17,9 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_dialog::DialogExt;
 
-const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 3;
+use crate::save_location::{SaveLocationPlatform, SaveLocationSystem, initial_directory};
+
+const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 4;
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
 const BUNDLED_SIDECAR_NAME: &str = "silksong-git-desktop-sidecar";
 
@@ -117,7 +119,7 @@ pub struct RepoSessionConnection {
     pub access: String,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum OpenExternalRepositoryResult {
     Cancelled,
@@ -128,6 +130,17 @@ pub enum OpenExternalRepositoryResult {
     },
     BlockedByMutation,
     Busy,
+}
+
+/// A path-free result for Desktop Static Save inspection.
+#[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum PickStaticEncodedSaveResult {
+    Cancelled,
+    DecodeFailed,
+    Failed { message: String },
+    InvalidFile,
+    Loaded { decoded_save: Value },
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -553,6 +566,90 @@ pub async fn desktop_open_external_repository(
     result
 }
 
+/// Opens one native file picker for an Encoded Save. The WebView receives only
+/// a decoded JSON value after both Rust and the Core-owning sidecar validate it.
+#[tauri::command]
+pub async fn desktop_pick_static_encoded_save(
+    app: AppHandle,
+) -> Result<PickStaticEncodedSaveResult, String> {
+    inspect_static_encoded_save(&app).map_err(|error| error.user_message())
+}
+
+pub(crate) fn inspect_static_encoded_save<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<PickStaticEncodedSaveResult, DesktopRuntimeError> {
+    inspect_static_encoded_save_with_adapters(
+        current_save_location_platform(),
+        &EnvironmentSaveLocationSystem,
+        &TauriStaticSavePicker { app },
+        &NativeStaticSaveFileSystem,
+        &SidecarStaticSaveInspector { app },
+    )
+}
+
+/// Menu events cannot return an IPC rejection, so convert every native failure
+/// into the same path-free, user-visible outcome the command would expose.
+pub(crate) fn menu_static_save_result(
+    result: Result<PickStaticEncodedSaveResult, DesktopRuntimeError>,
+) -> PickStaticEncodedSaveResult {
+    match result {
+        Ok(result) => result,
+        Err(error) => PickStaticEncodedSaveResult::Failed {
+            message: error.user_message(),
+        },
+    }
+}
+
+trait StaticSavePicker {
+    /// The `.dat` filter is presentation-only: this picker intentionally lets
+    /// the user navigate anywhere and choose a file with any suffix.
+    fn pick_file(&self, initial_directory: &Path) -> Result<Option<PathBuf>, DesktopRuntimeError>;
+}
+
+trait StaticSaveFileSystem {
+    /// Returns a canonical, readable regular file, never a directory or other
+    /// filesystem object.
+    fn readable_regular_file(&self, selected_path: &Path) -> Result<PathBuf, DesktopRuntimeError>;
+}
+
+trait StaticSaveInspector {
+    fn inspect(&self, selected_path: &Path) -> Result<StaticSaveInspection, DesktopRuntimeError>;
+}
+
+enum StaticSaveInspection {
+    DecodeFailed,
+    InvalidFile,
+    Loaded(Value),
+}
+
+fn inspect_static_encoded_save_with_adapters(
+    platform: SaveLocationPlatform,
+    location_system: &impl SaveLocationSystem,
+    picker: &impl StaticSavePicker,
+    file_system: &impl StaticSaveFileSystem,
+    inspector: &impl StaticSaveInspector,
+) -> Result<PickStaticEncodedSaveResult, DesktopRuntimeError> {
+    let initial_directory = initial_directory(platform, location_system);
+    let Some(selected_path) = picker.pick_file(&initial_directory)? else {
+        return Ok(PickStaticEncodedSaveResult::Cancelled);
+    };
+    let selected_path = match file_system.readable_regular_file(&selected_path) {
+        Ok(path) => path,
+        Err(DesktopRuntimeError::InvalidSaveFile) => {
+            return Ok(PickStaticEncodedSaveResult::InvalidFile);
+        }
+        Err(error) => return Err(error),
+    };
+
+    match inspector.inspect(&selected_path)? {
+        StaticSaveInspection::Loaded(decoded_save) => {
+            Ok(PickStaticEncodedSaveResult::Loaded { decoded_save })
+        }
+        StaticSaveInspection::InvalidFile => Ok(PickStaticEncodedSaveResult::InvalidFile),
+        StaticSaveInspection::DecodeFailed => Ok(PickStaticEncodedSaveResult::DecodeFailed),
+    }
+}
+
 #[tauri::command]
 pub fn desktop_get_repository_library(
     app: AppHandle,
@@ -635,6 +732,112 @@ fn canonicalize_repository_path(path: &Path) -> Result<PathBuf, DesktopRuntimeEr
     }
 
     Ok(canonical)
+}
+
+fn canonicalize_readable_regular_file(path: &Path) -> Result<PathBuf, DesktopRuntimeError> {
+    let canonical = fs::canonicalize(path).map_err(|_| DesktopRuntimeError::InvalidSaveFile)?;
+    let metadata = fs::metadata(&canonical).map_err(|_| DesktopRuntimeError::InvalidSaveFile)?;
+    if !metadata.is_file() || fs::File::open(&canonical).is_err() {
+        return Err(DesktopRuntimeError::InvalidSaveFile);
+    }
+
+    Ok(canonical)
+}
+
+struct TauriStaticSavePicker<'app, R: Runtime> {
+    app: &'app AppHandle<R>,
+}
+
+impl<R: Runtime> StaticSavePicker for TauriStaticSavePicker<'_, R> {
+    fn pick_file(&self, initial_directory: &Path) -> Result<Option<PathBuf>, DesktopRuntimeError> {
+        let selected = self
+            .app
+            .dialog()
+            .file()
+            .set_title("Inspect local Silksong save")
+            .add_filter("Silksong save", &["dat"])
+            .set_directory(initial_directory)
+            .blocking_pick_file();
+        selected
+            .map(|file| {
+                file.into_path()
+                    .map_err(|_| DesktopRuntimeError::InvalidSaveFile)
+            })
+            .transpose()
+    }
+}
+
+struct NativeStaticSaveFileSystem;
+
+impl StaticSaveFileSystem for NativeStaticSaveFileSystem {
+    fn readable_regular_file(&self, selected_path: &Path) -> Result<PathBuf, DesktopRuntimeError> {
+        canonicalize_readable_regular_file(selected_path)
+    }
+}
+
+struct SidecarStaticSaveInspector<'app, R: Runtime> {
+    app: &'app AppHandle<R>,
+}
+
+impl<R: Runtime> StaticSaveInspector for SidecarStaticSaveInspector<'_, R> {
+    fn inspect(&self, selected_path: &Path) -> Result<StaticSaveInspection, DesktopRuntimeError> {
+        let save_path = repository_path_for_protocol(selected_path)?;
+        let mut inspector = SidecarSupervisor::spawn(SidecarLaunch::for_app(self.app)?)?;
+        let response = inspector.command(json!({
+            "type": "save.inspect",
+            "savePath": save_path,
+        }));
+        let shutdown = inspector.shutdown();
+        let response = response.map_err(DesktopRuntimeError::from)?;
+        shutdown?;
+
+        match response.pointer("/result/type").and_then(Value::as_str) {
+            Some("save.inspected") => response
+                .pointer("/result/decodedSave")
+                .cloned()
+                .map(StaticSaveInspection::Loaded)
+                .ok_or_else(|| {
+                    DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid save inspection.".into(),
+                    )
+                }),
+            Some("save.invalidFile") => Ok(StaticSaveInspection::InvalidFile),
+            Some("save.decodeFailed") => Ok(StaticSaveInspection::DecodeFailed),
+            _ => Err(DesktopRuntimeError::Protocol(
+                "The Desktop sidecar returned an invalid save inspection.".into(),
+            )),
+        }
+    }
+}
+
+struct EnvironmentSaveLocationSystem;
+
+impl SaveLocationSystem for EnvironmentSaveLocationSystem {
+    fn environment(&self, variable: &str) -> Option<PathBuf> {
+        env::var_os(variable).map(PathBuf::from)
+    }
+
+    fn home_directory(&self) -> PathBuf {
+        self.environment("HOME")
+            .or_else(|| self.environment("USERPROFILE"))
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    fn is_existing_directory(&self, path: &Path) -> bool {
+        path.is_dir()
+    }
+}
+
+fn current_save_location_platform() -> SaveLocationPlatform {
+    if cfg!(target_os = "windows") {
+        SaveLocationPlatform::Windows
+    } else if cfg!(target_os = "macos") {
+        SaveLocationPlatform::Macos
+    } else if cfg!(target_os = "linux") {
+        SaveLocationPlatform::Linux
+    } else {
+        SaveLocationPlatform::Other
+    }
 }
 
 fn managed_root<R: Runtime>(
@@ -1254,6 +1457,7 @@ pub(crate) enum DesktopRuntimeError {
     BundledSidecarUnavailable,
     DevelopmentSidecarUnavailable,
     InvalidDirectory,
+    InvalidSaveFile,
     Invalidated,
     NoOpenSession,
     Protocol(String),
@@ -1278,6 +1482,7 @@ impl DesktopRuntimeError {
                     .into()
             }
             Self::InvalidDirectory => "Choose an existing repository directory.".into(),
+            Self::InvalidSaveFile => "Choose an existing readable save file.".into(),
             Self::Invalidated => "The Desktop Local History connection stopped unexpectedly. Reopen the selected repository to continue browsing.".into(),
             Self::NoOpenSession => "Open a repository before using Local History controls.".into(),
             Self::Protocol(reason) => {
@@ -1313,6 +1518,7 @@ type DesktopRuntime = DesktopWorkflow;
 #[cfg(test)]
 mod tests {
     use std::{
+        cell::RefCell,
         fs,
         path::{Path, PathBuf},
         sync::atomic::{AtomicUsize, Ordering},
@@ -1321,11 +1527,217 @@ mod tests {
     };
 
     use super::{
-        DesktopRuntime, DesktopRuntimeError, OpenExternalRepositoryResult, RepositoryLifecycle,
-        SidecarLaunch, canonicalize_repository_path, natural_name_cmp,
+        DesktopRuntime, DesktopRuntimeError, OpenExternalRepositoryResult,
+        PickStaticEncodedSaveResult, RepositoryLifecycle, SaveLocationPlatform, SaveLocationSystem,
+        SidecarLaunch, StaticSaveFileSystem, StaticSaveInspection, StaticSaveInspector,
+        StaticSavePicker, canonicalize_repository_path, inspect_static_encoded_save_with_adapters,
+        menu_static_save_result, natural_name_cmp,
     };
 
     static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+
+    struct FakeSaveLocationSystem;
+
+    impl SaveLocationSystem for FakeSaveLocationSystem {
+        fn environment(&self, _variable: &str) -> Option<PathBuf> {
+            None
+        }
+
+        fn home_directory(&self) -> PathBuf {
+            PathBuf::from("/home/player")
+        }
+
+        fn is_existing_directory(&self, _path: &Path) -> bool {
+            false
+        }
+    }
+
+    struct FakeStaticSavePicker {
+        selected: Option<PathBuf>,
+        initial_directory: RefCell<Option<PathBuf>>,
+    }
+
+    impl StaticSavePicker for FakeStaticSavePicker {
+        fn pick_file(
+            &self,
+            initial_directory: &Path,
+        ) -> Result<Option<PathBuf>, DesktopRuntimeError> {
+            self.initial_directory
+                .replace(Some(initial_directory.to_path_buf()));
+            Ok(self.selected.clone())
+        }
+    }
+
+    enum FakeFileResult {
+        Invalid,
+        Valid(PathBuf),
+    }
+
+    struct FakeStaticSaveFileSystem {
+        result: FakeFileResult,
+    }
+
+    impl StaticSaveFileSystem for FakeStaticSaveFileSystem {
+        fn readable_regular_file(
+            &self,
+            _selected_path: &Path,
+        ) -> Result<PathBuf, DesktopRuntimeError> {
+            match &self.result {
+                FakeFileResult::Invalid => Err(DesktopRuntimeError::InvalidSaveFile),
+                FakeFileResult::Valid(path) => Ok(path.clone()),
+            }
+        }
+    }
+
+    struct FakeStaticSaveInspector {
+        result: StaticSaveInspection,
+        inspected_paths: RefCell<Vec<PathBuf>>,
+    }
+
+    impl StaticSaveInspector for FakeStaticSaveInspector {
+        fn inspect(
+            &self,
+            selected_path: &Path,
+        ) -> Result<StaticSaveInspection, DesktopRuntimeError> {
+            self.inspected_paths
+                .borrow_mut()
+                .push(selected_path.to_path_buf());
+            match &self.result {
+                StaticSaveInspection::DecodeFailed => Ok(StaticSaveInspection::DecodeFailed),
+                StaticSaveInspection::InvalidFile => Ok(StaticSaveInspection::InvalidFile),
+                StaticSaveInspection::Loaded(value) => {
+                    Ok(StaticSaveInspection::Loaded(value.clone()))
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn static_save_adapters_allow_custom_navigation_and_valid_non_dat_files() {
+        let custom_path = PathBuf::from("/a/custom/location/save-without-a-dat-suffix");
+        let picker = FakeStaticSavePicker {
+            selected: Some(custom_path.clone()),
+            initial_directory: RefCell::new(None),
+        };
+        let inspector = FakeStaticSaveInspector {
+            result: StaticSaveInspection::Loaded(serde_json::json!({ "player": "Hornet" })),
+            inspected_paths: RefCell::new(Vec::new()),
+        };
+
+        let result = inspect_static_encoded_save_with_adapters(
+            SaveLocationPlatform::Other,
+            &FakeSaveLocationSystem,
+            &picker,
+            &FakeStaticSaveFileSystem {
+                result: FakeFileResult::Valid(custom_path.clone()),
+            },
+            &inspector,
+        )
+        .expect("custom selection can be inspected");
+
+        assert_eq!(
+            picker.initial_directory.into_inner(),
+            Some(PathBuf::from("/home/player"))
+        );
+        assert!(matches!(
+            result,
+            PickStaticEncodedSaveResult::Loaded { decoded_save }
+                if decoded_save == serde_json::json!({ "player": "Hornet" })
+        ));
+        assert_eq!(inspector.inspected_paths.into_inner(), vec![custom_path]);
+    }
+
+    #[test]
+    fn static_save_adapters_reject_missing_non_regular_and_unreadable_files() {
+        for selected_path in [
+            "/custom/missing.dat",
+            "/custom/directory.dat",
+            "/custom/unreadable.dat",
+            "/custom/socket.dat",
+        ] {
+            let picker = FakeStaticSavePicker {
+                selected: Some(PathBuf::from(selected_path)),
+                initial_directory: RefCell::new(None),
+            };
+            let inspector = FakeStaticSaveInspector {
+                result: StaticSaveInspection::Loaded(serde_json::json!({})),
+                inspected_paths: RefCell::new(Vec::new()),
+            };
+
+            let result = inspect_static_encoded_save_with_adapters(
+                SaveLocationPlatform::Other,
+                &FakeSaveLocationSystem,
+                &picker,
+                &FakeStaticSaveFileSystem {
+                    result: FakeFileResult::Invalid,
+                },
+                &inspector,
+            )
+            .expect("invalid selections are safe picker outcomes");
+
+            assert!(matches!(result, PickStaticEncodedSaveResult::InvalidFile));
+            assert!(inspector.inspected_paths.into_inner().is_empty());
+        }
+    }
+
+    #[test]
+    fn static_save_adapters_preserve_cancellation_and_decode_failure_outcomes() {
+        let cancelled_picker = FakeStaticSavePicker {
+            selected: None,
+            initial_directory: RefCell::new(None),
+        };
+        let inspector = FakeStaticSaveInspector {
+            result: StaticSaveInspection::DecodeFailed,
+            inspected_paths: RefCell::new(Vec::new()),
+        };
+        let cancelled = inspect_static_encoded_save_with_adapters(
+            SaveLocationPlatform::Other,
+            &FakeSaveLocationSystem,
+            &cancelled_picker,
+            &FakeStaticSaveFileSystem {
+                result: FakeFileResult::Valid(PathBuf::from("/unused")),
+            },
+            &inspector,
+        )
+        .expect("cancellation is a safe picker outcome");
+        assert!(matches!(cancelled, PickStaticEncodedSaveResult::Cancelled));
+        assert!(inspector.inspected_paths.into_inner().is_empty());
+
+        let selected_path = PathBuf::from("/custom/save.dat");
+        let picker = FakeStaticSavePicker {
+            selected: Some(selected_path.clone()),
+            initial_directory: RefCell::new(None),
+        };
+        let inspector = FakeStaticSaveInspector {
+            result: StaticSaveInspection::DecodeFailed,
+            inspected_paths: RefCell::new(Vec::new()),
+        };
+        let decode_failed = inspect_static_encoded_save_with_adapters(
+            SaveLocationPlatform::Other,
+            &FakeSaveLocationSystem,
+            &picker,
+            &FakeStaticSaveFileSystem {
+                result: FakeFileResult::Valid(selected_path),
+            },
+            &inspector,
+        )
+        .expect("decode errors are safe picker outcomes");
+        assert!(matches!(
+            decode_failed,
+            PickStaticEncodedSaveResult::DecodeFailed
+        ));
+    }
+
+    #[test]
+    fn menu_static_save_failures_become_visible_path_free_events() {
+        let result = menu_static_save_result(Err(DesktopRuntimeError::SidecarUnavailable));
+
+        assert!(matches!(
+            result,
+            PickStaticEncodedSaveResult::Failed { message }
+                if message == "The Desktop Local History service is unavailable. Close and reopen the app, then try again."
+        ));
+    }
 
     #[test]
     fn canonicalizes_only_existing_directories() {
@@ -1805,7 +2217,7 @@ if (process.argv.includes(repository)) {{
   process.exitCode = 91;
   process.exit();
 }}
-process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -1824,14 +2236,14 @@ process.stdin.on("data", (chunk) => {{
       result = {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
     }} else if (request.command.type === "process.shutdown") {{
       result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }} else {{
       result = {{ type: request.command.type === "watcher.start" ? "watcher.started" : "watcher.stopped" }};
     }}
-    process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+    process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
     if (request.command.type === "session.open" && {status:?} === "mutation") {{
-      process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
     }}
   }}
 }});
@@ -1844,7 +2256,7 @@ process.stdin.on("data", (chunk) => {{
         format!(
             r#"
 const repository = {repository};
-process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -1856,7 +2268,7 @@ process.stdin.on("data", (chunk) => {{
     ? {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }}
     : {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
   if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) throw new Error("wrong repository");
-  process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
   if (request.command.type === "session.open") process.exit(1);
 }});
 "#
@@ -1868,7 +2280,7 @@ process.stdin.on("data", (chunk) => {{
         format!(
             r#"
 const repository = {repository};
-process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -1886,7 +2298,7 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) {{
       throw new Error("repository path was not sent over stdin");
     }}
-    process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+    process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
   }}
 }});
 "#
@@ -1901,7 +2313,7 @@ process.stdin.on("data", (chunk) => {{
 import fs from "node:fs";
 const repository = {repository};
 const marker = {marker};
-process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -1913,7 +2325,7 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "repository.inspect") {{
       if (request.command.repoPath !== repository) throw new Error("repository path was not sent over stdin");
       const result = {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       continue;
     }}
     if (request.command.type === "session.open") {{
@@ -1922,7 +2334,7 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "process.shutdown") {{
       fs.writeFileSync(marker, "shutdown");
       const result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }}
     throw new Error("unexpected candidate command");

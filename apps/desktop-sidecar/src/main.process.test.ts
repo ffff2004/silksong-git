@@ -313,7 +313,7 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
     },
   });
 
-  sidecar.send(command("future-version", { type: "watcher.start" }, 4));
+  sidecar.send(command("future-version", { type: "watcher.start" }, 5));
   assert.deepEqual(await sidecar.readMessage(), {
     protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
@@ -361,6 +361,64 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
       desktopSidecarOutputEnvelopeSchema.parse(JSON.parse(line)),
     );
   }
+});
+
+test("inspects only readable regular Encoded Saves regardless of filename", async (t) => {
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), "silksong-desktop-static-save-test-"),
+  );
+  t.after(async () => {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+  const renamedEncodedSave = path.join(temporaryDirectory, "custom-name.bin");
+  const invalidEncodedSave = path.join(temporaryDirectory, "invalid.dat");
+  await copyFile(minimalEncodedSavePath, renamedEncodedSave);
+  await writeFile(invalidEncodedSave, "not an encoded save");
+
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  sidecar.send(
+    command("renamed-save", {
+      type: "save.inspect",
+      savePath: renamedEncodedSave,
+    }),
+  );
+  const inspected = parseSuccessfulResponse(
+    await readResponse(sidecar, "renamed-save"),
+  );
+  assert.equal(inspected.result.type, "save.inspected");
+  assert.equal(typeof inspected.result.decodedSave, "object");
+
+  sidecar.send(
+    command("directory", {
+      type: "save.inspect",
+      savePath: temporaryDirectory,
+    }),
+  );
+  assert.deepEqual(await readResponse(sidecar, "directory"), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "response",
+    requestId: "directory",
+    ok: true,
+    result: { type: "save.invalidFile" },
+  });
+
+  sidecar.send(
+    command("bad-encoding", {
+      type: "save.inspect",
+      savePath: invalidEncodedSave,
+    }),
+  );
+  assert.deepEqual(await readResponse(sidecar, "bad-encoding"), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "response",
+    requestId: "bad-encoding",
+    ok: true,
+    result: { type: "save.decodeFailed" },
+  });
+
+  await shutDown(sidecar);
 });
 
 test("opens one session, delivers its credential once, and controls watching", async (t) => {

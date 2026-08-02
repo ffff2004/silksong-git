@@ -7,13 +7,18 @@ import type {
   RepositoryLibraryEntry,
 } from "../../runtime-capabilities/interface.ts";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
+import { useRuntimeCapabilities } from "../../state/runtime-capabilities.tsx";
 import { useSaveStore } from "../../state/save-store.tsx";
+import { useToastStore } from "../../state/toast-store.tsx";
 import buttonStyles from "../../ui/Button.module.css";
 import viewStyles from "../../ui/View.module.css";
+import { applyStaticSaveResult } from "../current-save/static-save-result.ts";
 
 export function RepositoryLibraryView() {
+  const runtimeCapabilities = useRuntimeCapabilities();
   const localHistory = useLocalHistoryStore();
   const saveStore = useSaveStore();
+  const toastStore = useToastStore();
   const navigate = useNavigate();
   const [library, setLibrary] = createSignal<RepositoryLibrary>();
   const [loading, setLoading] = createSignal(true);
@@ -56,9 +61,12 @@ export function RepositoryLibraryView() {
         nextLibrary.external !== undefined
         && nextLibrary.external.current
         && localHistory.connection().kind === "disconnected"
-        && (await localHistory.connect())
+        && saveStore.source().kind !== "static"
       ) {
-        navigate("/progress");
+        saveStore.clear();
+        if (await localHistory.connect()) {
+          navigate("/progress");
+        }
       }
     } catch (error_) {
       setError(
@@ -113,6 +121,7 @@ export function RepositoryLibraryView() {
         return;
       }
       localHistory.disconnect();
+      saveStore.clear();
       if (await localHistory.connect()) {
         navigate("/progress");
       }
@@ -127,6 +136,26 @@ export function RepositoryLibraryView() {
     }
   };
 
+  const inspectLocalSave = async () => {
+    if (runtimeCapabilities.kind !== "desktop") {
+      return;
+    }
+    const result = await runtimeCapabilities.pickStaticEncodedSave();
+    applyStaticSaveResult(result, {
+      disconnectLocalHistory: localHistory.disconnect,
+      loadDecodedSave: saveStore.loadDecodedSave,
+      navigateToProgress: () => {
+        navigate("/progress");
+      },
+      reportFailure: (message) => {
+        setError(message);
+      },
+      reportSuccess: () => {
+        toastStore.showToast("Local save loaded successfully!");
+      },
+    });
+  };
+
   onMount(() => {
     refresh().catch(() => undefined);
   });
@@ -135,6 +164,18 @@ export function RepositoryLibraryView() {
     <section class={viewStyles["view"]} data-testid="repository-library">
       <h2 class={viewStyles["heading"]}>Repositories</h2>
       <p>Choose a managed repository or browse an archive read-only.</p>
+      <button
+        class={buttonStyles["primary"]}
+        id="inspect-local-save-from-library"
+        type="button"
+        onClick={() => {
+          inspectLocalSave().catch(() => {
+            setError("Unable to inspect local save.");
+          });
+        }}
+      >
+        Inspect local save…
+      </button>
       <button
         class={buttonStyles["primary"]}
         type="button"

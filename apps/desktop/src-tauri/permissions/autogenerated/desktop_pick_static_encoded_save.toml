@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-pick-static-encoded-save"
+description = "Enables the desktop_pick_static_encoded_save command without any pre-configured scope."
+commands.allow = ["desktop_pick_static_encoded_save"]
+
+[[permission]]
+identifier = "deny-desktop-pick-static-encoded-save"
+description = "Denies the desktop_pick_static_encoded_save command without any pre-configured scope."
+commands.deny = ["desktop_pick_static_encoded_save"]

@@ -1,8 +1,9 @@
 mod desktop_runtime;
+mod save_location;
 mod security;
 
 use tauri::{
-    Manager,
+    Emitter, Manager,
     menu::{Menu, MenuItem, Submenu},
     utils::config::WebviewUrl,
     webview::{NewWindowResponse, WebviewWindowBuilder},
@@ -38,6 +39,7 @@ pub fn run() {
         .on_menu_event(|app, event| {
             match event.id().as_ref() {
                 "repository-library" => navigate_to_library(app),
+                "file-inspect-local-save" => inspect_local_save_from_menu(app),
                 "repository-open-external" => open_external_from_menu(app),
                 "repository-close" => {
                     if app.state::<DesktopWorkflow>().close().is_ok() {
@@ -60,6 +62,7 @@ pub fn run() {
             desktop_runtime::desktop_open_library_entry,
             desktop_runtime::desktop_close_repository,
             desktop_runtime::desktop_open_external_repository,
+            desktop_runtime::desktop_pick_static_encoded_save,
             desktop_runtime::desktop_reopen_repository,
             desktop_runtime::desktop_start_watching,
             desktop_runtime::desktop_stop_watching,
@@ -120,6 +123,13 @@ pub fn run() {
 fn install_repository_menu<R: tauri::Runtime>(
     app: &tauri::App<R>,
 ) -> tauri::Result<RepositoryMenu<R>> {
+    let inspect_local_save = MenuItem::with_id(
+        app,
+        "file-inspect-local-save",
+        "Inspect local save…",
+        true,
+        None::<&str>,
+    )?;
     let library = MenuItem::with_id(
         app,
         "repository-library",
@@ -162,7 +172,8 @@ fn install_repository_menu<R: tauri::Runtime>(
         true,
         &[&library, &external, &close, &start, &stop],
     )?;
-    let menu = Menu::with_items(app, &[&repository])?;
+    let file = Submenu::with_id_and_items(app, "file", "File", true, &[&inspect_local_save])?;
+    let menu = Menu::with_items(app, &[&file, &repository])?;
     app.set_menu(menu)?;
     Ok(RepositoryMenu {
         close,
@@ -170,6 +181,14 @@ fn install_repository_menu<R: tauri::Runtime>(
         start_watching: start,
         stop_watching: stop,
     })
+}
+
+fn inspect_local_save_from_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let result =
+        desktop_runtime::menu_static_save_result(desktop_runtime::inspect_static_encoded_save(app));
+    // The event carries only decoded data or a safe visible outcome; it never
+    // gives the WebView the selected filesystem path or encoded bytes.
+    let _ = app.emit("desktop://static-save-picked", result);
 }
 
 pub(crate) fn update_repository_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
@@ -279,9 +298,11 @@ mod tests {
                 "allow-desktop-open-library-entry",
                 "allow-desktop-close-repository",
                 "allow-desktop-open-external-repository",
+                "allow-desktop-pick-static-encoded-save",
                 "allow-desktop-reopen-repository",
                 "allow-desktop-start-watching",
                 "allow-desktop-stop-watching",
+                "core:event:default",
             ])
         );
     }

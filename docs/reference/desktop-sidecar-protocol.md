@@ -21,7 +21,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 3,
+  "protocolVersion": 4,
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +36,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 3,
+  "protocolVersion": 4,
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,12 +49,13 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 3 accepts these commands:
+Version 4 accepts these commands:
 
 - `repository.inspect` with one absolute `repoPath`;
 - `repository.migrate` with one absolute `repoPath`, a prior opaque inspection
   ID, and the literal migration confirmation;
 - `repository.rebuild` with one absolute `repoPath`;
+- `save.inspect` with one absolute canonical `savePath`;
 - `session.open` with one absolute `repoPath` and an optional `access` policy
   of `readWrite` (default) or `readOnly`;
 - `watcher.start`;
@@ -74,6 +75,13 @@ post-rebuild safe repository statusâ€”status, required action, and capabilitiesâ
 without an inspection ID or persistence details. Rebuild never rewrites
 canonical Git Raw Save Observation history.
 
+`save.inspect` is a stateless Core adapter, not a History or Repo Session
+operation. It repeats regular-file/readability validation immediately before
+reading and uses Core's public Encoded Save decoder regardless of filename or
+extension. Its result is exactly one of `save.inspected` with decoded JSON,
+`save.invalidFile`, or `save.decodeFailed`; it never returns a path or encoded
+bytes. It creates no repository, Git data, SQLite data, watcher, or session.
+
 A process may open at most one Repo Session. A successful `session.open`
 response is emitted after authenticated loopback HTTP is ready and while the
 watcher remains inactive. Opening is refused unless Repo Session's History
@@ -81,7 +89,7 @@ compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 3,
+  "protocolVersion": 4,
   "kind": "response",
   "requestId": "open-1",
   "ok": true,

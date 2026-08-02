@@ -119,6 +119,28 @@ describe("Solid Web app routing", () => {
     ).toBeDefined();
   });
 
+  it("keeps Desktop local-save actions in the menu and landing page", async () => {
+    render(() => <DesktopApp />);
+
+    const primaryControls = screen.getByRole("group", {
+      name: "Primary controls",
+    });
+    expect(
+      within(primaryControls).queryByRole("button", {
+        name: "Inspect local save…",
+      }),
+    ).toBeNull();
+    expect(
+      within(primaryControls).queryByRole("button", { name: "Upload save" }),
+    ).toBeNull();
+    expect(
+      within(await screen.findByTestId("repository-library")).getByRole(
+        "button",
+        { name: "Inspect local save…" },
+      ),
+    ).toBeDefined();
+  });
+
   it("renders an actionable incompatible repository state without connecting Local HTTP", async () => {
     const getRepoSessionConnection = vi.fn(() => ({
       endpoint: "http://127.0.0.1:4312",
@@ -457,6 +479,76 @@ describe("Solid Web app routing", () => {
     expect(
       screen.queryByRole("button", { name: "Create checkpoint" }),
     ).toBeNull();
+  });
+
+  it("does not let an in-flight library refresh reconnect over a selected Static Save", async () => {
+    const watcherDeferred = Promise.withResolvers<Response>();
+    const getRepoSessionConnection = vi.fn(() => ({
+      access: "readWrite" as const,
+      endpoint: "http://127.0.0.1:4312",
+      token: "session-token",
+    }));
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection,
+      openExternalRepository: async () => ({ kind: "opened" }),
+      pickStaticEncodedSave: async () => ({
+        decodedSave,
+        kind: "loaded" as const,
+      }),
+      getRepositoryLibrary: async () => ({
+        ...desktopTestRepositoryLibrary,
+        external: {
+          current: true,
+          lifecycle: "external" as const,
+          name: "current-external-repository",
+          requiredAction: "open",
+          status: "ready",
+          watching: false,
+        },
+      }),
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (requestUrl(input).includes("/api/v1/watcher")) {
+        return await watcherDeferred.promise;
+      }
+
+      return Response.json(
+        createAvailableLocalSaveState(81, latestObservation.commit),
+      );
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    await waitFor(() => {
+      expect(getRepoSessionConnection).toHaveBeenCalledTimes(1);
+      expect(
+        fetch.mock.calls.some(([input]) =>
+          requestUrl(input).includes("/api/v1/watcher"),
+        ),
+      ).toBe(true);
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Inspect local save…" }),
+    );
+    await waitFor(() => {
+      expect(document.querySelector("#completionValue")?.textContent).toBe(
+        "39%",
+      );
+    });
+
+    watcherDeferred.resolve(Response.json(localHistoryWatcher));
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(
+      fetch.mock.calls.some(([input]) =>
+        requestUrl(input).includes("/api/v1/save"),
+      ),
+    ).toBe(false);
+    expect(document.querySelector("#completionValue")?.textContent).toBe("39%");
+    expect(screen.queryByRole("link", { name: "History" })).toBeNull();
   });
 
   it("opens a library entry without invoking the external picker", async () => {

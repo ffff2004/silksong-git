@@ -72,12 +72,21 @@ JavaScript link handling is disabled, and the WebView receives no opener
 permission.
 
 The global Tauri object is disabled. The unique `main` capability allows only
-five application intent commands: open an external repository, explicitly
+narrow application intent commands: inspect one local Encoded Save, open an external repository, explicitly
 reopen an invalidated in-memory selection, obtain the current Repo Session
 connection, and start or stop watching for that current session. It grants no
 generic filesystem, shell, process, arbitrary HTTP, or native command
 Interface. The CSP allows bundled application resources, the Tauri IPC origin,
 and IPv4-loopback connections.
+
+Desktop Static inspection resolves an ordered, platform-specific list of save
+location hints, opens a native one-file picker at the first existing hint (or
+the user's home directory), and allows unrestricted user navigation. The `.dat`
+filter is presentation-only. Rust and the stateless `save.inspect` sidecar
+command both require a readable regular file; the sidecar calls the public Core
+decoder and returns only decoded JSON to the WebView. This creates no History
+repository, Git data, SQLite data, watcher, or Repo Session. The native File
+menu and Desktop repository landing page invoke that same intent.
 
 This boundary implements
 [ADR-0021](../adr/0021-hardened-desktop-shell.md). The shared presentation and
@@ -86,11 +95,15 @@ Runtime Capabilities seam remain owned by the
 
 ## Repo Session Process Boundary
 
-The private Desktop sidecar accepts versioned JSONL lifecycle commands on stdin
-and reserves stdout for responses and safe lifecycle events. It calls only the
-public `@silksong-git/repo-session` Interface. One process opens at most one
-Repo Session; History reads and mutations remain behind that session's
-authenticated loopback HTTP endpoints instead of becoming process RPC.
+The private Desktop sidecar accepts versioned JSONL commands on stdin and
+reserves stdout for responses and safe lifecycle events. It has exactly two
+public-interface responsibilities: lifecycle commands call the public
+`@silksong-git/repo-session` Interface, while the stateless `save.inspect`
+command calls the public `@silksong-git/core` decoder Interface. A lifecycle
+process opens at most one Repo Session; History reads and mutations remain
+behind that session's authenticated loopback HTTP endpoints instead of becoming
+process RPC. `save.inspect` never opens a Repo Session or touches History,
+Git, SQLite, or watcher state.
 
 The Desktop runtime owns `DesktopWorkflow`: landing entry, refresh, opening a
 library entry, and closing the current session. It scans only direct child

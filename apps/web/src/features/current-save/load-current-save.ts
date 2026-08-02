@@ -34,6 +34,11 @@ export async function loadCurrentSave(file: File): Promise<LoadedCurrentSave> {
     ? parseRawDecodedSaveJson(buffer)
     : decodeEncodedSave(buffer).decodedSave;
 
+  return loadDecodedSave(decodedSave);
+}
+
+/** Shared Static Save pipeline after an adapter has obtained a decoded value. */
+export function loadDecodedSave(decodedSave: unknown): LoadedCurrentSave {
   let parsedSave: ParsedDecodedSave;
   try {
     parsedSave = parseDecodedSave(decodedSave);
@@ -54,10 +59,10 @@ export async function loadCurrentSave(file: File): Promise<LoadedCurrentSave> {
 
   return {
     decodedSave,
-    mode: isSteelSoulMode(snapshot.summary.permadeathMode) ? "steel" : "normal",
     parsedSave,
-    semanticItemsById,
     snapshot,
+    semanticItemsById,
+    mode: isSteelSoulMode(snapshot.summary.permadeathMode) ? "steel" : "normal",
   };
 }
 

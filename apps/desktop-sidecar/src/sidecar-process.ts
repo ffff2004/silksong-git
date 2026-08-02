@@ -1,8 +1,10 @@
 import { once } from "node:events";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import type { Writable } from "node:stream";
 
+import { decodeEncodedSave } from "@silksong-git/core";
 import type {
   MigrateSaveHistoryRepositoryResult,
   RebuildSemanticReadModelResult,
@@ -32,6 +34,7 @@ import {
   repositoryInspectCommandSchema,
   repositoryMigrateCommandSchema,
   repositoryRebuildCommandSchema,
+  saveInspectCommandSchema,
   sessionOpenCommandSchema,
   watcherStartCommandSchema,
   watcherStopCommandSchema,
@@ -195,6 +198,16 @@ export async function runDesktopSidecarProcess(
         };
       }
 
+      case "save.inspect": {
+        return {
+          response: await inspectEncodedSave(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
       case "session.open": {
         return {
           response: await openSession(envelope.requestId, envelope.command),
@@ -288,6 +301,37 @@ export async function runDesktopSidecarProcess(
         "The Repo Session could not be opened.",
       );
     }
+  }
+
+  async function inspectEncodedSave(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult = saveInspectCommandSchema.safeParse(command);
+    if (
+      !commandResult.success
+      || !path.isAbsolute(commandResult.data.savePath)
+    ) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The save.inspect command is invalid.",
+      );
+    }
+
+    const encodedSave = await readReadableRegularFile(
+      commandResult.data.savePath,
+    );
+    if (encodedSave === undefined) {
+      return createSuccessResponse(requestId, { type: "save.invalidFile" });
+    }
+    const decoded = decodeSave(encodedSave);
+    return createSuccessResponse(
+      requestId,
+      decoded.ok
+        ? { type: "save.inspected", decodedSave: decoded.decodedSave }
+        : { type: "save.decodeFailed" },
+    );
   }
 
   async function inspectRepository(
@@ -565,6 +609,44 @@ export async function runDesktopSidecarProcess(
 
   function writeDiagnostic(message: string) {
     input.diagnostics.write(`[desktop-sidecar] ${message}\n`);
+  }
+}
+
+async function readReadableRegularFile(
+  pathname: string,
+): Promise<Uint8Array | undefined> {
+  const metadata = await readFileMetadata(pathname);
+  if (metadata?.isFile() !== true) {
+    return undefined;
+  }
+
+  try {
+    return await readFile(pathname);
+  } catch {
+    return undefined;
+  }
+}
+
+async function readFileMetadata(pathname: string) {
+  try {
+    return await stat(pathname);
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeSave(
+  encodedSave: Uint8Array,
+):
+  | { readonly decodedSave: unknown; readonly ok: true }
+  | { readonly ok: false } {
+  try {
+    return {
+      decodedSave: decodeEncodedSave(encodedSave).decodedSave,
+      ok: true,
+    };
+  } catch {
+    return { ok: false };
   }
 }
 
