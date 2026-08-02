@@ -138,9 +138,14 @@ pub enum OpenExternalRepositoryResult {
 pub enum PickStaticEncodedSaveResult {
     Cancelled,
     DecodeFailed,
-    Failed { message: String },
+    Failed {
+        message: String,
+    },
     InvalidFile,
-    Loaded { decoded_save: Value },
+    Loaded {
+        #[serde(rename = "decodedSave")]
+        decoded_save: Value,
+    },
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -1708,6 +1713,22 @@ mod tests {
                 if decoded_save == serde_json::json!({ "player": "Hornet" })
         ));
         assert_eq!(inspector.inspected_paths.into_inner(), vec![custom_path]);
+    }
+
+    #[test]
+    fn loaded_static_save_ipc_payload_uses_the_web_contract_field_name() {
+        let payload = serde_json::to_value(PickStaticEncodedSaveResult::Loaded {
+            decoded_save: serde_json::json!({ "player": "Hornet" }),
+        })
+        .expect("static save result is serializable for Tauri IPC");
+
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "kind": "loaded",
+                "decodedSave": { "player": "Hornet" },
+            })
+        );
     }
 
     #[test]
