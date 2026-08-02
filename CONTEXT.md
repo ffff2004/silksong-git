@@ -110,7 +110,7 @@ An App-managed repository or repository snapshot stored directly beneath the man
 _Avoid_: Deleted repository, inactive watcher, old save generation
 
 **Archive Snapshot**:
-A complete, verified copy of a Managed Repository made by the Desktop App after the user confirms, but before any durable repository migration write. It becomes an Archived Repository and remains retained whether that migration succeeds or fails.
+A complete, verified copy of a Managed Repository made by the Desktop App as a precondition of its durable migration workflow. Once published, it becomes an Archived Repository and remains retained whether that migration succeeds or fails.
 _Avoid_: Git backup, config backup
 
 **Watched Save**:

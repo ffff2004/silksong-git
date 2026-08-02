@@ -11,44 +11,23 @@ This is capability enforcement across Desktop, its sidecar/HTTP adapters, and
 History workflows, not merely hidden UI controls. The App does not change
 filesystem permissions; users retain normal filesystem control of their data.
 
-The App can create archives in exactly three Desktop-managed workflows. A user
-may archive a direct child of the mutable `repositories/` root by moving it
-atomically to `archives/`. Reinitializing the same Watched Save path archives
-the prior Managed Repository before initializing the replacement; once that
-move succeeds, a later replacement failure removes only the newly created
-directory and leaves the old archive in place. After the user confirms a
-durable Project Config or Git-layout migration of a Managed Repository, but
-before its first migration write, the App creates an Archive Snapshot and does
-not begin migration unless that snapshot succeeds. CLI migration remains
-outside this App-managed archive mechanism and uses its own existing recovery
-behavior.
+The App can create archives only through three Desktop-managed workflows: a
+user-directed archive, reinitializing a Watched Save, and a durable migration.
+Each workflow preserves the existing archive if its later operation fails.
+CLI migration remains outside this App-managed archive mechanism and uses its
+own recovery behavior.
 
-History owns creating a consistent Archive Snapshot through a public Interface:
-it coordinates repository ownership, writes to staging, and validates the copy
-before the App atomically publishes it under `archives/`. Validation compares a
-canonical SHA-256 Merkle digest of the source and staging directory trees,
-checks Git integrity when applicable, and re-inspects the copy to ensure that
-its compatibility result has not degraded. A migration source may itself be
-`migrationRequired`; snapshot validity preserves that status rather than
-requiring `ready`. Successfully published migration snapshots are retained
-whether migration succeeds or fails; the App has no automatic retention or
-deletion policy.
+History owns creating a consistent Archive Snapshot through a public Interface.
+The Desktop App may allow a durable migration to write only after that snapshot
+succeeds and is atomically published under `archives/`. The published snapshot
+is retained as an Archived Repository whether migration succeeds or fails; the
+App has no automatic retention or deletion policy. Issue #47 owns the precise
+confirmation, validation, and mutation-lifecycle behavior for this workflow.
 
-For an identifiable repository, archive moves and snapshots require no active
-App work, the History write serialization, and no externally owned watcher.
-The App never terminates an external CLI watcher to proceed. A user may also
-archive an unrecognizable direct-child residual directory after an explicit
-danger confirmation, because History cannot coordinate a directory that it
-cannot inspect. Its later archive listing continues to show the inspection
-failure rather than claiming that it is usable history.
-
-Archive destination names use
-`<original-repo-name>--<reason>-<local-time-with-ms-and-offset>`, where
-`reason` is one of `user`, `reinitialize`, or `pre-migration`. Atomic collision
-counters avoid overwriting an existing entry. Names are presentation and
-uniqueness aids only; code never parses them for identity or capability.
-The App does not offer archive reactivation, permanent archive deletion, or
-archive moves. It scans the managed roots rather than maintaining a registry.
+Archive placement, rather than a name or registry entry, determines archive
+capabilities. The App does not offer archive reactivation, permanent archive
+deletion, or archive moves. It never terminates an externally owned CLI watcher
+to perform archive work.
 
 This refines the supported-use boundary in ADR-0005 without changing its core
 meaning: each mutable Managed Repository still represents one Watched Save,
