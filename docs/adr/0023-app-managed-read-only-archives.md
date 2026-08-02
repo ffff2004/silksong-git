@@ -16,11 +16,12 @@ may archive a direct child of the mutable `repositories/` root by moving it
 atomically to `archives/`. Reinitializing the same Watched Save path archives
 the prior Managed Repository before initializing the replacement; once that
 move succeeds, a later replacement failure removes only the newly created
-directory and leaves the old archive in place. Before a confirmed durable
-Project Config or Git-layout migration of a Managed Repository, the App
-creates an Archive Snapshot and does not begin migration unless that snapshot
-succeeds. CLI migration remains outside this App-managed archive mechanism and
-uses its own existing recovery behavior.
+directory and leaves the old archive in place. After the user confirms a
+durable Project Config or Git-layout migration of a Managed Repository, but
+before its first migration write, the App creates an Archive Snapshot and does
+not begin migration unless that snapshot succeeds. CLI migration remains
+outside this App-managed archive mechanism and uses its own existing recovery
+behavior.
 
 History owns creating a consistent Archive Snapshot through a public Interface:
 it coordinates repository ownership, writes to staging, and validates the copy
