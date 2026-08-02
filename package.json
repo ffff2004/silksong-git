@@ -32,7 +32,8 @@
     "preview-cli": "pnpm --filter @silksong-git/cli preview",
     "preview-web": "pnpm --filter @silksong-git/web preview",
     "test": "pnpm --recursive --if-present run test",
-    "verify": "pnpm lint && pnpm test && pnpm build-web && pnpm build-desktop && pnpm verify-cli-pack",
+    "verify": "tsx ./scripts/verify.ts --reporter=human",
+    "verify:agent": "tsx ./scripts/verify.ts --reporter=agent",
     "verify-cli-pack": "pnpm --filter @silksong-git/cli verify-pack"
   },
   "devDependencies": {
