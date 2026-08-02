@@ -587,6 +587,27 @@ pub(crate) fn inspect_static_encoded_save<R: Runtime>(
     )
 }
 
+/// Returns the native picker hint without attempting to discover a save slot.
+pub(crate) fn static_save_picker_initial_directory() -> PathBuf {
+    initial_directory(
+        current_save_location_platform(),
+        &EnvironmentSaveLocationSystem,
+    )
+}
+
+/// Inspects an already-selected native path. This deliberately performs no UI
+/// work so callers can keep sidecar launch and decoding off the UI thread.
+pub(crate) fn inspect_selected_static_encoded_save<R: Runtime>(
+    app: &AppHandle<R>,
+    selected_path: &Path,
+) -> Result<PickStaticEncodedSaveResult, DesktopRuntimeError> {
+    inspect_selected_static_encoded_save_with_adapters(
+        selected_path,
+        &NativeStaticSaveFileSystem,
+        &SidecarStaticSaveInspector { app },
+    )
+}
+
 /// Menu events cannot return an IPC rejection, so convert every native failure
 /// into the same path-free, user-visible outcome the command would expose.
 pub(crate) fn menu_static_save_result(
@@ -633,7 +654,20 @@ fn inspect_static_encoded_save_with_adapters(
     let Some(selected_path) = picker.pick_file(&initial_directory)? else {
         return Ok(PickStaticEncodedSaveResult::Cancelled);
     };
-    let selected_path = match file_system.readable_regular_file(&selected_path) {
+
+    inspect_selected_static_encoded_save_with_adapters(
+        selected_path.as_path(),
+        file_system,
+        inspector,
+    )
+}
+
+fn inspect_selected_static_encoded_save_with_adapters(
+    selected_path: &Path,
+    file_system: &impl StaticSaveFileSystem,
+    inspector: &impl StaticSaveInspector,
+) -> Result<PickStaticEncodedSaveResult, DesktopRuntimeError> {
+    let selected_path = match file_system.readable_regular_file(selected_path) {
         Ok(path) => path,
         Err(DesktopRuntimeError::InvalidSaveFile) => {
             return Ok(PickStaticEncodedSaveResult::InvalidFile);
@@ -1116,32 +1150,16 @@ enum SidecarLaunch {
 
 impl SidecarLaunch {
     fn for_app<R: Runtime>(app: &AppHandle<R>) -> Result<Self, DesktopRuntimeError> {
+        let workspace_root = workspace_root()?;
         if cfg!(debug_assertions) {
-            let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .ancestors()
-                .nth(3)
-                .ok_or(DesktopRuntimeError::Unavailable)?;
-            let entry = workspace_root.join(DEVELOPMENT_SIDECAR_ENTRY);
-            if !entry.is_file() {
-                return Err(DesktopRuntimeError::DevelopmentSidecarUnavailable);
-            }
-
-            return Ok(Self::Development {
-                entry,
-                node: PathBuf::from(if cfg!(windows) { "node.exe" } else { "node" }),
-            });
+            return development_sidecar_launch(workspace_root);
         }
 
-        let executable = app
+        let resource_directory = app
             .path()
             .resource_dir()
-            .map_err(|_| DesktopRuntimeError::Unavailable)?
-            .join(BUNDLED_SIDECAR_NAME);
-        if !executable.is_file() {
-            return Err(DesktopRuntimeError::BundledSidecarUnavailable);
-        }
-
-        Ok(Self::Bundled { executable })
+            .map_err(|_| DesktopRuntimeError::Unavailable)?;
+        sidecar_launch_for_resource_directory(false, &resource_directory, workspace_root)
     }
 
     fn command(&self) -> Command {
@@ -1154,6 +1172,50 @@ impl SidecarLaunch {
             Self::Bundled { executable } => Command::new(executable),
         }
     }
+}
+
+fn workspace_root() -> Result<&'static Path, DesktopRuntimeError> {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .ok_or(DesktopRuntimeError::Unavailable)
+}
+
+fn development_sidecar_launch(workspace_root: &Path) -> Result<SidecarLaunch, DesktopRuntimeError> {
+    let entry = workspace_root.join(DEVELOPMENT_SIDECAR_ENTRY);
+    if !entry.is_file() {
+        return Err(DesktopRuntimeError::DevelopmentSidecarUnavailable);
+    }
+
+    Ok(SidecarLaunch::Development {
+        entry,
+        node: PathBuf::from(if cfg!(windows) { "node.exe" } else { "node" }),
+    })
+}
+
+/// Selects the workspace sidecar only for the unbundled Cargo release layout.
+/// Packaged applications never use this fallback: their resource directory is
+/// outside the workspace target directory and must contain the bundled binary.
+fn sidecar_launch_for_resource_directory(
+    debug_build: bool,
+    resource_directory: &Path,
+    workspace_root: &Path,
+) -> Result<SidecarLaunch, DesktopRuntimeError> {
+    if debug_build {
+        return development_sidecar_launch(workspace_root);
+    }
+
+    let executable = resource_directory.join(BUNDLED_SIDECAR_NAME);
+    if executable.is_file() {
+        return Ok(SidecarLaunch::Bundled { executable });
+    }
+
+    let workspace_release_resources = workspace_root.join("apps/desktop/src-tauri/target/release");
+    if resource_directory == workspace_release_resources {
+        return development_sidecar_launch(workspace_root);
+    }
+
+    Err(DesktopRuntimeError::BundledSidecarUnavailable)
 }
 
 /// The only stdout reader for a sidecar. It demultiplexes JSONL by request ID,
@@ -1527,11 +1589,12 @@ mod tests {
     };
 
     use super::{
-        DesktopRuntime, DesktopRuntimeError, OpenExternalRepositoryResult,
-        PickStaticEncodedSaveResult, RepositoryLifecycle, SaveLocationPlatform, SaveLocationSystem,
-        SidecarLaunch, StaticSaveFileSystem, StaticSaveInspection, StaticSaveInspector,
-        StaticSavePicker, canonicalize_repository_path, inspect_static_encoded_save_with_adapters,
-        menu_static_save_result, natural_name_cmp,
+        DEVELOPMENT_SIDECAR_ENTRY, DesktopRuntime, DesktopRuntimeError,
+        OpenExternalRepositoryResult, PickStaticEncodedSaveResult, RepositoryLifecycle,
+        SaveLocationPlatform, SaveLocationSystem, SidecarLaunch, StaticSaveFileSystem,
+        StaticSaveInspection, StaticSaveInspector, StaticSavePicker, canonicalize_repository_path,
+        inspect_static_encoded_save_with_adapters, menu_static_save_result, natural_name_cmp,
+        sidecar_launch_for_resource_directory,
     };
 
     static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
@@ -1736,6 +1799,39 @@ mod tests {
             result,
             PickStaticEncodedSaveResult::Failed { message }
                 if message == "The Desktop Local History service is unavailable. Close and reopen the app, then try again."
+        ));
+    }
+
+    #[test]
+    fn unbundled_workspace_release_uses_the_built_workspace_sidecar() {
+        let temp = TestDirectory::new();
+        let workspace_root = temp.path().join("workspace");
+        let entry = workspace_root.join(DEVELOPMENT_SIDECAR_ENTRY);
+        fs::create_dir_all(entry.parent().expect("sidecar parent")).expect("create sidecar parent");
+        fs::write(&entry, "// sidecar").expect("write built sidecar");
+        let release_resources = workspace_root.join("apps/desktop/src-tauri/target/release");
+        fs::create_dir_all(&release_resources).expect("create release resources");
+
+        assert!(matches!(
+            sidecar_launch_for_resource_directory(false, &release_resources, &workspace_root),
+            Ok(SidecarLaunch::Development { entry: actual, node })
+                if actual == entry && node == Path::new("node")
+        ));
+    }
+
+    #[test]
+    fn packaged_release_never_uses_a_workspace_sidecar_fallback() {
+        let temp = TestDirectory::new();
+        let workspace_root = temp.path().join("workspace");
+        let entry = workspace_root.join(DEVELOPMENT_SIDECAR_ENTRY);
+        fs::create_dir_all(entry.parent().expect("sidecar parent")).expect("create sidecar parent");
+        fs::write(entry, "// sidecar").expect("write built sidecar");
+        let packaged_resources = temp.path().join("installed/resources");
+        fs::create_dir_all(&packaged_resources).expect("create packaged resources");
+
+        assert!(matches!(
+            sidecar_launch_for_resource_directory(false, &packaged_resources, &workspace_root),
+            Err(DesktopRuntimeError::BundledSidecarUnavailable)
         ));
     }
 

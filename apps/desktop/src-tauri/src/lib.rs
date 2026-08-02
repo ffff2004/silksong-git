@@ -2,6 +2,8 @@ mod desktop_runtime;
 mod save_location;
 mod security;
 
+use std::thread;
+
 use tauri::{
     Emitter, Manager,
     menu::{Menu, MenuItem, Submenu},
@@ -184,11 +186,63 @@ fn install_repository_menu<R: tauri::Runtime>(
 }
 
 fn inspect_local_save_from_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    let result =
-        desktop_runtime::menu_static_save_result(desktop_runtime::inspect_static_encoded_save(app));
-    // The event carries only decoded data or a safe visible outcome; it never
-    // gives the WebView the selected filesystem path or encoded bytes.
-    let _ = app.emit("desktop://static-save-picked", result);
+    let picker_app = app.clone();
+    let initial_directory = desktop_runtime::static_save_picker_initial_directory();
+
+    // `FileDialogBuilder::pick_file` is Tauri Dialog's documented main-thread
+    // API. Posting it returns from this menu callback before the picker opens;
+    // the plugin then initiates the native dialog on the UI event loop.
+    let _ = dispatch_menu_static_save_picker(
+        |task| app.run_on_main_thread(task),
+        move || {
+            picker_app
+                .dialog()
+                .file()
+                .set_title("Inspect local Silksong save")
+                .add_filter("Silksong save", &["dat"])
+                .set_directory(initial_directory)
+                .pick_file(move |selected| {
+                    inspect_selected_save_after_picker(&picker_app, selected)
+                });
+        },
+    );
+}
+
+/// Tauri's `run_on_main_thread` posts a task to the runtime event loop. The
+/// injected poster lets the unit test prove that the menu callback has only
+/// enqueued UI work; native GTK presentation remains a manual smoke boundary.
+fn dispatch_menu_static_save_picker<E>(
+    post_to_main_thread: impl FnOnce(Box<dyn FnOnce() + Send>) -> Result<(), E>,
+    show_picker: impl FnOnce() + Send + 'static,
+) -> Result<(), E> {
+    post_to_main_thread(Box::new(show_picker))
+}
+
+fn inspect_selected_save_after_picker<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    selected: Option<tauri_plugin_dialog::FilePath>,
+) {
+    let inspect_app = app.clone();
+    let emit_app = app.clone();
+
+    // The picker callback must stay responsive. File validation and sidecar
+    // decoding can block, so they run only after the native UI has returned a
+    // selected path. The emitted event never contains that path or its bytes.
+    thread::spawn(move || {
+        let result = match selected {
+            Some(file) => file
+                .into_path()
+                .map_err(|_| desktop_runtime::DesktopRuntimeError::InvalidSaveFile)
+                .and_then(|path| {
+                    desktop_runtime::inspect_selected_static_encoded_save(&inspect_app, &path)
+                }),
+            None => Ok(desktop_runtime::PickStaticEncodedSaveResult::Cancelled),
+        };
+        let _ = emit_app.emit(
+            "desktop://static-save-picked",
+            desktop_runtime::menu_static_save_result(result),
+        );
+    });
 }
 
 pub(crate) fn update_repository_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
@@ -245,7 +299,17 @@ fn focus_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        cell::RefCell,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+    };
+
     use serde_json::Value;
+
+    use super::dispatch_menu_static_save_picker;
 
     const CONFIG: &str = include_str!("../tauri.conf.json");
     const CAPABILITY: &str = include_str!("../capabilities/main.json");
@@ -305,5 +369,29 @@ mod tests {
                 "core:event:default",
             ])
         );
+    }
+
+    #[test]
+    fn local_save_menu_posts_the_picker_after_its_callback_returns() {
+        let task = RefCell::new(None);
+        let picker_started = Arc::new(AtomicBool::new(false));
+        let picker_started_by_task = Arc::clone(&picker_started);
+
+        dispatch_menu_static_save_picker(
+            |work| {
+                task.replace(Some(work));
+                Ok::<_, ()>(())
+            },
+            move || {
+                picker_started_by_task.store(true, Ordering::SeqCst);
+            },
+        )
+        .expect("menu callback posts a main-thread picker task");
+
+        assert!(!picker_started.load(Ordering::SeqCst));
+
+        task.replace(None).expect("scheduled menu task")();
+
+        assert!(picker_started.load(Ordering::SeqCst));
     }
 }
