@@ -12,6 +12,7 @@ export type HistoryCommitRecord =
   | { readonly entry: ObservationEntry; readonly kind: "observation" };
 
 export function HistoryCommitCard(props: {
+  readonly canRestore?: boolean;
   readonly onCompare: (commit: string) => void;
   readonly onExport: () => void;
   readonly onRestore: () => void;
@@ -84,13 +85,15 @@ export function HistoryCommitCard(props: {
             >
               Export
             </button>
-            <button
-              class={buttonStyles["danger"]}
-              type="button"
-              onClick={props.onRestore}
-            >
-              Restore
-            </button>
+            <Show when={props.canRestore !== false}>
+              <button
+                class={buttonStyles["danger"]}
+                type="button"
+                onClick={props.onRestore}
+              >
+                Restore
+              </button>
+            </Show>
             <button
               class={buttonStyles["secondary"]}
               type="button"

@@ -20,11 +20,17 @@ import { LocalHistoryClientError } from "../features/local-history/local-history
 import { browserRuntimeCapabilities } from "../runtime-capabilities/browser.ts";
 import { createDesktopRuntimeCapabilities } from "../runtime-capabilities/desktop.ts";
 import decodedSave from "../test-fixtures/mask-shard-2-collected-rosaries-save.decoded.json";
-import { desktopTestRuntimeCapabilities } from "../test/desktop-runtime-capabilities.ts";
+import {
+  desktopTestRepositoryLibrary,
+  desktopTestRuntimeCapabilities,
+} from "../test/desktop-runtime-capabilities.ts";
 import { App as RuntimeApp } from "./App.tsx";
 
-const App = () => (
+const DesktopApp = () => (
   <RuntimeApp runtimeCapabilities={desktopTestRuntimeCapabilities} />
+);
+const App = () => (
+  <RuntimeApp runtimeCapabilities={browserRuntimeCapabilities} />
 );
 
 const intersectionState: {
@@ -88,7 +94,7 @@ describe("Solid Web app routing", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows Progress by default", async () => {
+  it("keeps Browser Progress as the default route", async () => {
     render(() => <App />);
 
     expect(await screen.findByTestId("progress-view")).toBeDefined();
@@ -104,9 +110,7 @@ describe("Solid Web app routing", () => {
       name: "Primary controls",
     });
     expect(
-      within(primaryControls).getByRole("button", {
-        name: "Open Local History",
-      }),
+      within(primaryControls).getByRole("button", { name: "Upload save" }),
     ).toBeDefined();
     expect(
       within(
@@ -127,12 +131,19 @@ describe("Solid Web app routing", () => {
         kind: "requiresAction",
         status: "newerIncompatible",
       }),
+      getRepositoryLibrary: async () => desktopTestRepositoryLibrary,
+      openLibraryEntry: async () => ({
+        action: "useNewerApp" as const,
+        kind: "requiresAction" as const,
+        status: "newerIncompatible" as const,
+      }),
       startWatching: async () => undefined,
       stopWatching: async () => undefined,
     });
 
+    globalThis.location.hash = "#/repositories";
     render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
-    fireEvent.click(screen.getByRole("button", { name: "Open Local History" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open" }));
 
     expect(
       await screen.findByText(
@@ -158,12 +169,14 @@ describe("Solid Web app routing", () => {
     const runtimeCapabilities = createDesktopRuntimeCapabilities({
       getRepoSessionConnection,
       openExternalRepository,
+      getRepositoryLibrary: async () => desktopTestRepositoryLibrary,
+      openLibraryEntry: openExternalRepository,
       startWatching: async () => undefined,
       stopWatching: async () => undefined,
     });
 
     render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
-    const open = screen.getByRole("button", { name: "Open Local History" });
+    const open = await screen.findByRole("button", { name: "Open" });
     fireEvent.click(open);
     expect(
       await screen.findByText(
@@ -194,6 +207,8 @@ describe("Solid Web app routing", () => {
     const runtimeCapabilities = createDesktopRuntimeCapabilities({
       getRepoSessionConnection,
       openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary: async () => desktopTestRepositoryLibrary,
+      openLibraryEntry: async () => ({ kind: "opened" }),
       reopenRepository,
       startWatching,
       stopWatching: async () => undefined,
@@ -208,7 +223,7 @@ describe("Solid Web app routing", () => {
     );
 
     render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
-    fireEvent.click(screen.getByRole("button", { name: "Open Local History" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open" }));
     expect(
       await screen.findByText(
         "Desktop Local History stopped because its local protocol became incompatible. Reopen the selected repository to start a fresh reader session.",
@@ -236,6 +251,8 @@ describe("Solid Web app routing", () => {
         token: "session-token",
       }),
       openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary: async () => desktopTestRepositoryLibrary,
+      openLibraryEntry: async () => ({ kind: "opened" }),
       reopenRepository: async () => ({ kind: "opened" }),
       startWatching,
       stopWatching: async () => undefined,
@@ -273,9 +290,10 @@ describe("Solid Web app routing", () => {
       }),
     );
 
+    globalThis.location.hash = "#/repositories";
     render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
-    fireEvent.click(screen.getByRole("button", { name: "Open Local History" }));
-    await screen.findByRole("button", { name: "Disconnect WebView" });
+    fireEvent.click(await screen.findByRole("button", { name: "Open" }));
+    await screen.findByRole("link", { name: "History" });
 
     globalThis.location.hash = "#/progress?commit=unavailable";
     globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
@@ -331,13 +349,15 @@ describe("Solid Web app routing", () => {
     const runtimeCapabilities = createDesktopRuntimeCapabilities({
       getRepoSessionConnection,
       openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary: async () => desktopTestRepositoryLibrary,
+      openLibraryEntry: async () => ({ kind: "opened" }),
       reopenRepository,
       startWatching: async () => undefined,
       stopWatching: async () => undefined,
     });
 
     render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
-    fireEvent.click(screen.getByRole("button", { name: "Open Local History" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open" }));
     await screen.findByRole("button", { name: "Reopen selected repository" });
     fireEvent.click(
       screen.getByRole("button", { name: "Reopen selected repository" }),
@@ -349,9 +369,7 @@ describe("Solid Web app routing", () => {
       ),
     ).toBeDefined();
     expect(reopenRepository).toHaveBeenCalledTimes(1);
-    await waitFor(() => {
-      expect(consoleError).toHaveBeenCalledTimes(1);
-    });
+    expect(consoleError).not.toHaveBeenCalled();
     consoleError.mockRestore();
   });
 
@@ -379,7 +397,7 @@ describe("Solid Web app routing", () => {
 
   it("keeps Local-only URLs behind a connection-required state", async () => {
     globalThis.location.hash = "#/history";
-    render(() => <App />);
+    render(() => <DesktopApp />);
 
     expect(
       await screen.findByTestId("local-connection-required"),
@@ -419,92 +437,39 @@ describe("Solid Web app routing", () => {
     expect(screen.queryByRole("link", { name: "Watcher" })).toBeNull();
   });
 
-  it("connects Local History and clears the uploaded Static Save", async () => {
-    let requestCount = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        requestCount++;
-        if (requestCount === 1) {
-          return Response.json(localHistoryWatcher);
-        }
-        if (requestCount === 2) {
-          return Response.json({
-            status: "available",
-            observation: latestObservation,
-            decodedSave: { playerData: { geo: 1234 } },
-            semanticSnapshot: {
-              items: [],
-              summary: {
-                completionPercentage: 81,
-                playTime: 9876,
-                rosaries: 1234,
-                shellShards: 88,
-              },
-              version: {
-                saveSchemaVersion: "1",
-                semanticCoreVersion: "test",
-              },
-            },
-          });
-        }
-        return Response.json(localHistoryWatcher);
-      }),
-    );
+  it("uses the Repository Library as the default Desktop landing page", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    render(() => <DesktopApp />);
 
-    render(() => <App />);
-    await uploadDecodedSave();
-    expect(document.querySelector("#modeBanner")?.textContent).toContain(
-      "NORMAL SAVE LOADED",
+    expect(await screen.findByTestId("repository-library")).toBeDefined();
+    const repositoryName = await screen.findByText("test-repository");
+    expect(repositoryName.parentElement?.textContent).toContain("Ready");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Repositories" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Progress" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Interactive Map" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Raw Save Data" })).toBeNull();
+    expect(document.querySelector("#logo-link")?.getAttribute("href")).toBe(
+      "#/repositories",
     );
-
-    fireEvent.click(getRequiredElement("#connect-local-history"));
-
-    await waitFor(() => {
-      expect(
-        document.querySelector("#disconnect-local-history"),
-      ).not.toBeNull();
-    });
-    expect(document.querySelector("#modeBanner")?.textContent).not.toContain(
-      "NORMAL SAVE LOADED",
-    );
+    expect(screen.queryByRole("button", { name: "Start Watching" })).toBeNull();
     expect(
-      document.querySelector('[data-testid="progress-view"]'),
-    ).not.toBeNull();
-    await waitFor(() => {
-      expect(document.querySelector("#completionValue")?.textContent).toBe(
-        "81%",
-      );
-    });
-    expect(document.querySelector("#playtimeValue")?.textContent).toBe(
-      "2h 44m",
-    );
-    expect(document.querySelector("#rosariesValue")?.textContent).toBe("1234");
-    expect(document.querySelector("#shardsValue")?.textContent).toBe("88");
-    expect(document.querySelector("#upload-save")).toBeNull();
-    expect(document.querySelector("#clearDataBtn")).toBeNull();
-
-    fireEvent.click(getRequiredElement("#disconnect-local-history"));
-    await waitFor(() => {
-      expect(document.querySelector("#upload-save")).not.toBeNull();
-    });
-    expect(document.querySelector("#modeBanner")?.textContent).not.toContain(
-      "SAVE LOADED",
-    );
-    expect(screen.queryByRole("link", { name: "History" })).toBeNull();
+      screen.queryByRole("button", { name: "Create checkpoint" }),
+    ).toBeNull();
   });
 
-  it("reconnects a disconnected WebView through the open Repo Session", async () => {
+  it("opens a library entry without invoking the external picker", async () => {
     const getRepoSessionConnection = vi.fn(() => ({
       endpoint: "http://127.0.0.1:4312",
       token: "session-token",
     }));
-    const openExternalRepository = vi.fn(async () => ({
-      kind: "opened" as const,
-    }));
+    const openLibraryEntry = vi.fn(async () => ({ kind: "opened" as const }));
     const runtimeCapabilities = createDesktopRuntimeCapabilities({
       getRepoSessionConnection,
-      openExternalRepository,
+      openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary: async () => desktopTestRepositoryLibrary,
+      openLibraryEntry,
       startWatching: async () => undefined,
       stopWatching: async () => undefined,
     });
@@ -520,25 +485,10 @@ describe("Solid Web app routing", () => {
     );
 
     render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
-    fireEvent.click(screen.getByRole("button", { name: "Open Local History" }));
-    await screen.findByRole("button", { name: "Disconnect WebView" });
-    expect(openExternalRepository).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByRole("button", { name: "Open" }));
+    await screen.findByRole("link", { name: "History" });
+    expect(openLibraryEntry).toHaveBeenCalledTimes(1);
     expect(getRepoSessionConnection).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "Disconnect WebView" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Reconnect Local History" }),
-    );
-    await screen.findByRole("button", { name: "Disconnect WebView" });
-    expect(openExternalRepository).toHaveBeenCalledTimes(1);
-    expect(getRepoSessionConnection).toHaveBeenCalledTimes(2);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Open another repository" }),
-    );
-    await waitFor(() => {
-      expect(openExternalRepository).toHaveBeenCalledTimes(2);
-    });
   });
 
   it("explains when browser Local Network Access was denied", async () => {
@@ -563,8 +513,8 @@ describe("Solid Web app routing", () => {
       }),
     );
 
-    render(() => <App />);
-    fireEvent.click(getRequiredElement("#connect-local-history"));
+    render(() => <DesktopApp />);
+    await openSelectedRepository();
 
     expect(
       await screen.findByText(
@@ -579,68 +529,13 @@ describe("Solid Web app routing", () => {
       vi.fn(async () => new Response(undefined, { status: 401 })),
     );
 
-    render(() => <App />);
-    fireEvent.click(getRequiredElement("#connect-local-history"));
+    render(() => <DesktopApp />);
+    await openSelectedRepository();
 
     expect(
       await screen.findByText(
         "The Desktop session credentials are invalid or expired. Reopen the Desktop session, then reconnect.",
       ),
-    ).toBeDefined();
-  });
-
-  it("invalidates Desktop Local History when a later request loses the sidecar", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = requestUrl(input);
-        if (url.includes("/api/v1/watcher")) {
-          return Response.json(localHistoryWatcher);
-        }
-        if (url.includes("commit=unavailable")) {
-          throw new TypeError("Local endpoint became unavailable.");
-        }
-
-        return Response.json({
-          status: "available",
-          observation: latestObservation,
-          decodedSave: { playerData: { geo: 1234 } },
-          semanticSnapshot: {
-            items: [],
-            summary: {
-              completionPercentage: 81,
-              playTime: 9876,
-              rosaries: 1234,
-              shellShards: 88,
-            },
-            version: {
-              saveSchemaVersion: "1",
-              semanticCoreVersion: "test",
-            },
-          },
-        });
-      }),
-    );
-
-    render(() => <App />);
-    fireEvent.click(getRequiredElement("#connect-local-history"));
-
-    await waitFor(() => {
-      expect(document.querySelector("#completionValue")?.textContent).toBe(
-        "81%",
-      );
-    });
-
-    globalThis.location.hash = "#/progress?commit=unavailable";
-    globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
-
-    expect(
-      await screen.findByText(
-        "Desktop Local History stopped unexpectedly. Reopen the selected repository to start a fresh reader session.",
-      ),
-    ).toBeDefined();
-    expect(
-      screen.getByRole("button", { name: "Reopen selected repository" }),
     ).toBeDefined();
   });
 
@@ -671,13 +566,8 @@ describe("Solid Web app routing", () => {
       }),
     );
 
-    render(() => <App />);
-    fireEvent.click(getRequiredElement("#connect-local-history"));
-    await waitFor(() => {
-      expect(
-        document.querySelector("#disconnect-local-history"),
-      ).not.toBeNull();
-    });
+    render(() => <DesktopApp />);
+    await connectLocalHistory();
     expect(watcherRequests).toBe(1);
 
     Object.defineProperty(document, "visibilityState", {
@@ -698,123 +588,6 @@ describe("Solid Web app routing", () => {
       setTimeout(resolve, 1100);
     });
     expect(watcherRequests).toBe(2);
-  });
-
-  it("refreshes moving latest on Watcher revision changes without replacing a historical selection", async () => {
-    let latestSaveRequests = 0;
-    let watcherRequests = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = requestUrl(input);
-        if (url.includes("/api/v1/watcher")) {
-          watcherRequests++;
-          return Response.json({
-            status: "running",
-            activity: "idle",
-            observationRevision: watcherRequests,
-            startedAt: "2026-07-14T00:00:00.000Z",
-            repoPath: "/tmp/history-repo",
-            watchedSavePath: "/tmp/user1.dat",
-            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
-          });
-        }
-        if (url.includes("/api/v1/save")) {
-          const isHistorical = url.includes("commit=historical");
-          if (!isHistorical) {
-            latestSaveRequests++;
-          }
-          let completionPercentage = 70;
-          if (!isHistorical) {
-            completionPercentage = latestSaveRequests === 1 ? 81 : 82;
-          }
-          return Response.json({
-            status: "available",
-            observation: {
-              ...latestObservation,
-              commit: isHistorical
-                ? {
-                    ...latestObservation.commit,
-                    ref: "historical",
-                    shortRef: "historical",
-                  }
-                : latestObservation.commit,
-            },
-            decodedSave: { completionPercentage },
-            semanticSnapshot: {
-              items: [],
-              summary: {
-                completionPercentage,
-                playTime: 9876,
-                rosaries: 1234,
-                shellShards: 88,
-              },
-              version: {
-                saveSchemaVersion: "1",
-                semanticCoreVersion: "test",
-              },
-            },
-          });
-        }
-
-        return Response.json({ events: [] });
-      }),
-    );
-
-    render(() => <App />);
-    fireEvent.click(getRequiredElement("#connect-local-history"));
-    await waitFor(() => {
-      expect(document.querySelector("#completionValue")?.textContent).toBe(
-        "81%",
-      );
-      expect(watcherRequests).toBe(1);
-    });
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 0);
-    });
-
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      value: "hidden",
-    });
-    document.dispatchEvent(new Event("visibilitychange"));
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      value: "visible",
-    });
-    document.dispatchEvent(new Event("visibilitychange"));
-    await waitFor(() => {
-      expect(document.querySelector("#completionValue")?.textContent).toBe(
-        "82%",
-      );
-    });
-
-    globalThis.location.hash = "#/progress?commit=historical";
-    globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
-    await waitFor(() => {
-      expect(document.querySelector("#completionValue")?.textContent).toBe(
-        "70%",
-      );
-    });
-
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      value: "hidden",
-    });
-    document.dispatchEvent(new Event("visibilitychange"));
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      value: "visible",
-    });
-    document.dispatchEvent(new Event("visibilitychange"));
-    await waitFor(() => {
-      expect(watcherRequests).toBe(3);
-    });
-    await waitFor(() => {
-      expect(document.querySelector("#completionValue")?.textContent).toBe(
-        "70%",
-      );
-    });
   });
 
   it("reports a newer latest observation and returns a historical selection to it", async () => {
@@ -867,8 +640,8 @@ describe("Solid Web app routing", () => {
       }),
     );
 
-    render(() => <App />);
-    fireEvent.click(getRequiredElement("#connect-local-history"));
+    render(() => <DesktopApp />);
+    await connectLocalHistory();
 
     expect(
       await screen.findByText("A newer latest save is available."),
@@ -906,8 +679,8 @@ describe("Solid Web app routing", () => {
       }),
     );
 
-    render(() => <App />);
-    fireEvent.click(getRequiredElement("#connect-local-history"));
+    render(() => <DesktopApp />);
+    await connectLocalHistory();
     expect(await screen.findByTestId("history-view")).toBeDefined();
     await waitFor(() => {
       expect(urls.some((url) => url.includes("/api/v1/history"))).toBe(true);
@@ -996,8 +769,8 @@ describe("Solid Web app routing", () => {
       }),
     );
 
-    render(() => <App />);
-    fireEvent.click(getRequiredElement("#connect-local-history"));
+    render(() => <DesktopApp />);
+    await connectLocalHistory();
 
     expect(await screen.findByText(secondItem.label)).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Load More" }));
@@ -1072,8 +845,8 @@ describe("Solid Web app routing", () => {
       }),
     );
 
-    render(() => <App />);
-    fireEvent.click(getRequiredElement("#connect-local-history"));
+    render(() => <DesktopApp />);
+    await connectLocalHistory();
     expect(await screen.findByTestId("history-view")).toBeDefined();
 
     fireEvent.click(screen.getByRole("tab", { name: "Observations" }));
@@ -1188,8 +961,8 @@ describe("Solid Web app routing", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(() => <App />);
-    fireEvent.click(getRequiredElement("#connect-local-history"));
+    render(() => <DesktopApp />);
+    await connectLocalHistory();
 
     expect(await screen.findByTestId("diff-view")).toBeDefined();
     fireEvent.input(getRequiredElement("#diff-from"), {
@@ -1557,18 +1330,6 @@ function getRequiredFileInput(): HTMLInputElement {
   return fileInput;
 }
 
-async function uploadDecodedSave() {
-  fireEvent.click(getRequiredElement("#upload-save"));
-  const fileInput = getRequiredFileInput();
-  const file = new File([JSON.stringify(decodedSave)], "save.json", {
-    type: "application/json",
-  });
-  fireEvent.change(fileInput, { target: { files: [file] } });
-  await waitFor(() => {
-    expect(document.querySelector("#completionValue")?.textContent).toBe("39%");
-  });
-}
-
 function getRequiredElement(selector: string): HTMLElement {
   const element = document.querySelector<HTMLElement>(selector);
   if (element === null) {
@@ -1662,6 +1423,25 @@ function requestUrl(input: RequestInfo | URL): string {
     return input.href;
   }
   return input.url;
+}
+
+async function connectLocalHistory() {
+  let destination = globalThis.location.hash;
+  if (destination === "#/repositories" || destination === "") {
+    destination = "#/progress";
+  }
+  globalThis.location.hash = "#/repositories";
+  globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+  await openSelectedRepository();
+  await waitFor(() => {
+    expect(globalThis.location.hash).toBe("#/progress");
+  });
+  globalThis.location.hash = destination;
+  globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+}
+
+async function openSelectedRepository() {
+  fireEvent.click(await screen.findByRole("button", { name: "Open" }));
 }
 
 function createIntersectionEntry(target: Element): IntersectionObserverEntry {

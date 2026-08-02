@@ -55,7 +55,8 @@ Version 3 accepts these commands:
 - `repository.migrate` with one absolute `repoPath`, a prior opaque inspection
   ID, and the literal migration confirmation;
 - `repository.rebuild` with one absolute `repoPath`;
-- `session.open` with one absolute `repoPath`;
+- `session.open` with one absolute `repoPath` and an optional `access` policy
+  of `readWrite` (default) or `readOnly`;
 - `watcher.start`;
 - `watcher.stop`; and
 - `process.shutdown`.
@@ -86,6 +87,7 @@ compatibility inspection is `ready`:
   "ok": true,
   "result": {
     "type": "session.opened",
+    "access": "readOnly",
     "connection": {
       "endpoint": "http://127.0.0.1:49152",
       "bearerToken": "<in-memory credential>"
@@ -98,6 +100,11 @@ This is the credential's only protocol disclosure. The token is not repeated
 in events, later responses, diagnostics, command arguments, or the endpoint
 URL. History and watcher status data remain on the authenticated Local HTTP
 Interface; the process protocol does not duplicate them.
+
+`access` is selected by Desktop lifecycle policy, not by History inspection.
+For `readOnly`, the sidecar opens a read-only Repo Session: watcher controls
+and Local HTTP checkpoint and in-place restore requests are rejected, while all
+read routes and exact Encoded Save export remain available.
 
 The current event types are:
 

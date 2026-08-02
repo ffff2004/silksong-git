@@ -1,7 +1,8 @@
 # Desktop Shell Architecture
 
 The Desktop application is a Tauri v2 delivery Adapter around the shared Solid
-presentation. It supports Static Save inspection and one temporary external
+presentation. It launches to a repository library backed by the fixed App Local
+Data `repositories/` and `archives/` roots, and supports one temporary external
 Save History Repository session. It does not own Repo Session, History, Git,
 SQLite, watcher scheduling, or repository layout.
 
@@ -91,6 +92,15 @@ public `@silksong-git/repo-session` Interface. One process opens at most one
 Repo Session; History reads and mutations remain behind that session's
 authenticated loopback HTTP endpoints instead of becoming process RPC.
 
+The Desktop runtime owns `DesktopWorkflow`: landing entry, refresh, opening a
+library entry, and closing the current session. It scans only direct child
+directories beneath each fixed root, uses a short-lived sidecar to call public
+History inspection serially for every candidate, and treats directory names as
+presentation-only natural-sort keys. Invalid and incompatible children remain
+visible in the library's Need attention area. A failed whole refresh retains
+the last successful result marked stale. Library opening revalidates direct
+root containment before the normal inspection/open sequence.
+
 Opening is ordered deliberately: Rust waits for a native directory selection,
 canonicalizes it, starts a candidate sidecar, and sends `repository.inspect`.
 Only a `ready` result may replace the current session; Rust gracefully shuts
@@ -107,7 +117,11 @@ HTTP client closure. They are never returned by the picker or watcher commands,
 put in a URL, or persisted. Disconnecting the WebView drops only that closure;
 it can request the current connection again without reopening a directory.
 Start and stop watcher commands carry no repository path and act only on the
-current sidecar session. A watch-lock conflict leaves that reader session and
+current sidecar session. Archived placement is passed as a read-only Repo
+Session policy; Rust, the sidecar, Repo Session watcher admission, and Local
+HTTP mutation routes all reject watch, checkpoint, and in-place restore while
+read, diff, search, raw-observation, and export routes remain available. A
+watch-lock conflict leaves that reader session and
 its HTTP browsing capability intact. Session replacement and App exit request
 sidecar shutdown and wait for its graceful acknowledgment.
 

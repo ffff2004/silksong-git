@@ -8,6 +8,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App as RuntimeApp } from "../../app/App.tsx";
+import { createDesktopRuntimeCapabilities } from "../../runtime-capabilities/desktop.ts";
 import { desktopTestRuntimeCapabilities } from "../../test/desktop-runtime-capabilities.ts";
 
 const App = () => (
@@ -68,7 +69,7 @@ describe("History view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByTestId("history-view")).toBeDefined();
     fireEvent.click(await screen.findByRole("button", { name: "Load More" }));
     await waitFor(() => {
@@ -177,7 +178,7 @@ describe("History view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByTestId("history-observations")).toBeDefined();
     await waitFor(() => {
       expect(getLastRequest(urls, "/api/v1/observations")).toBeDefined();
@@ -263,7 +264,7 @@ describe("History view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByTestId("history-view")).toBeDefined();
     fireEvent.input(getRequiredInput("#history-search-text"), {
       target: { value: "Bell Beast" },
@@ -357,7 +358,7 @@ describe("History view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByText("completionPercentage")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Load More" }));
     expect(await screen.findByText("rosaries")).toBeDefined();
@@ -431,7 +432,7 @@ describe("History view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByText("initial-observation")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Load More" }));
     expect(await screen.findByText("older-observation")).toBeDefined();
@@ -505,7 +506,7 @@ describe("History view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     const eventCard = await screen.findByTestId("history-commit-card");
     expect(eventCard.textContent).toContain("Recognized schema");
     expect(eventCard.textContent).toContain("81%");
@@ -567,7 +568,7 @@ describe("History view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     const cards = await screen.findAllByTestId("history-commit-card");
     fireEvent.click(getCardAction(cards[0], "Compare"));
 
@@ -658,7 +659,7 @@ describe("History view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     const cards = await screen.findAllByTestId("history-commit-card");
     fireEvent.click(getCardAction(cards[0], "Export"));
 
@@ -689,6 +690,108 @@ describe("History view", () => {
     expect(
       await screen.findByText("Export is temporarily unavailable."),
     ).toBeDefined();
+    expect(anchorClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a read-only archive to export an Encoded Save but not restore it", async () => {
+    const exportRequests: string[] = [];
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:archive-export");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const readOnlyRuntimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        access: "readOnly" as const,
+        endpoint: "http://127.0.0.1:4312",
+        token: "archive-session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" as const }),
+      getRepositoryLibrary: async () => ({
+        archived: [
+          {
+            name: "archive",
+            lifecycle: "archived" as const,
+            status: "ready",
+            requiredAction: "open",
+            current: false,
+            watching: false,
+          },
+        ],
+        attention: [],
+        managed: [],
+        stale: false,
+      }),
+      openLibraryEntry: async () => ({ kind: "opened" as const }),
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            activity: "idle",
+            capturePolicy: {
+              debounceWriteMs: 500,
+              minCommitIntervalMs: 0,
+            },
+            observationRevision: 0,
+            repoPath: "/tmp/archive",
+            startedAt: "2026-07-15T00:00:00.000Z",
+            status: "inactive",
+            watchedSavePath: "/tmp/user1.dat",
+          });
+        }
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [createSummaryEvent("archive", "archive", "rosaries")],
+          });
+        }
+        if (url.includes("/api/v1/export")) {
+          exportRequests.push(url);
+          return new Response(Uint8Array.from([1, 2, 3]), {
+            headers: {
+              "Content-Disposition": "attachment; filename=archive.dat",
+              "Content-Type": "application/octet-stream",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => (
+      <RuntimeApp runtimeCapabilities={readOnlyRuntimeCapabilities} />
+    ));
+    globalThis.location.hash = "#/repositories";
+    globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Show archived repositories" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open read-only" }),
+    );
+    await waitFor(() => {
+      expect(globalThis.location.hash).toBe("#/progress");
+    });
+    globalThis.location.hash = "#/history";
+    globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+    const card = await screen.findByTestId("history-commit-card");
+    expect(card.textContent).toContain("Export");
+    expect(card.textContent).not.toContain("Restore");
+
+    fireEvent.click(getCardAction(card, "Export"));
+    await waitFor(() => {
+      expect(exportRequests).toEqual([
+        expect.stringContaining("/api/v1/export?commit=archive-commit"),
+      ]);
+    });
     expect(anchorClick).toHaveBeenCalledTimes(1);
   });
 
@@ -755,7 +858,7 @@ describe("History view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     const card = await screen.findByTestId("history-commit-card");
     fireEvent.click(getCardAction(card, "Restore"));
     fireEvent.click(
@@ -826,7 +929,7 @@ describe("History view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     const card = await screen.findByTestId("history-commit-card");
     fireEvent.click(getCardAction(card, "Restore"));
     fireEvent.click(
@@ -861,8 +964,17 @@ describe("History view", () => {
   });
 });
 
-function connectLocalHistory() {
-  fireEvent.click(getRequiredElement("#connect-local-history"));
+async function connectLocalHistory() {
+  const destination =
+    globalThis.location.hash === "" ? "#/progress" : globalThis.location.hash;
+  globalThis.location.hash = "#/repositories";
+  globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+  fireEvent.click(await screen.findByRole("button", { name: "Open" }));
+  await waitFor(() => {
+    expect(globalThis.location.hash).toBe("#/progress");
+  });
+  globalThis.location.hash = destination;
+  globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
 }
 
 function getRequiredElement(selector: string): HTMLElement {

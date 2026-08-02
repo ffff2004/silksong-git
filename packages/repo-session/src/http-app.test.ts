@@ -91,7 +91,23 @@ interface OpenApiDocumentProbe {
   readonly paths: Record<
     string,
     {
-      readonly get: {
+      readonly get?: {
+        readonly responses: Record<
+          string,
+          {
+            readonly content: Record<
+              string,
+              {
+                readonly schema: {
+                  readonly type?: string;
+                  readonly $ref?: string;
+                };
+              }
+            >;
+          }
+        >;
+      };
+      readonly post?: {
         readonly responses: Record<
           string,
           {
@@ -159,12 +175,17 @@ test("OpenAPI describes the complete authenticated Local History API", () => {
   assert.ok(errorCodeSchema);
   assert.equal(errorCodeSchema.enum?.includes("restore_conflict"), true);
   assert.equal(errorCodeSchema.enum.includes("repository_incompatible"), true);
+  assert.equal(errorCodeSchema.enum.includes("read_only_session"), true);
   assert.ok(errorObjectSchema.properties["repository"]);
   assert.equal(
-    document.paths["/api/v1/export"]?.get.responses["200"]?.content[
+    document.paths["/api/v1/export"]?.get?.responses["200"]?.content[
       "application/octet-stream"
     ]?.schema.type,
     "string",
+  );
+  assert.ok(document.paths["/api/v1/checkpoints"]?.post?.responses["403"]);
+  assert.ok(
+    document.paths["/api/v1/restores/in-place"]?.post?.responses["403"],
   );
 });
 
@@ -216,6 +237,58 @@ test("authenticated watcher reports the current watcher status", async (t) => {
     debounceWriteMs: 500,
     minCommitIntervalMs: 0,
   });
+});
+
+test("a read-only Repo Session retains reads and export but rejects watcher and HTTP mutations", async (t) => {
+  const tempDirectory = await mkdtemp(
+    path.join(tmpdir(), "silksong-read-only-session-"),
+  );
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "user1.dat");
+  t.after(async () => {
+    await rm(tempDirectory, { recursive: true, force: true });
+  });
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({ repoPath, watchedSavePath });
+  const observed = await observeSave({ repoPath });
+  assert.equal(observed.status, "committed");
+  const session = await openRepoSession({ repoPath, access: "readOnly" });
+  t.after(async () => {
+    await session.stop();
+  });
+  assert.equal(session.access, "readOnly");
+  await assert.rejects(session.startWatching(), /read-only/v);
+  const authorization = { Authorization: `Bearer ${session.http.token}` };
+  const watcher = await fetch(`${session.http.endpoint}/api/v1/watcher`, {
+    headers: authorization,
+  });
+  assert.equal(watcher.status, 200);
+  const exported = await fetch(
+    `${session.http.endpoint}/api/v1/export?commit=HEAD~0`,
+    { headers: authorization },
+  );
+  assert.equal(exported.status, 200);
+  assert.deepEqual(
+    new Uint8Array(await exported.arrayBuffer()),
+    new Uint8Array(await readFile(minimalEncodedSavePath)),
+  );
+  for (const mutationPath of [
+    "/api/v1/checkpoints",
+    "/api/v1/restores/in-place",
+  ]) {
+    const response = await fetch(`${session.http.endpoint}${mutationPath}`, {
+      method: "POST",
+      headers: { ...authorization, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await readJson(response), {
+      error: {
+        code: "read_only_session",
+        message: "This Repo Session is read-only.",
+      },
+    });
+  }
 });
 
 test("CORS preflight is public while actual browser requests remain authenticated", async (t) => {

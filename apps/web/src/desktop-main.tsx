@@ -6,6 +6,7 @@ import { createDesktopRuntimeCapabilities } from "./runtime-capabilities/desktop
 import type {
   OpenExternalRepositoryResult,
   RepoSessionConnection,
+  RepositoryLibrary,
 } from "./runtime-capabilities/interface.ts";
 // Vite applies the root stylesheet through this import side effect.
 // eslint-disable-next-line import-x/no-unassigned-import
@@ -23,6 +24,15 @@ const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
     await invoke<OpenExternalRepositoryResult>(
       "desktop_open_external_repository",
     ),
+  closeRepository: async () => {
+    await invoke("desktop_close_repository");
+  },
+  getRepositoryLibrary: async () =>
+    await invoke<RepositoryLibrary>("desktop_get_repository_library"),
+  openLibraryEntry: async (input) =>
+    await invoke<OpenExternalRepositoryResult>("desktop_open_library_entry", {
+      input,
+    }),
   reopenRepository: async () =>
     await invoke<OpenExternalRepositoryResult>("desktop_reopen_repository"),
   startWatching: async () => {

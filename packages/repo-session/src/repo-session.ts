@@ -46,6 +46,7 @@ export async function openRepoSession(
   }
 
   const emit = input.onEvent ?? (() => undefined);
+  const access = input.access ?? "readWrite";
   const admission = createHttpAdmission();
   let watcherState: RepoSessionWatcherStatus["status"] = "inactive";
   let watcher: SaveHistoryWatcher | undefined;
@@ -67,6 +68,7 @@ export async function openRepoSession(
     token,
     getWatcherStatus,
     admission,
+    canMutate: access === "readWrite",
     onRequestError: (error) => {
       emit({ type: "httpRequestError", repoPath: input.repoPath, error });
     },
@@ -87,9 +89,13 @@ export async function openRepoSession(
   const http = { endpoint: startedServer.endpoint, token };
   const session: RepoSession = {
     repoPath: input.repoPath,
+    access,
     http,
     getWatcherStatus,
     startWatching: async () => {
+      if (access === "readOnly") {
+        throw new Error("This Repo Session is read-only.");
+      }
       await linearize(startWatching);
     },
     stopWatching: async () => {

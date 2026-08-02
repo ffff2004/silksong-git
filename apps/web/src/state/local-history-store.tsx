@@ -12,10 +12,13 @@ import {
 } from "../features/local-history/local-history-client.ts";
 import type {
   OpenExternalRepositoryResult,
+  RepositoryLibrary,
+  RepositoryLifecycle,
   RuntimeCapabilities,
 } from "../runtime-capabilities/interface.ts";
 
 interface LocalHistorySession {
+  readonly access: "readWrite" | "readOnly";
   readonly client: LocalHistoryClient;
   readonly endpoint: string;
   readonly latestSaveState: () => LocalHttpSaveState | undefined;
@@ -50,11 +53,17 @@ export type DesktopWorkflowState =
     };
 
 interface LocalHistoryStore {
+  readonly closeRepository: () => Promise<void>;
   readonly connect: () => Promise<boolean>;
   readonly connection: () => LocalHistoryConnection;
   readonly disconnect: () => void;
   readonly isSupported: boolean;
   readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
+  readonly openLibraryEntry: (input: {
+    readonly lifecycle: Exclude<RepositoryLifecycle, "external">;
+    readonly name: string;
+  }) => Promise<OpenExternalRepositoryResult>;
+  readonly repositoryLibrary: () => Promise<RepositoryLibrary>;
   readonly reportRequestFailure: (error: unknown) => void;
   readonly reportRequestSuccess: () => void;
   readonly startWatching: () => Promise<void>;
@@ -92,6 +101,20 @@ export function LocalHistoryProvider(props: {
   };
 
   const store: LocalHistoryStore = {
+    async closeRepository() {
+      if (props.runtimeCapabilities.kind !== "desktop") {
+        throw new Error(
+          "Repository management is unavailable in this runtime.",
+        );
+      }
+      if (props.runtimeCapabilities.closeRepository === undefined) {
+        throw new Error(
+          "Repository closing is unavailable in this Desktop version.",
+        );
+      }
+      await props.runtimeCapabilities.closeRepository();
+      discardSession();
+    },
     async connect() {
       setConnection({ kind: "connecting" });
 
@@ -115,6 +138,7 @@ export function LocalHistoryProvider(props: {
           availability: { kind: "available" },
           kind: "connected",
           session: {
+            access: input.access ?? "readWrite",
             client,
             endpoint: input.endpoint,
             latestSaveState,
@@ -160,6 +184,37 @@ export function LocalHistoryProvider(props: {
       } finally {
         setWorkflowState({ kind: "active" });
       }
+    },
+    async openLibraryEntry(input) {
+      if (props.runtimeCapabilities.kind !== "desktop") {
+        throw new Error(
+          "Repository management is unavailable in this runtime.",
+        );
+      }
+      if (props.runtimeCapabilities.openLibraryEntry === undefined) {
+        throw new Error(
+          "Repository Library is unavailable in this Desktop version.",
+        );
+      }
+      setWorkflowState({ kind: "transitioning" });
+      try {
+        return await props.runtimeCapabilities.openLibraryEntry(input);
+      } finally {
+        setWorkflowState({ kind: "active" });
+      }
+    },
+    async repositoryLibrary() {
+      if (props.runtimeCapabilities.kind !== "desktop") {
+        throw new Error(
+          "Repository management is unavailable in this runtime.",
+        );
+      }
+      if (props.runtimeCapabilities.getRepositoryLibrary === undefined) {
+        throw new Error(
+          "Repository Library is unavailable in this Desktop version.",
+        );
+      }
+      return await props.runtimeCapabilities.getRepositoryLibrary();
     },
     reportRequestFailure(error) {
       const current = connection();

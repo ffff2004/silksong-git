@@ -268,11 +268,13 @@ export async function runDesktopSidecarProcess(
     try {
       session = await openRepoSession({
         repoPath: commandResult.data.repoPath,
+        access: commandResult.data.access,
         onEvent: handleRepoSessionEvent,
       });
 
       return createSuccessResponse(requestId, {
         type: "session.opened",
+        access: session.access,
         connection: {
           endpoint: session.http.endpoint,
           bearerToken: session.http.token,

@@ -27,6 +27,13 @@ function WatcherView() {
   const [checkpointError, setCheckpointError] = createSignal<string>();
   const [watchControlPending, setWatchControlPending] = createSignal(false);
   const [watchControlError, setWatchControlError] = createSignal<string>();
+  const isReadOnly = () => {
+    const connection = localHistory.connection();
+    return (
+      connection.kind === "connected"
+      && connection.session.access === "readOnly"
+    );
+  };
   const status = () => {
     const connection = localHistory.connection();
     return connection.kind === "connected"
@@ -85,6 +92,9 @@ function WatcherView() {
   return (
     <section class={viewStyles["view"]} data-testid="watcher-view">
       <h2 class={viewStyles["heading"]}>Watcher</h2>
+      <Show when={isReadOnly()}>
+        <p>Archived · Read-only. Watching and checkpoints are unavailable.</p>
+      </Show>
       <Show when={status()} fallback={<p>Watcher status unavailable.</p>}>
         {(value) => (
           <dl>
@@ -129,7 +139,7 @@ function WatcherView() {
           </dl>
         )}
       </Show>
-      <Show when={status()?.status === "inactive"}>
+      <Show when={!isReadOnly() && status()?.status === "inactive"}>
         <button
           class={buttonStyles["primary"]}
           type="button"
@@ -143,7 +153,7 @@ function WatcherView() {
           {watchControlPending() ? "Starting watcher…" : "Start Watching"}
         </button>
       </Show>
-      <Show when={status()?.status === "running"}>
+      <Show when={!isReadOnly() && status()?.status === "running"}>
         <button
           class={buttonStyles["danger"]}
           type="button"
@@ -160,67 +170,69 @@ function WatcherView() {
       <Show when={watchControlError()}>
         {(message) => <p role="alert">{message()}</p>}
       </Show>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (checkpointPending()) {
-            return;
-          }
-          const connection = localHistory.connection();
-          if (connection.kind !== "connected") {
-            return;
-          }
+      <Show when={!isReadOnly()}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (checkpointPending()) {
+              return;
+            }
+            const connection = localHistory.connection();
+            if (connection.kind !== "connected") {
+              return;
+            }
 
-          const message = checkpointMessage().trim();
-          setCheckpointPending(true);
-          setCheckpointResult(undefined);
-          setCheckpointError(undefined);
-          connection.session.client
-            .checkpoint({
-              ...(message !== "" && { message }),
-              ...(allowUnchanged() && { allowUnchanged: true }),
-            })
-            .then(setCheckpointResult)
-            .catch((error: unknown) => {
-              localHistory.reportRequestFailure(error);
-              setCheckpointError(
-                error instanceof Error
-                  ? error.message
-                  : "Manual Checkpoint failed.",
-              );
-            })
-            .finally(() => {
-              setCheckpointPending(false);
-            });
-        }}
-      >
-        <label for="checkpoint-message">Checkpoint message (optional)</label>
-        <input
-          id="checkpoint-message"
-          type="text"
-          value={checkpointMessage()}
-          onInput={(event) => {
-            setCheckpointMessage(event.currentTarget.value);
+            const message = checkpointMessage().trim();
+            setCheckpointPending(true);
+            setCheckpointResult(undefined);
+            setCheckpointError(undefined);
+            connection.session.client
+              .checkpoint({
+                ...(message !== "" && { message }),
+                ...(allowUnchanged() && { allowUnchanged: true }),
+              })
+              .then(setCheckpointResult)
+              .catch((error: unknown) => {
+                localHistory.reportRequestFailure(error);
+                setCheckpointError(
+                  error instanceof Error
+                    ? error.message
+                    : "Manual Checkpoint failed.",
+                );
+              })
+              .finally(() => {
+                setCheckpointPending(false);
+              });
           }}
-        />
-        <label>
+        >
+          <label for="checkpoint-message">Checkpoint message (optional)</label>
           <input
-            type="checkbox"
-            checked={allowUnchanged()}
-            onChange={(event) => {
-              setAllowUnchanged(event.currentTarget.checked);
+            id="checkpoint-message"
+            type="text"
+            value={checkpointMessage()}
+            onInput={(event) => {
+              setCheckpointMessage(event.currentTarget.value);
             }}
           />
-          Allow unchanged save
-        </label>
-        <button
-          class={buttonStyles["primary"]}
-          type="submit"
-          disabled={checkpointPending()}
-        >
-          {checkpointPending() ? "Creating checkpoint…" : "Create checkpoint"}
-        </button>
-      </form>
+          <label>
+            <input
+              type="checkbox"
+              checked={allowUnchanged()}
+              onChange={(event) => {
+                setAllowUnchanged(event.currentTarget.checked);
+              }}
+            />
+            Allow unchanged save
+          </label>
+          <button
+            class={buttonStyles["primary"]}
+            type="submit"
+            disabled={checkpointPending()}
+          >
+            {checkpointPending() ? "Creating checkpoint…" : "Create checkpoint"}
+          </button>
+        </form>
+      </Show>
       <Show when={checkpointResult()}>
         {(result) => <p>{getCheckpointResultMessage(result())}</p>}
       </Show>

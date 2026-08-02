@@ -38,6 +38,7 @@ export const localHttpErrorCodes = [
   "read_model_unavailable",
   "repository_incompatible",
   "session_stopping",
+  "read_only_session",
 ] as const;
 
 export type LocalHttpErrorCode = (typeof localHttpErrorCodes)[number];

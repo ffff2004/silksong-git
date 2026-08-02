@@ -2,6 +2,11 @@ import type { ObserveSaveResult, ProjectConfig } from "@silksong-git/history";
 
 export interface OpenRepoSessionInput {
   readonly repoPath: string;
+  /**
+   * Desktop archive placement is a caller-owned policy. It never changes the History repository
+   * itself, but it limits this reader session to queries and exports.
+   */
+  readonly access?: "readWrite" | "readOnly";
   readonly port?: number;
   readonly onEvent?: (event: RepoSessionEvent) => void;
   // System-boundary adapters used by behavior tests and non-Node hosts.
@@ -10,6 +15,7 @@ export interface OpenRepoSessionInput {
 
 export interface RepoSession {
   readonly repoPath: string;
+  readonly access: "readWrite" | "readOnly";
   readonly http: {
     readonly endpoint: string;
     readonly token: string;

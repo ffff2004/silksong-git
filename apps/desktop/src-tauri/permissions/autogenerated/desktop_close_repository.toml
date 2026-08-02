@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-close-repository"
+description = "Enables the desktop_close_repository command without any pre-configured scope."
+commands.allow = ["desktop_close_repository"]
+
+[[permission]]
+identifier = "deny-desktop-close-repository"
+description = "Denies the desktop_close_repository command without any pre-configured scope."
+commands.deny = ["desktop_close_repository"]

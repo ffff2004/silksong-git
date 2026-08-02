@@ -9,7 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App as RuntimeApp } from "../../app/App.tsx";
 import { createDesktopRuntimeCapabilities } from "../../runtime-capabilities/desktop.ts";
-import { desktopTestRuntimeCapabilities } from "../../test/desktop-runtime-capabilities.ts";
+import {
+  desktopTestRepositoryLibrary,
+  desktopTestRuntimeCapabilities,
+} from "../../test/desktop-runtime-capabilities.ts";
 
 const App = () => (
   <RuntimeApp runtimeCapabilities={desktopTestRuntimeCapabilities} />
@@ -66,7 +69,7 @@ describe("Watcher view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
 
     expect(await screen.findByTestId("watcher-view")).toBeDefined();
     expect(await screen.findByText("observing")).toBeDefined();
@@ -104,7 +107,7 @@ describe("Watcher view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
 
     expect(await screen.findByText("inactive")).toBeDefined();
     expect(screen.queryByText("Watched path")).toBeNull();
@@ -158,12 +161,14 @@ describe("Watcher view", () => {
         token: "session-token",
       }),
       openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary: async () => desktopTestRepositoryLibrary,
+      openLibraryEntry: async () => ({ kind: "opened" }),
       startWatching,
       stopWatching,
     });
 
     render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
-    connectLocalHistory();
+    await connectLocalHistory();
     fireEvent.click(
       await screen.findByRole("button", { name: "Start Watching" }),
     );
@@ -216,12 +221,14 @@ describe("Watcher view", () => {
         token: "session-token",
       }),
       openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary: async () => desktopTestRepositoryLibrary,
+      openLibraryEntry: async () => ({ kind: "opened" }),
       startWatching,
       stopWatching: async () => undefined,
     });
 
     render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByTestId("watcher-view")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Start Watching" }));
 
@@ -231,8 +238,7 @@ describe("Watcher view", () => {
       ),
     ).toBeDefined();
     expect(screen.getByTestId("watcher-view")).toBeDefined();
-    expect(screen.getByText("Local History connected")).toBeDefined();
-    expect(screen.queryByText("Local History stale")).toBeNull();
+    expect(screen.getByRole("link", { name: "History" })).toBeDefined();
     const startButton = screen.getByRole("button", {
       name: "Start Watching",
     });
@@ -255,7 +261,7 @@ describe("Watcher view", () => {
     await waitFor(() => {
       expect(watcherRequests).toBe(2);
     });
-    expect(screen.getByText("Local History connected")).toBeDefined();
+    expect(screen.getByRole("link", { name: "History" })).toBeDefined();
   });
 
   it("submits an optional Manual Checkpoint message once and renders every result", async () => {
@@ -333,7 +339,7 @@ describe("Watcher view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByTestId("watcher-view")).toBeDefined();
 
     fireEvent.input(getRequiredElement("#checkpoint-message"), {
@@ -411,7 +417,7 @@ describe("Watcher view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByTestId("watcher-view")).toBeDefined();
 
     fireEvent.click(
@@ -426,8 +432,17 @@ describe("Watcher view", () => {
   });
 });
 
-function connectLocalHistory() {
-  fireEvent.click(getRequiredElement("#connect-local-history"));
+async function connectLocalHistory() {
+  const destination =
+    globalThis.location.hash === "" ? "#/progress" : globalThis.location.hash;
+  globalThis.location.hash = "#/repositories";
+  globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+  fireEvent.click(await screen.findByRole("button", { name: "Open" }));
+  await waitFor(() => {
+    expect(globalThis.location.hash).toBe("#/progress");
+  });
+  globalThis.location.hash = destination;
+  globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
 }
 
 function getRequiredElement(selector: string): HTMLElement {

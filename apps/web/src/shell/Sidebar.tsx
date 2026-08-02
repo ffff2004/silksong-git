@@ -13,10 +13,25 @@ export function Sidebar() {
     || (path === "/progress" && location.pathname === "/");
 
   const currentPage = (path: string) => (isActive(path) ? "page" : undefined);
+  const hasActiveDesktopSession = () =>
+    localHistory.connection().kind === "connected";
+  const showSaveNavigation = () =>
+    !localHistory.isSupported || hasActiveDesktopSession();
+  const homePath = () =>
+    localHistory.isSupported && !hasActiveDesktopSession()
+      ? "/repositories"
+      : "/progress";
+  const hasWritableSession = () => {
+    const connection = localHistory.connection();
+    return (
+      connection.kind === "connected"
+      && connection.session.access === "readWrite"
+    );
+  };
 
   return (
     <aside class={styles["sidebar"]}>
-      <A href="/progress" id="logo-link">
+      <A href={homePath()} id="logo-link">
         <div class={styles["header"]}>
           <img
             src={assetUrl("assets/misc/favicon.png")}
@@ -51,27 +66,38 @@ export function Sidebar() {
       </div>
       <div class={styles["divider"]} />
       <nav aria-label="Primary navigation">
-        <A
-          href="/progress"
-          class={styles["item"]}
-          aria-current={currentPage("/progress")}
-        >
-          Progress
-        </A>
-        <A
-          href="/map"
-          class={styles["item"]}
-          aria-current={currentPage("/map")}
-        >
-          Interactive Map
-        </A>
-        <A
-          href="/raw-save"
-          class={styles["item"]}
-          aria-current={currentPage("/raw-save")}
-        >
-          Raw Save Data
-        </A>
+        <Show when={localHistory.isSupported}>
+          <A
+            href="/repositories"
+            class={styles["item"]}
+            aria-current={currentPage("/repositories")}
+          >
+            Repositories
+          </A>
+        </Show>
+        <Show when={showSaveNavigation()}>
+          <A
+            href="/progress"
+            class={styles["item"]}
+            aria-current={currentPage("/progress")}
+          >
+            Progress
+          </A>
+          <A
+            href="/map"
+            class={styles["item"]}
+            aria-current={currentPage("/map")}
+          >
+            Interactive Map
+          </A>
+          <A
+            href="/raw-save"
+            class={styles["item"]}
+            aria-current={currentPage("/raw-save")}
+          >
+            Raw Save Data
+          </A>
+        </Show>
         <Show when={localHistory.connection().kind === "connected"}>
           <A
             href="/history"
@@ -80,13 +106,15 @@ export function Sidebar() {
           >
             History
           </A>
-          <A
-            href="/diff"
-            class={styles["item"]}
-            aria-current={currentPage("/diff")}
-          >
-            Compare
-          </A>
+          <Show when={hasWritableSession()}>
+            <A
+              href="/diff"
+              class={styles["item"]}
+              aria-current={currentPage("/diff")}
+            >
+              Compare
+            </A>
+          </Show>
           <A
             href="/watcher"
             class={styles["item"]}

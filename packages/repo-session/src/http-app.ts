@@ -65,6 +65,8 @@ export interface CreateLocalHttpAppInput {
     readonly isOpen: () => boolean;
     readonly track: (work: Promise<unknown>) => void;
   };
+  /** Whether Local HTTP may admit mutations for this reader session. */
+  readonly canMutate?: boolean;
   readonly onRequestError?: (error: HttpRequestErrorEvent) => void;
   readonly onMutationActivity?: (activity: MutationActivityEvent) => void;
 }
@@ -133,6 +135,8 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
   });
   app.use("/api/v1/checkpoints", requireJsonBody);
   app.use("/api/v1/restores/in-place", requireJsonBody);
+  app.use("/api/v1/checkpoints", requireMutationAccess(input));
+  app.use("/api/v1/restores/in-place", requireMutationAccess(input));
   app.use(
     "/api/v1/checkpoints",
     bodyLimit({
@@ -395,6 +399,22 @@ async function requireJsonBody(c: Context, next: () => Promise<void>) {
 
 function invalidRequest(c: Parameters<typeof errorResponse>[0]) {
   return errorResponse(c, 400, "invalid_request", "Invalid request.");
+}
+
+function requireMutationAccess(input: CreateLocalHttpAppInput) {
+  return async (c: Context, next: () => Promise<void>) => {
+    if (input.canMutate === false) {
+      return errorResponse(
+        c,
+        403,
+        "read_only_session",
+        "This Repo Session is read-only.",
+      );
+    }
+
+    await next();
+    return undefined;
+  };
 }
 
 function errorResponse(

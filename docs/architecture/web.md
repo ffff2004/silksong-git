@@ -45,9 +45,10 @@ authentication rules belong to the
 [`main.tsx`](../../apps/web/src/main.tsx) explicitly injects the Browser Runtime
 Capabilities into [`App.tsx`](../../apps/web/src/app/App.tsx).
 `desktop-main.tsx` explicitly injects Desktop Runtime Capabilities backed by
-four narrow Tauri intent commands: choose and open an external repository,
-obtain the current in-memory Repo Session connection, and start or stop its
-watcher. `App.tsx` composes four
+narrow Tauri intent commands for repository library refresh/open/close,
+temporary external opening, current in-memory Repo Session connection, and
+watcher control. Desktop starts at `/`, its repository library; Browser keeps
+its existing Static progress start. `App.tsx` composes four
 application-wide providers around the router:
 
 - the Toast Store owns transient notifications;

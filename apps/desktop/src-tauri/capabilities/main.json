@@ -5,6 +5,9 @@
   "windows": ["main"],
   "permissions": [
     "allow-desktop-get-repo-session-connection",
+    "allow-desktop-get-repository-library",
+    "allow-desktop-open-library-entry",
+    "allow-desktop-close-repository",
     "allow-desktop-open-external-repository",
     "allow-desktop-reopen-repository",
     "allow-desktop-start-watching",

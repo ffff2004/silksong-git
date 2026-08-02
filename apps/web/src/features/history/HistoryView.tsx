@@ -46,6 +46,13 @@ function HistoryView() {
   const [includeFiltered, setIncludeFiltered] = createSignal(false);
   const [error, setError] = createSignal<string>();
   const [restoreCommit, setRestoreCommit] = createSignal<string>();
+  const canRestore = () => {
+    const connection = localHistory.connection();
+    return (
+      connection.kind === "connected"
+      && connection.session.access === "readWrite"
+    );
+  };
   const eventsQuery = createHistoryEventsQuery(() => {
     const connection = localHistory.connection();
     return connection.kind === "connected"
@@ -307,6 +314,7 @@ function HistoryView() {
             <For each={eventsQuery.groups()}>
               {(group) => (
                 <HistoryCommitCard
+                  canRestore={canRestore()}
                   record={{ group, kind: "events" }}
                   onCompare={selectCompareCommit}
                   onRestore={() => {
@@ -344,6 +352,7 @@ function HistoryView() {
             <For each={observationsQuery.entries()}>
               {(entry) => (
                 <HistoryCommitCard
+                  canRestore={canRestore()}
                   record={{ entry, kind: "observation" }}
                   onCompare={selectCompareCommit}
                   onRestore={() => {

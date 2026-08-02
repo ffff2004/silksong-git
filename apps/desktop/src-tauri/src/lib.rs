@@ -3,6 +3,7 @@ mod security;
 
 use tauri::{
     Manager,
+    menu::{Menu, MenuItem, Submenu},
     utils::config::WebviewUrl,
     webview::{NewWindowResponse, WebviewWindowBuilder},
 };
@@ -12,6 +13,13 @@ use tauri_plugin_opener::OpenerExt;
 use crate::desktop_runtime::DesktopWorkflow;
 
 const MAIN_WINDOW_LABEL: &str = "main";
+
+struct RepositoryMenu<R: tauri::Runtime> {
+    close: MenuItem<R>,
+    open_external: MenuItem<R>,
+    start_watching: MenuItem<R>,
+    stop_watching: MenuItem<R>,
+}
 
 pub fn run() {
     tauri::Builder::default()
@@ -27,14 +35,39 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .manage(DesktopWorkflow::default())
+        .on_menu_event(|app, event| {
+            match event.id().as_ref() {
+                "repository-library" => navigate_to_library(app),
+                "repository-open-external" => open_external_from_menu(app),
+                "repository-close" => {
+                    if app.state::<DesktopWorkflow>().close().is_ok() {
+                        navigate_to_library(app);
+                    }
+                }
+                "repository-start-watching" => {
+                    let _ = app.state::<DesktopWorkflow>().control_watcher("watcher.start");
+                }
+                "repository-stop-watching" => {
+                    let _ = app.state::<DesktopWorkflow>().control_watcher("watcher.stop");
+                }
+                _ => {}
+            }
+            update_repository_menu(app);
+        })
         .invoke_handler(tauri::generate_handler![
             desktop_runtime::desktop_get_repo_session_connection,
+            desktop_runtime::desktop_get_repository_library,
+            desktop_runtime::desktop_open_library_entry,
+            desktop_runtime::desktop_close_repository,
             desktop_runtime::desktop_open_external_repository,
             desktop_runtime::desktop_reopen_repository,
             desktop_runtime::desktop_start_watching,
             desktop_runtime::desktop_stop_watching,
         ])
         .setup(|app| {
+            let menu = install_repository_menu(app)?;
+            app.manage(menu);
+            update_repository_menu(app.handle());
             let app_handle = app.handle().clone();
             WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title("Silksong Git")
@@ -82,6 +115,103 @@ pub fn run() {
                 }
             }
         });
+}
+
+fn install_repository_menu<R: tauri::Runtime>(
+    app: &tauri::App<R>,
+) -> tauri::Result<RepositoryMenu<R>> {
+    let library = MenuItem::with_id(
+        app,
+        "repository-library",
+        "Repository Library",
+        true,
+        None::<&str>,
+    )?;
+    let external = MenuItem::with_id(
+        app,
+        "repository-open-external",
+        "Open External Repository…",
+        true,
+        None::<&str>,
+    )?;
+    let close = MenuItem::with_id(
+        app,
+        "repository-close",
+        "Close Repository",
+        true,
+        None::<&str>,
+    )?;
+    let start = MenuItem::with_id(
+        app,
+        "repository-start-watching",
+        "Start Watching",
+        true,
+        None::<&str>,
+    )?;
+    let stop = MenuItem::with_id(
+        app,
+        "repository-stop-watching",
+        "Stop Watching",
+        true,
+        None::<&str>,
+    )?;
+    let repository = Submenu::with_id_and_items(
+        app,
+        "repository",
+        "Repository",
+        true,
+        &[&library, &external, &close, &start, &stop],
+    )?;
+    let menu = Menu::with_items(app, &[&repository])?;
+    app.set_menu(menu)?;
+    Ok(RepositoryMenu {
+        close,
+        open_external: external,
+        start_watching: start,
+        stop_watching: stop,
+    })
+}
+
+pub(crate) fn update_repository_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let state = app.state::<DesktopWorkflow>().repository_menu_state();
+    let menu = app.state::<RepositoryMenu<R>>();
+    let _ = menu.close.set_enabled(state.close_enabled);
+    let _ = menu.open_external.set_enabled(state.open_external_enabled);
+    let _ = menu
+        .start_watching
+        .set_enabled(state.start_watching_enabled);
+    let _ = menu.stop_watching.set_enabled(state.stop_watching_enabled);
+}
+
+fn navigate_to_library<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let _ = window.eval("window.location.hash = '#/repositories';");
+    }
+}
+
+fn open_external_from_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(selected) = app
+        .dialog()
+        .file()
+        .set_title("Open Save History Repository")
+        .blocking_pick_folder()
+    else {
+        return;
+    };
+    let Ok(selected_path) = selected.into_path() else {
+        return;
+    };
+    if matches!(
+        app.state::<DesktopWorkflow>().open_repository_path(
+            app,
+            selected_path,
+            desktop_runtime::RepositoryLifecycle::External
+        ),
+        Ok(desktop_runtime::OpenExternalRepositoryResult::Opened)
+    ) {
+        navigate_to_library(app);
+    }
+    update_repository_menu(app);
 }
 
 fn focus_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
@@ -145,6 +275,9 @@ mod tests {
             capability["permissions"],
             serde_json::json!([
                 "allow-desktop-get-repo-session-connection",
+                "allow-desktop-get-repository-library",
+                "allow-desktop-open-library-entry",
+                "allow-desktop-close-repository",
                 "allow-desktop-open-external-repository",
                 "allow-desktop-reopen-repository",
                 "allow-desktop-start-watching",

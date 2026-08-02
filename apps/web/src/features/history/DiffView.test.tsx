@@ -96,7 +96,7 @@ describe("Diff view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByTestId("diff-view")).toBeDefined();
     expect(getRequiredInput("#diff-from").value).toBe("before");
     expect(getRequiredInput("#diff-to").value).toBe("after");
@@ -194,7 +194,7 @@ describe("Diff view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByTestId("diff-view")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Compare" }));
 
@@ -268,7 +268,7 @@ describe("Diff view", () => {
     );
 
     render(() => <App />);
-    connectLocalHistory();
+    await connectLocalHistory();
     expect(await screen.findByTestId("diff-view")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Compare" }));
 
@@ -290,8 +290,17 @@ describe("Diff view", () => {
   });
 });
 
-function connectLocalHistory() {
-  fireEvent.click(getRequiredElement("#connect-local-history"));
+async function connectLocalHistory() {
+  const destination =
+    globalThis.location.hash === "" ? "#/progress" : globalThis.location.hash;
+  globalThis.location.hash = "#/repositories";
+  globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+  fireEvent.click(await screen.findByRole("button", { name: "Open" }));
+  await waitFor(() => {
+    expect(globalThis.location.hash).toBe("#/progress");
+  });
+  globalThis.location.hash = destination;
+  globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
 }
 
 function createCommit(ref: string) {

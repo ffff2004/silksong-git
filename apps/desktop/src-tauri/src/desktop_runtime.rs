@@ -27,16 +27,26 @@ pub struct DesktopWorkflow {
     state: Mutex<DesktopWorkflowState>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RepositoryMenuState {
+    pub close_enabled: bool,
+    pub open_external_enabled: bool,
+    pub start_watching_enabled: bool,
+    pub stop_watching_enabled: bool,
+}
+
 #[derive(Default)]
 struct DesktopWorkflowState {
     current_session: Option<ManagedSession>,
     transitioning: bool,
     invalidated: Option<InvalidatedSession>,
+    last_library: Option<RepositoryLibrary>,
 }
 
 struct InvalidatedSession {
     _diagnostic: SafeDiagnostic,
     repo_path: String,
+    lifecycle: RepositoryLifecycle,
 }
 
 #[derive(Clone, Copy)]
@@ -50,6 +60,53 @@ struct ManagedSession {
     repo_path: String,
     sidecar: SidecarSupervisor,
     watching: bool,
+    lifecycle: RepositoryLifecycle,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RepositoryLifecycle {
+    Managed,
+    Archived,
+    External,
+}
+
+impl RepositoryLifecycle {
+    fn sidecar_access(self) -> &'static str {
+        match self {
+            Self::Archived => "readOnly",
+            Self::Managed | Self::External => "readWrite",
+        }
+    }
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryLibrary {
+    pub managed: Vec<RepositoryLibraryEntry>,
+    pub archived: Vec<RepositoryLibraryEntry>,
+    pub attention: Vec<RepositoryLibraryEntry>,
+    pub external: Option<RepositoryLibraryEntry>,
+    pub stale: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryLibraryEntry {
+    pub name: String,
+    pub lifecycle: RepositoryLifecycle,
+    pub status: String,
+    pub required_action: String,
+    pub current: bool,
+    pub watching: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenLibraryEntryInput {
+    pub lifecycle: RepositoryLifecycle,
+    pub name: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -57,6 +114,7 @@ struct ManagedSession {
 pub struct RepoSessionConnection {
     pub endpoint: String,
     pub token: String,
+    pub access: String,
 }
 
 #[derive(Serialize)]
@@ -92,18 +150,70 @@ pub enum RepositoryRequiredAction {
 }
 
 impl DesktopWorkflow {
-    fn open_repository_path<R: Runtime>(
+    pub(crate) fn repository_menu_state(&self) -> RepositoryMenuState {
+        let Ok(state) = self.state.lock() else {
+            return RepositoryMenuState {
+                close_enabled: false,
+                open_external_enabled: false,
+                start_watching_enabled: false,
+                stop_watching_enabled: false,
+            };
+        };
+        let mutation_active = state
+            .current_session
+            .as_ref()
+            .is_some_and(|session| session.sidecar.mutation_active());
+        let can_change_session = !state.transitioning && !mutation_active;
+        let can_control_watcher = state.current_session.as_ref().is_some_and(|session| {
+            session.lifecycle != RepositoryLifecycle::Archived && !mutation_active
+        });
+
+        RepositoryMenuState {
+            close_enabled: can_change_session && state.current_session.is_some(),
+            open_external_enabled: can_change_session,
+            start_watching_enabled: can_control_watcher
+                && state
+                    .current_session
+                    .as_ref()
+                    .is_some_and(|session| !session.watching),
+            stop_watching_enabled: can_control_watcher
+                && state
+                    .current_session
+                    .as_ref()
+                    .is_some_and(|session| session.watching),
+        }
+    }
+    pub(crate) fn open_repository_path<R: Runtime>(
         &self,
         app: &AppHandle<R>,
         selected_path: PathBuf,
+        lifecycle: RepositoryLifecycle,
     ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
-        self.open_repository_path_with_launch(selected_path, SidecarLaunch::for_app(app)?)
+        self.open_repository_path_with_lifecycle(
+            selected_path,
+            SidecarLaunch::for_app(app)?,
+            lifecycle,
+        )
     }
 
+    #[cfg(test)]
     fn open_repository_path_with_launch(
         &self,
         selected_path: PathBuf,
         launch: SidecarLaunch,
+    ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
+        self.open_repository_path_with_lifecycle(
+            selected_path,
+            launch,
+            RepositoryLifecycle::External,
+        )
+    }
+
+    fn open_repository_path_with_lifecycle(
+        &self,
+        selected_path: PathBuf,
+        launch: SidecarLaunch,
+        lifecycle: RepositoryLifecycle,
     ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
         let repo_path = canonicalize_repository_path(&selected_path)?;
         let repo_path = repository_path_for_protocol(&repo_path)?;
@@ -172,6 +282,7 @@ impl DesktopWorkflow {
         let opened = match candidate.command(json!({
             "type": "session.open",
             "repoPath": repo_path,
+            "access": lifecycle.sidecar_access(),
         })) {
             Ok(response) => response,
             Err(error) => {
@@ -186,6 +297,7 @@ impl DesktopWorkflow {
             repo_path,
             sidecar: candidate,
             watching: false,
+            lifecycle,
         }));
 
         Ok(OpenExternalRepositoryResult::Opened)
@@ -208,20 +320,26 @@ impl DesktopWorkflow {
             .ok_or(DesktopRuntimeError::NoOpenSession)?;
         if let Err(error) = session.sidecar.poll() {
             let repo_path = session.repo_path.clone();
+            let lifecycle = session.lifecycle;
             state.current_session = None;
             state.invalidated = Some(InvalidatedSession {
                 _diagnostic: diagnostic_for(&error),
                 repo_path,
+                lifecycle,
             });
             return Err(error);
         }
         Ok(session.connection.clone())
     }
 
-    fn control_watcher(&self, command_type: &str) -> Result<(), DesktopRuntimeError> {
+    pub(crate) fn control_watcher(&self, command_type: &str) -> Result<(), DesktopRuntimeError> {
         let Some(mut session) = self.take_session_for_operation()? else {
             return Err(DesktopRuntimeError::NoOpenSession);
         };
+        if session.lifecycle == RepositoryLifecycle::Archived {
+            self.finish_transition(Some(session));
+            return Err(DesktopRuntimeError::ReadOnly);
+        }
         let response = match session.sidecar.command(json!({ "type": command_type })) {
             Ok(response) => response,
             Err(error) => {
@@ -255,6 +373,72 @@ impl DesktopWorkflow {
         result
     }
 
+    pub(crate) fn close(&self) -> Result<(), DesktopRuntimeError> {
+        self.shutdown()
+    }
+
+    fn library<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+    ) -> Result<RepositoryLibrary, DesktopRuntimeError> {
+        let launch = SidecarLaunch::for_app(app)?;
+        match scan_repository_library(app, launch, self.current_session_details()?) {
+            Ok(library) => {
+                if let Ok(mut state) = self.state.lock() {
+                    state.last_library = Some(library.clone());
+                }
+                Ok(library)
+            }
+            Err(error) => {
+                let previous = self
+                    .state
+                    .lock()
+                    .map_err(|_| DesktopRuntimeError::Unavailable)?
+                    .last_library
+                    .clone();
+                if let Some(mut library) = previous {
+                    library.stale = true;
+                    library.error = Some(error.user_message());
+                    Ok(library)
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
+    fn current_session_details(
+        &self,
+    ) -> Result<Option<(String, RepositoryLifecycle, bool)>, DesktopRuntimeError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| DesktopRuntimeError::Unavailable)?;
+        Ok(state.current_session.as_ref().map(|session| {
+            (
+                session.repo_path.clone(),
+                session.lifecycle,
+                session.watching,
+            )
+        }))
+    }
+
+    fn open_library_entry<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        input: OpenLibraryEntryInput,
+    ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
+        if input.lifecycle == RepositoryLifecycle::External {
+            return Err(DesktopRuntimeError::InvalidDirectory);
+        }
+        let path = resolve_library_child(app, input.lifecycle, &input.name)?;
+        self.open_repository_path_with_lifecycle(
+            path,
+            SidecarLaunch::for_app(app)?,
+            input.lifecycle,
+        )
+    }
+
     pub(crate) fn close_requires_confirmation(&self) -> Result<bool, DesktopRuntimeError> {
         let mut state = self
             .state
@@ -277,7 +461,7 @@ impl DesktopWorkflow {
         &self,
         app: &AppHandle<R>,
     ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
-        let path = {
+        let (path, lifecycle) = {
             let state = self
                 .state
                 .lock()
@@ -285,10 +469,14 @@ impl DesktopWorkflow {
             state
                 .invalidated
                 .as_ref()
-                .map(|invalidated| invalidated.repo_path.clone())
+                .map(|invalidated| (invalidated.repo_path.clone(), invalidated.lifecycle))
         }
         .ok_or(DesktopRuntimeError::NoOpenSession)?;
-        self.open_repository_path_with_launch(PathBuf::from(path), SidecarLaunch::for_app(app)?)
+        self.open_repository_path_with_lifecycle(
+            PathBuf::from(path),
+            SidecarLaunch::for_app(app)?,
+            lifecycle,
+        )
     }
 
     #[cfg(test)]
@@ -296,7 +484,7 @@ impl DesktopWorkflow {
         &self,
         launch: SidecarLaunch,
     ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
-        let path = {
+        let (path, lifecycle) = {
             let state = self
                 .state
                 .lock()
@@ -304,10 +492,10 @@ impl DesktopWorkflow {
             state
                 .invalidated
                 .as_ref()
-                .map(|invalidated| invalidated.repo_path.clone())
+                .map(|invalidated| (invalidated.repo_path.clone(), invalidated.lifecycle))
         }
         .ok_or(DesktopRuntimeError::NoOpenSession)?;
-        self.open_repository_path_with_launch(PathBuf::from(path), launch)
+        self.open_repository_path_with_lifecycle(PathBuf::from(path), launch, lifecycle)
     }
 
     fn take_session_for_operation(&self) -> Result<Option<ManagedSession>, DesktopRuntimeError> {
@@ -358,9 +546,42 @@ pub async fn desktop_open_external_repository(
         .into_path()
         .map_err(|_| "The selected directory could not be opened.".to_string())?;
 
-    runtime
-        .open_repository_path(&app, selected_path)
-        .map_err(|error| error.user_message())
+    let result = runtime
+        .open_repository_path(&app, selected_path, RepositoryLifecycle::External)
+        .map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
+}
+
+#[tauri::command]
+pub fn desktop_get_repository_library(
+    app: AppHandle,
+    workflow: State<'_, DesktopWorkflow>,
+) -> Result<RepositoryLibrary, String> {
+    workflow.library(&app).map_err(|error| error.user_message())
+}
+
+#[tauri::command]
+pub fn desktop_open_library_entry(
+    app: AppHandle,
+    workflow: State<'_, DesktopWorkflow>,
+    input: OpenLibraryEntryInput,
+) -> Result<OpenExternalRepositoryResult, String> {
+    let result = workflow
+        .open_library_entry(&app, input)
+        .map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
+}
+
+#[tauri::command]
+pub fn desktop_close_repository(
+    app: AppHandle,
+    workflow: State<'_, DesktopWorkflow>,
+) -> Result<(), String> {
+    let result = workflow.close().map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
 }
 
 /// Reopens only the in-memory repository selection after a sidecar failure.
@@ -370,7 +591,9 @@ pub fn desktop_reopen_repository(
     app: AppHandle,
     workflow: State<'_, DesktopWorkflow>,
 ) -> Result<OpenExternalRepositoryResult, String> {
-    workflow.reopen(&app).map_err(|error| error.user_message())
+    let result = workflow.reopen(&app).map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
 }
 
 /// Returns only the current in-memory Local HTTP connection for the shared Web client closure.
@@ -382,17 +605,27 @@ pub fn desktop_get_repo_session_connection(
 }
 
 #[tauri::command]
-pub fn desktop_start_watching(runtime: State<'_, DesktopWorkflow>) -> Result<(), String> {
-    runtime
+pub fn desktop_start_watching(
+    app: AppHandle,
+    runtime: State<'_, DesktopWorkflow>,
+) -> Result<(), String> {
+    let result = runtime
         .control_watcher("watcher.start")
-        .map_err(|error| error.user_message())
+        .map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
 }
 
 #[tauri::command]
-pub fn desktop_stop_watching(runtime: State<'_, DesktopWorkflow>) -> Result<(), String> {
-    runtime
+pub fn desktop_stop_watching(
+    app: AppHandle,
+    runtime: State<'_, DesktopWorkflow>,
+) -> Result<(), String> {
+    let result = runtime
         .control_watcher("watcher.stop")
-        .map_err(|error| error.user_message())
+        .map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
 }
 
 fn canonicalize_repository_path(path: &Path) -> Result<PathBuf, DesktopRuntimeError> {
@@ -402,6 +635,178 @@ fn canonicalize_repository_path(path: &Path) -> Result<PathBuf, DesktopRuntimeEr
     }
 
     Ok(canonical)
+}
+
+fn managed_root<R: Runtime>(
+    app: &AppHandle<R>,
+    lifecycle: RepositoryLifecycle,
+) -> Result<PathBuf, DesktopRuntimeError> {
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| DesktopRuntimeError::Unavailable)?
+        .join(match lifecycle {
+            RepositoryLifecycle::Managed => "repositories",
+            RepositoryLifecycle::Archived => "archives",
+            RepositoryLifecycle::External => return Err(DesktopRuntimeError::InvalidDirectory),
+        });
+    fs::create_dir_all(&root).map_err(|_| DesktopRuntimeError::Unavailable)?;
+    canonicalize_repository_path(&root)
+}
+
+fn resolve_library_child<R: Runtime>(
+    app: &AppHandle<R>,
+    lifecycle: RepositoryLifecycle,
+    name: &str,
+) -> Result<PathBuf, DesktopRuntimeError> {
+    if name.is_empty() || name == "." || name == ".." || Path::new(name).components().count() != 1 {
+        return Err(DesktopRuntimeError::InvalidDirectory);
+    }
+    let root = managed_root(app, lifecycle)?;
+    let child = root.join(name);
+    let metadata =
+        fs::symlink_metadata(&child).map_err(|_| DesktopRuntimeError::InvalidDirectory)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(DesktopRuntimeError::InvalidDirectory);
+    }
+    let canonical = canonicalize_repository_path(&child)?;
+    if canonical.parent() != Some(root.as_path()) {
+        return Err(DesktopRuntimeError::InvalidDirectory);
+    }
+    Ok(canonical)
+}
+
+fn scan_repository_library<R: Runtime>(
+    app: &AppHandle<R>,
+    launch: SidecarLaunch,
+    current: Option<(String, RepositoryLifecycle, bool)>,
+) -> Result<RepositoryLibrary, DesktopRuntimeError> {
+    let mut library = RepositoryLibrary {
+        managed: Vec::new(),
+        archived: Vec::new(),
+        attention: Vec::new(),
+        external: None,
+        stale: false,
+        error: None,
+    };
+    for lifecycle in [RepositoryLifecycle::Managed, RepositoryLifecycle::Archived] {
+        let root = managed_root(app, lifecycle)?;
+        for entry in fs::read_dir(&root).map_err(|_| DesktopRuntimeError::Unavailable)? {
+            let entry = entry.map_err(|_| DesktopRuntimeError::Unavailable)?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let candidate = match entry.file_type() {
+                Ok(file_type) if file_type.is_dir() && !file_type.is_symlink() => {
+                    resolve_library_child(app, lifecycle, &name).ok()
+                }
+                _ => None,
+            };
+            let (status, required_action) = if let Some(candidate) = candidate.as_ref() {
+                let repo_path = repository_path_for_protocol(candidate)?;
+                let mut inspector = SidecarSupervisor::spawn(launch.clone())?;
+                let result = inspector
+                    .command(json!({ "type": "repository.inspect", "repoPath": repo_path }));
+                inspector.shutdown_without_session();
+                match result {
+                    Ok(response) => parse_repository_inspection(&response)?,
+                    Err(_) => ("invalid".into(), "chooseAnotherDirectory".into()),
+                }
+            } else {
+                ("invalid".into(), "chooseAnotherDirectory".into())
+            };
+            let is_current = current
+                .as_ref()
+                .is_some_and(|(path, current_lifecycle, _)| {
+                    *current_lifecycle == lifecycle
+                        && candidate
+                            .as_ref()
+                            .is_some_and(|candidate| path == &candidate.to_string_lossy())
+                });
+            let record = RepositoryLibraryEntry {
+                name,
+                lifecycle,
+                status: status.clone(),
+                required_action,
+                current: is_current,
+                watching: is_current && current.as_ref().is_some_and(|(_, _, watching)| *watching),
+            };
+            if status == "ready" {
+                match lifecycle {
+                    RepositoryLifecycle::Managed => library.managed.push(record),
+                    RepositoryLifecycle::Archived => library.archived.push(record),
+                    RepositoryLifecycle::External => unreachable!(),
+                }
+            } else {
+                library.attention.push(record);
+            }
+        }
+    }
+    for entries in [
+        &mut library.managed,
+        &mut library.archived,
+        &mut library.attention,
+    ] {
+        entries.sort_by(|left, right| natural_name_cmp(&left.name, &right.name));
+    }
+    if let Some((path, RepositoryLifecycle::External, watching)) = current {
+        library.external = Some(RepositoryLibraryEntry {
+            name: Path::new(&path)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            lifecycle: RepositoryLifecycle::External,
+            status: "ready".into(),
+            required_action: "open".into(),
+            current: true,
+            watching,
+        });
+    }
+    Ok(library)
+}
+
+fn natural_name_cmp(left: &str, right: &str) -> std::cmp::Ordering {
+    let mut left = left.chars().peekable();
+    let mut right = right.chars().peekable();
+    loop {
+        match (left.peek(), right.peek()) {
+            (Some(left_character), Some(right_character))
+                if left_character.is_ascii_digit() && right_character.is_ascii_digit() =>
+            {
+                let left_digits: String = left
+                    .by_ref()
+                    .take_while(|character| character.is_ascii_digit())
+                    .collect();
+                let right_digits: String = right
+                    .by_ref()
+                    .take_while(|character| character.is_ascii_digit())
+                    .collect();
+                let ordering = left_digits
+                    .trim_start_matches('0')
+                    .len()
+                    .cmp(&right_digits.trim_start_matches('0').len())
+                    .then_with(|| {
+                        left_digits
+                            .trim_start_matches('0')
+                            .cmp(right_digits.trim_start_matches('0'))
+                    });
+                if ordering != std::cmp::Ordering::Equal {
+                    return ordering;
+                }
+            }
+            (Some(_), Some(_)) => {
+                let ordering = left
+                    .next()
+                    .map(|character| character.to_ascii_lowercase())
+                    .cmp(&right.next().map(|character| character.to_ascii_lowercase()));
+                if ordering != std::cmp::Ordering::Equal {
+                    return ordering;
+                }
+            }
+            (None, None) => return std::cmp::Ordering::Equal,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+        }
+    }
 }
 
 fn repository_path_for_protocol(path: &Path) -> Result<String, DesktopRuntimeError> {
@@ -438,6 +843,11 @@ fn parse_connection(response: &Value) -> Result<RepoSessionConnection, DesktopRu
     Ok(RepoSessionConnection {
         endpoint: endpoint.into(),
         token: token.into(),
+        access: response
+            .pointer("/result/access")
+            .and_then(Value::as_str)
+            .unwrap_or("readWrite")
+            .into(),
     })
 }
 
@@ -847,6 +1257,7 @@ pub(crate) enum DesktopRuntimeError {
     Invalidated,
     NoOpenSession,
     Protocol(String),
+    ReadOnly,
     SidecarRejected { code: String, message: String },
     SidecarUnavailable,
     UnsupportedDirectoryName,
@@ -874,6 +1285,7 @@ impl DesktopRuntimeError {
                 "The Desktop Local History service is incompatible. Update Desktop and try again."
                     .into()
             }
+            Self::ReadOnly => "Archived repositories are read-only and cannot watch or change saves.".into(),
             Self::SidecarRejected { code, message } => match code.as_str() {
                 "watcher_start_failed" => "Watching could not start. Another process may already be watching this repository; history browsing is still available.".into(),
                 "watcher_stop_failed" => "Watching could not stop safely. Keep this app open and try again.".into(),
@@ -909,8 +1321,8 @@ mod tests {
     };
 
     use super::{
-        DesktopRuntime, DesktopRuntimeError, OpenExternalRepositoryResult, SidecarLaunch,
-        canonicalize_repository_path,
+        DesktopRuntime, DesktopRuntimeError, OpenExternalRepositoryResult, RepositoryLifecycle,
+        SidecarLaunch, canonicalize_repository_path, natural_name_cmp,
     };
 
     static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
@@ -930,6 +1342,60 @@ mod tests {
             nested.canonicalize().expect("canonical nested directory"),
         );
         assert!(canonicalize_repository_path(&temp.path().join("missing")).is_err());
+    }
+
+    #[test]
+    fn naturally_sorts_repository_names_without_using_them_as_identity() {
+        assert_eq!(
+            natural_name_cmp("slot2", "slot10"),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            natural_name_cmp("Archive 9", "archive 10"),
+            std::cmp::Ordering::Less
+        );
+    }
+
+    #[test]
+    fn repository_menu_tracks_reader_and_watcher_state() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("repository");
+        fs::create_dir(&repository).expect("create repository");
+        let script = temp.path().join("sidecar.mjs");
+        fs::write(
+            &script,
+            fixture_sidecar_source(repository.to_str().expect("UTF-8 path"), "ready"),
+        )
+        .expect("write sidecar fixture");
+
+        let runtime = DesktopRuntime::default();
+        assert_eq!(
+            runtime.repository_menu_state(),
+            super::RepositoryMenuState {
+                close_enabled: false,
+                open_external_enabled: true,
+                start_watching_enabled: false,
+                stop_watching_enabled: false,
+            }
+        );
+        runtime
+            .open_repository_path_with_launch(
+                repository,
+                SidecarLaunch::Development {
+                    entry: script,
+                    node: PathBuf::from("node"),
+                },
+            )
+            .expect("open reader session");
+        assert!(runtime.repository_menu_state().close_enabled);
+        assert!(runtime.repository_menu_state().start_watching_enabled);
+        assert!(!runtime.repository_menu_state().stop_watching_enabled);
+        runtime
+            .control_watcher("watcher.start")
+            .expect("start watcher");
+        assert!(!runtime.repository_menu_state().start_watching_enabled);
+        assert!(runtime.repository_menu_state().stop_watching_enabled);
+        runtime.shutdown().expect("shutdown session");
     }
 
     #[test]
@@ -1142,6 +1608,71 @@ mod tests {
     }
 
     #[test]
+    fn invalidated_archived_reader_reopens_with_read_only_access() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("archive");
+        fs::create_dir(&repository).expect("create archive");
+        let failing_script = temp.path().join("failing-sidecar.mjs");
+        let replacement_script = temp.path().join("replacement-sidecar.mjs");
+        fs::write(
+            &failing_script,
+            unexpected_exit_fixture_sidecar_source(repository.to_str().expect("UTF-8 path")),
+        )
+        .expect("write failing fixture");
+        fs::write(
+            &replacement_script,
+            fixture_sidecar_source(repository.to_str().expect("UTF-8 path"), "ready"),
+        )
+        .expect("write replacement fixture");
+
+        let workflow = DesktopRuntime::default();
+        workflow
+            .open_repository_path_with_lifecycle(
+                repository,
+                SidecarLaunch::Development {
+                    entry: failing_script,
+                    node: PathBuf::from("node"),
+                },
+                RepositoryLifecycle::Archived,
+            )
+            .expect("open archived reader session");
+        let mut observed_unexpected_exit = false;
+        for _ in 0..50 {
+            if matches!(
+                workflow.connection(),
+                Err(DesktopRuntimeError::SidecarUnavailable)
+            ) {
+                observed_unexpected_exit = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(observed_unexpected_exit, "sidecar should exit unexpectedly");
+
+        assert!(matches!(
+            workflow.reopen_with_launch(SidecarLaunch::Development {
+                entry: replacement_script,
+                node: PathBuf::from("node"),
+            }),
+            Ok(OpenExternalRepositoryResult::Opened)
+        ));
+        assert_eq!(
+            workflow
+                .connection()
+                .expect("reopened archive connection")
+                .access,
+            "readOnly"
+        );
+        assert!(matches!(
+            workflow.control_watcher("watcher.start"),
+            Err(DesktopRuntimeError::ReadOnly)
+        ));
+        workflow
+            .shutdown()
+            .expect("shutdown reopened archive reader");
+    }
+
+    #[test]
     fn replacing_a_repository_waits_for_the_previous_sidecar_shutdown() {
         let temp = TestDirectory::new();
         let first_repository = temp.path().join("first-repository");
@@ -1290,7 +1821,7 @@ process.stdin.on("data", (chunk) => {{
       result = {{ type: "repository.inspected", inspection: {inspection} }};
     }} else if (request.command.type === "session.open") {{
       if (!({status:?} === "ready" || {status:?} === "mutation")) throw new Error("invalid repositories must not open sessions");
-      result = {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
+      result = {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
     }} else if (request.command.type === "process.shutdown") {{
       result = {{ type: "process.shutdownComplete" }};
       process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");

@@ -39,6 +39,9 @@ export const sessionOpenCommandSchema = z
   .object({
     type: z.literal("session.open"),
     repoPath: z.string().min(1).max(4096),
+    // Placement is classified by Desktop. History deliberately has no archive placement concept, so
+    // this is session policy rather than repository data.
+    access: z.enum(["readWrite", "readOnly"]).default("readWrite"),
   })
   .strict();
 
@@ -164,6 +167,7 @@ const successResultSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("session.opened"),
       connection: connectionSchema,
+      access: z.enum(["readWrite", "readOnly"]),
     })
     .strict(),
   z

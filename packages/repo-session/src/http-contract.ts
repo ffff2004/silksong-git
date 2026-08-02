@@ -50,6 +50,10 @@ const internalError = {
   description: "The request failed without exposing internal details.",
   content: { "application/json": { schema: errorSchema } },
 } as const;
+const readOnlySession = {
+  description: "The Repo Session permits reads and export only.",
+  content: { "application/json": { schema: errorSchema } },
+} as const;
 
 const baseResponses = {
   400: invalidRequest,
@@ -137,6 +141,7 @@ export const localHttpRoutes = {
     },
     responses: {
       200: jsonSuccess(observeSaveResultSchema),
+      403: readOnlySession,
       409: internalError,
       413: invalidRequest,
       415: invalidRequest,
@@ -179,6 +184,7 @@ export const localHttpRoutes = {
     },
     responses: {
       200: jsonSuccess(restoreResultSchema),
+      403: readOnlySession,
       404: internalError,
       409: internalError,
       413: invalidRequest,
