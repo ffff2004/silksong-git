@@ -21,8 +21,7 @@
     "format": "tsx ../../scripts/format.ts packages/repo-session",
     "generate:openapi": "tsx src/scripts/generate-openapi.ts",
     "lint": "tsx ../../scripts/lint.ts packages/repo-session",
-    "test": "tsx --test --test-reporter=dot src/**/*.test.ts",
-    "test:verbose": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.8",

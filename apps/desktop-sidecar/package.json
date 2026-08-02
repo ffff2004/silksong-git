@@ -11,7 +11,7 @@
     "dev": "tsx src/main.ts",
     "format": "tsx ../../scripts/format.ts apps/desktop-sidecar",
     "lint": "tsx ../../scripts/lint.ts apps/desktop-sidecar",
-    "test": "pnpm run build && tsx --test --test-reporter=dot src/**/*.test.ts"
+    "test": "pnpm run build && tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@silksong-git/history": "workspace:*",

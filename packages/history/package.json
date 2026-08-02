@@ -12,8 +12,7 @@
   "scripts": {
     "format": "tsx ../../scripts/format.ts packages/history",
     "lint": "tsx ../../scripts/lint.ts packages/history",
-    "test": "tsx --test --test-reporter=dot src/**/*.test.ts",
-    "test:verbose": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@silksong-git/core": "workspace:*",

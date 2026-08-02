@@ -16,7 +16,7 @@
     "lint": "tsx ../../scripts/lint.ts apps/cli",
     "prepack": "pnpm run build",
     "preview": "node ./dist/main.js",
-    "test": "pnpm run build && tsx --test --test-reporter=dot src/**/*.test.ts",
+    "test": "pnpm run build && tsx --test src/**/*.test.ts",
     "verify-pack": "tsx scripts/verify-pack.ts"
   },
   "dependencies": {
