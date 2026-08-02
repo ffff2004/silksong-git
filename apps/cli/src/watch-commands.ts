@@ -326,6 +326,15 @@ function toJsonlWatchEvent(
       };
     }
 
+    case "mutationActivity": {
+      return {
+        type: event.type,
+        repoPath: event.repoPath,
+        mutation: event.mutation,
+        status: event.status,
+      };
+    }
+
     case "stopping":
     case "stopped": {
       return {
@@ -386,6 +395,10 @@ function toHumanWatchEvent(
 
     case "httpRequestError": {
       return `http request error: ${event.error.status} ${event.error.code} ${event.error.message}\n`;
+    }
+
+    case "mutationActivity": {
+      return `${event.mutation} ${event.status}\n`;
     }
 
     case "stopping": {

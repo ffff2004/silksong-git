@@ -94,6 +94,13 @@ export type RepoSessionEvent =
       };
     }
   | {
+      /** Safe lifecycle signal for a mutation admitted through Local HTTP. */
+      readonly type: "mutationActivity";
+      readonly repoPath: string;
+      readonly mutation: "manualCheckpoint" | "inPlaceRestore";
+      readonly status: "started" | "finished";
+    }
+  | {
       readonly type: "observation";
       readonly repoPath: string;
       readonly cause: "startup" | "change" | "deferred";

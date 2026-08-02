@@ -66,6 +66,7 @@ export interface CreateLocalHttpAppInput {
     readonly track: (work: Promise<unknown>) => void;
   };
   readonly onRequestError?: (error: HttpRequestErrorEvent) => void;
+  readonly onMutationActivity?: (activity: MutationActivityEvent) => void;
 }
 
 interface HttpRequestErrorEvent {
@@ -74,6 +75,11 @@ interface HttpRequestErrorEvent {
   readonly status: number;
   readonly code: LocalHttpErrorCode;
   readonly message: string;
+}
+
+interface MutationActivityEvent {
+  readonly mutation: "manualCheckpoint" | "inPlaceRestore";
+  readonly status: "started" | "finished";
 }
 
 // The return type is intentionally inferred from the real Hono registration chain so LocalHttpApp
@@ -214,11 +220,16 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
       return c.json(result, 200);
     })
     .openapi(localHttpRoutes.checkpoints, async (c) => {
-      const result = await observeSave({
-        repoPath: input.repoPath,
-        trigger: "manualCheckpoint",
-        ...c.req.valid("json"),
-      });
+      const result = await runMutation(
+        input,
+        "manualCheckpoint",
+        async () =>
+          await observeSave({
+            repoPath: input.repoPath,
+            trigger: "manualCheckpoint",
+            ...c.req.valid("json"),
+          }),
+      );
 
       if (result.status === "watcherError") {
         if (result.error.reason === "decodeFailure") {
@@ -278,15 +289,20 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
     .openapi(localHttpRoutes.restoreInPlace, async (c) => {
       const request = c.req.valid("json");
 
-      const result = await restoreEncodedSave({
-        repoPath: input.repoPath,
-        commitRef: request.commitRef,
-        target: {
-          kind: "inPlace",
-          confirmation: request.confirmation,
-          expectedCurrent: request.expectedCurrent,
-        },
-      });
+      const result = await runMutation(
+        input,
+        "inPlaceRestore",
+        async () =>
+          await restoreEncodedSave({
+            repoPath: input.repoPath,
+            commitRef: request.commitRef,
+            target: {
+              kind: "inPlace",
+              confirmation: request.confirmation,
+              expectedCurrent: request.expectedCurrent,
+            },
+          }),
+      );
 
       return c.json(result, 200);
     });
@@ -327,6 +343,19 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
   });
 
   return routedApp;
+}
+
+async function runMutation<T>(
+  input: CreateLocalHttpAppInput,
+  mutation: MutationActivityEvent["mutation"],
+  work: () => Promise<T>,
+): Promise<T> {
+  input.onMutationActivity?.({ mutation, status: "started" });
+  try {
+    return await work();
+  } finally {
+    input.onMutationActivity?.({ mutation, status: "finished" });
+  }
 }
 
 export type LocalHttpApp = ReturnType<typeof buildLocalHttpApp>;

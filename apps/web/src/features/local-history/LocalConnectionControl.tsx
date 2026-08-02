@@ -17,6 +17,13 @@ export function LocalConnectionControl(props: LocalConnectionControlProps) {
   const [repositorySelection, setRepositorySelection] =
     createSignal<OpenExternalRepositoryResult>();
   const isConnecting = () => localHistory.connection().kind === "connecting";
+  const workflowState = () => localHistory.workflowState();
+  const isTransitioning = () => workflowState().kind === "transitioning";
+  const invalidatedWorkflow = () => {
+    const state = workflowState();
+
+    return state.kind === "invalidated" ? state : undefined;
+  };
   const connectionError = () => {
     const connection = localHistory.connection();
 
@@ -34,10 +41,14 @@ export function LocalConnectionControl(props: LocalConnectionControlProps) {
 
     return availability?.kind === "stale" ? availability : undefined;
   };
-  const actionRequiredSelection = () => {
+  const operationFeedback = () => {
     const selection = repositorySelection();
 
-    return selection?.kind === "requiresAction" ? selection : undefined;
+    return selection !== undefined
+      && selection.kind !== "opened"
+      && selection.kind !== "cancelled"
+      ? selection
+      : undefined;
   };
   const openButtonLabel = () => {
     if (openingRepository()) {
@@ -58,7 +69,7 @@ export function LocalConnectionControl(props: LocalConnectionControlProps) {
     }
   };
   const openRepository = async () => {
-    if (openingRepository() || isConnecting()) {
+    if (openingRepository() || isConnecting() || isTransitioning()) {
       return;
     }
 
@@ -79,87 +90,134 @@ export function LocalConnectionControl(props: LocalConnectionControlProps) {
       setOpeningRepository(false);
     }
   };
+  const reopenRepository = async () => {
+    if (openingRepository() || isConnecting() || isTransitioning()) {
+      return;
+    }
+
+    setOpeningRepository(true);
+    setRepositorySelection(undefined);
+    try {
+      const result = await localHistory.reopenRepository();
+      setRepositorySelection(result);
+      if (result.kind !== "opened") {
+        return;
+      }
+
+      localHistory.disconnect();
+      await connect();
+    } finally {
+      setOpeningRepository(false);
+    }
+  };
 
   return (
     <div class={styles["controls"]}>
       <Show
-        when={localHistory.connection().kind === "connected"}
+        when={invalidatedWorkflow()}
         fallback={
           <Show
-            when={canReconnect()}
+            when={localHistory.connection().kind === "connected"}
             fallback={
-              <button
-                class={`${buttonStyles["primary"]} ${buttonStyles["compact"]}`}
-                id="connect-local-history"
-                type="button"
-                disabled={openingRepository() || isConnecting()}
-                onClick={() => {
-                  openRepository().catch((error: unknown) => {
-                    console.error(
-                      "[local-history] Unexpected repository selection error:",
-                      error,
-                    );
-                  });
-                }}
+              <Show
+                when={canReconnect()}
+                fallback={
+                  <button
+                    class={`${buttonStyles["primary"]} ${buttonStyles["compact"]}`}
+                    id="connect-local-history"
+                    type="button"
+                    disabled={
+                      openingRepository() || isConnecting() || isTransitioning()
+                    }
+                    onClick={() => {
+                      openRepository().catch((error: unknown) => {
+                        console.error(
+                          "[local-history] Unexpected repository selection error:",
+                          error,
+                        );
+                      });
+                    }}
+                  >
+                    {openButtonLabel()}
+                  </button>
+                }
               >
-                {openButtonLabel()}
-              </button>
+                <button
+                  class={`${buttonStyles["primary"]} ${buttonStyles["compact"]}`}
+                  id="connect-local-history"
+                  type="button"
+                  disabled={isConnecting() || isTransitioning()}
+                  onClick={() => {
+                    connect().catch((error: unknown) => {
+                      console.error(
+                        "[local-history] Unexpected reconnect error:",
+                        error,
+                      );
+                    });
+                  }}
+                >
+                  {isConnecting() ? "Connecting…" : "Reconnect Local History"}
+                </button>
+              </Show>
             }
           >
+            <span
+              class={styles["status"]}
+              classList={{
+                [styles["stale"]!]: staleAvailability() !== undefined,
+              }}
+              role={staleAvailability() === undefined ? undefined : "alert"}
+              title={staleAvailability()?.error.message}
+            >
+              {staleAvailability() === undefined
+                ? "Local History connected"
+                : "Local History stale"}
+            </span>
+            <button
+              class={buttonStyles["danger"]}
+              id="disconnect-local-history"
+              type="button"
+              disabled={isTransitioning()}
+              onClick={() => {
+                localHistory.disconnect();
+              }}
+            >
+              Disconnect WebView
+            </button>
             <button
               class={`${buttonStyles["primary"]} ${buttonStyles["compact"]}`}
-              id="connect-local-history"
+              id="open-another-local-history"
               type="button"
-              disabled={isConnecting()}
+              disabled={openingRepository() || isTransitioning()}
               onClick={() => {
-                connect().catch((error: unknown) => {
+                openRepository().catch((error: unknown) => {
                   console.error(
-                    "[local-history] Unexpected reconnect error:",
+                    "[local-history] Unexpected repository selection error:",
                     error,
                   );
                 });
               }}
             >
-              {isConnecting() ? "Connecting…" : "Reconnect Local History"}
+              {openingRepository() ? "Opening…" : "Open another repository"}
             </button>
           </Show>
         }
       >
-        <span
-          class={styles["status"]}
-          classList={{ [styles["stale"]!]: staleAvailability() !== undefined }}
-          role={staleAvailability() === undefined ? undefined : "alert"}
-          title={staleAvailability()?.error.message}
-        >
-          {staleAvailability() === undefined
-            ? "Local History connected"
-            : "Local History stale"}
-        </span>
-        <button
-          class={buttonStyles["danger"]}
-          id="disconnect-local-history"
-          type="button"
-          onClick={() => {
-            localHistory.disconnect();
-          }}
-        >
-          Disconnect WebView
-        </button>
         <button
           class={`${buttonStyles["primary"]} ${buttonStyles["compact"]}`}
-          id="open-another-local-history"
+          id="reopen-selected-local-history"
           type="button"
-          disabled={openingRepository()}
+          disabled={isConnecting() || isTransitioning()}
           onClick={() => {
-            openRepository().catch((error: unknown) => {
+            reopenRepository().catch((error: unknown) => {
               console.error(
-                "[local-history] Unexpected repository selection error:",
+                "[local-history] Unexpected repository reopen error:",
                 error,
               );
             });
           }}
         >
-          {openingRepository() ? "Opening…" : "Open another repository"}
+          {openingRepository() ? "Reopening…" : "Reopen selected repository"}
         </button>
       </Show>
       <Show when={connectionError()}>
@@ -169,10 +227,17 @@ export function LocalConnectionControl(props: LocalConnectionControlProps) {
           </p>
         )}
       </Show>
-      <Show when={actionRequiredSelection()}>
+      <Show when={operationFeedback()}>
         {(selection) => (
           <p class={styles["error"]} role="alert">
             {formatRepositorySelection(selection())}
+          </p>
+        )}
+      </Show>
+      <Show when={invalidatedWorkflow()}>
+        {(state) => (
+          <p class={styles["error"]} role="alert">
+            {formatInvalidatedWorkflow(state().diagnostic)}
           </p>
         )}
       </Show>
@@ -181,8 +246,25 @@ export function LocalConnectionControl(props: LocalConnectionControlProps) {
 }
 
 function formatRepositorySelection(
-  selection: Extract<OpenExternalRepositoryResult, { kind: "requiresAction" }>,
+  selection: Exclude<
+    OpenExternalRepositoryResult,
+    { kind: "opened" | "cancelled" }
+  >,
 ): string {
+  switch (selection.kind) {
+    case "blockedByMutation": {
+      return "Wait for the active Manual Checkpoint or restore to finish before changing repositories.";
+    }
+
+    case "busy": {
+      return "Desktop Local History is already changing sessions. Try again when it finishes.";
+    }
+
+    case "requiresAction": {
+      break;
+    }
+  }
+
   switch (selection.action) {
     case "chooseAnotherDirectory": {
       return "This folder is not a compatible Save History Repository. Choose another directory.";
@@ -200,6 +282,14 @@ function formatRepositorySelection(
       return "This repository was created by a newer incompatible app. Update Desktop before opening it.";
     }
   }
+}
+
+function formatInvalidatedWorkflow(
+  diagnostic: "sidecarUnavailable" | "protocolFailure",
+): string {
+  return diagnostic === "protocolFailure"
+    ? "Desktop Local History stopped because its local protocol became incompatible. Reopen the selected repository to start a fresh reader session."
+    : "Desktop Local History stopped unexpectedly. Reopen the selected repository to start a fresh reader session.";
 }
 
 function formatError(error: LocalHistoryClientError): string {

@@ -71,11 +71,12 @@ JavaScript link handling is disabled, and the WebView receives no opener
 permission.
 
 The global Tauri object is disabled. The unique `main` capability allows only
-four application intent commands: open an external repository, obtain the
-current Repo Session connection, and start or stop watching for that current
-session. It grants no generic filesystem, shell, process, arbitrary HTTP, or
-native command Interface. The CSP allows bundled application resources, the
-Tauri IPC origin, and IPv4-loopback connections.
+five application intent commands: open an external repository, explicitly
+reopen an invalidated in-memory selection, obtain the current Repo Session
+connection, and start or stop watching for that current session. It grants no
+generic filesystem, shell, process, arbitrary HTTP, or native command
+Interface. The CSP allows bundled application resources, the Tauri IPC origin,
+and IPv4-loopback connections.
 
 This boundary implements
 [ADR-0021](../adr/0021-hardened-desktop-shell.md). The shared presentation and
@@ -110,6 +111,16 @@ current sidecar session. A watch-lock conflict leaves that reader session and
 its HTTP browsing capability intact. Session replacement and App exit request
 sidecar shutdown and wait for its graceful acknowledgment.
 
+`DesktopWorkflow` is the sole Desktop session/lifecycle owner. It models Empty,
+Active, Transitioning, and Invalidated states. Candidate inspection completes
+before a session transition, so a cancelled or incompatible selection preserves
+an Active reader. A normal replacement or exit is rejected while a Manual
+Checkpoint or In-Place Restore is active; once accepted it delegates admission
+closure, watcher scheduling, and drain to Repo Session rather than duplicating
+that work. Other normal operations during a transition return busy. Native exit
+asks for confirmation if this workflow is watching and otherwise shuts down
+deterministically.
+
 The successful sidecar open response discloses the in-memory HTTP credential to
 Rust exactly once. Watcher events are projected without paths, raw exceptions,
 credentials, commit details, or Semantic Events. Graceful process shutdown is
@@ -118,6 +129,13 @@ The exact wire and exit contract belongs to the
 [Desktop Sidecar Process Protocol](../reference/desktop-sidecar-protocol.md)
 and follows
 [ADR-0022](../adr/0022-use-a-private-versioned-desktop-sidecar.md).
+
+The private `SidecarSupervisor` is the only stdout reader. It correlates JSONL
+responses by request ID, consumes safe lifecycle events, drains stderr, and
+classifies child exit. EOF, a process exit, protocol failure, or session-fatal
+event invalidates the Desktop connection and retains only the in-memory selected
+path as an explicit reopen target. Reopen starts a fresh reader with watching
+inactive; it never automatically restarts a watcher or mutation.
 
 ## Validation
 

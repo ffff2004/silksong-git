@@ -6,6 +6,8 @@ export interface RepoSessionConnection {
 export type OpenExternalRepositoryResult =
   | { readonly kind: "cancelled" }
   | { readonly kind: "opened" }
+  | { readonly kind: "busy" }
+  | { readonly kind: "blockedByMutation" }
   | {
       readonly action:
         | "chooseAnotherDirectory"
@@ -29,6 +31,8 @@ export type RuntimeCapabilities =
         | RepoSessionConnection;
       readonly kind: "desktop";
       readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
+      /** Reopens only an explicitly invalidated in-memory Desktop selection. */
+      readonly reopenRepository?: () => Promise<OpenExternalRepositoryResult>;
       readonly startWatching: () => Promise<void>;
       readonly stopWatching: () => Promise<void>;
     };

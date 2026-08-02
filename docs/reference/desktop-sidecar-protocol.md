@@ -106,6 +106,12 @@ The current event types are:
 - `watcher.failed`, without a raw error; and
 - `session.failed`, without a raw error.
 
+`mutation.activity` projects only the mutation class (`manualCheckpoint` or
+`inPlaceRestore`) and `started` or `finished`. It contains no request body,
+save path, commit reference, or result. Desktop uses it solely to reject a
+normal replacement or exit while the admitted mutation is active; Repo Session
+retains admission and drain ownership.
+
 The sidecar never forwards repository paths, Watched Save paths, Semantic Event
 payloads, commit references, or raw exception messages in events.
 
@@ -120,6 +126,13 @@ A caller classifies shutdown as requested and graceful only when both the
 matching `process.shutdownComplete` response and exit status zero are observed.
 EOF, a signal, output failure, or a session-fatal failure has no matching
 acknowledgment and follows a nonzero or signal exit path.
+
+Desktop has one sidecar supervisor as the exclusive stdout reader. It
+demultiplexes responses by request ID, accepts safe lifecycle events, drains
+stderr, and supervises child exit. EOF, a nonzero exit, malformed protocol
+output, or `session.failed` invalidates the connection. Only an explicit reopen
+of the in-memory selected repository is available afterwards, and it opens with
+watching inactive; no watcher or mutation is retried automatically.
 
 Unknown commands return `unknown_command`; incompatible versions return
 `unsupported_protocol_version`; invalid JSON, framing, or envelopes return

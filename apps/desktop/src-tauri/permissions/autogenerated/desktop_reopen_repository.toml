@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-reopen-repository"
+description = "Enables the desktop_reopen_repository command without any pre-configured scope."
+commands.allow = ["desktop_reopen_repository"]
+
+[[permission]]
+identifier = "deny-desktop-reopen-repository"
+description = "Denies the desktop_reopen_repository command without any pre-configured scope."
+commands.deny = ["desktop_reopen_repository"]

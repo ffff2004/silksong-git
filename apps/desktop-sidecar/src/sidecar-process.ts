@@ -601,6 +601,13 @@ function toProtocolRepositoryStatus(
 function projectRepoSessionEvent(
   event: RepoSessionEvent,
 ): DesktopSidecarEvent | undefined {
+  if (event.type === "mutationActivity") {
+    return {
+      type: "mutation.activity",
+      mutation: event.mutation,
+      status: event.status,
+    };
+  }
   if (event.type === "observation") {
     const { result } = event;
     if (result.status === "committed") {

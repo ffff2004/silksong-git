@@ -10,7 +10,10 @@ export function LocalRoute(props: { readonly children: JSX.Element }) {
 
   return (
     <Show
-      when={localHistory.connection().kind === "connected"}
+      when={
+        localHistory.workflowState().kind === "active"
+        && localHistory.connection().kind === "connected"
+      }
       fallback={
         localHistory.isSupported ? (
           <ConnectionRequiredState />
@@ -51,7 +54,8 @@ export function CurrentSaveRoute(props: { readonly children: JSX.Element }) {
     <Show
       when={
         !hasCommitSelection(globalThis.location.hash)
-        || localHistory.connection().kind === "connected"
+        || (localHistory.workflowState().kind === "active"
+          && localHistory.connection().kind === "connected")
       }
       fallback={
         localHistory.isSupported ? (

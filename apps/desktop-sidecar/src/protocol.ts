@@ -259,6 +259,13 @@ const producedEventSchema = z.union([
       reason: z.literal("httpServerFailure"),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal("mutation.activity"),
+      mutation: z.enum(["manualCheckpoint", "inPlaceRestore"]),
+      status: z.enum(["started", "finished"]),
+    })
+    .strict(),
 ]);
 
 const producedEventEnvelopeSchema = z
@@ -269,6 +276,7 @@ const producedEventEnvelopeSchema = z
   })
   .strict();
 const currentEventTypes: ReadonlySet<string> = new Set([
+  "mutation.activity",
   "process.ready",
   "session.failed",
   "watcher.failed",

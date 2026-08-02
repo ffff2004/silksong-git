@@ -70,6 +70,13 @@ export async function openRepoSession(
     onRequestError: (error) => {
       emit({ type: "httpRequestError", repoPath: input.repoPath, error });
     },
+    onMutationActivity: (mutationActivity) => {
+      emit({
+        type: "mutationActivity",
+        repoPath: input.repoPath,
+        ...mutationActivity,
+      });
+    },
   });
   const startedServer = await startHttpServer(app.fetch, input.port ?? 0);
   let httpServer: ServerType | undefined = startedServer.server;

@@ -16,6 +16,7 @@ import {
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { LocalHistoryClientError } from "../features/local-history/local-history-client.ts";
 import { browserRuntimeCapabilities } from "../runtime-capabilities/browser.ts";
 import { createDesktopRuntimeCapabilities } from "../runtime-capabilities/desktop.ts";
 import decodedSave from "../test-fixtures/mask-shard-2-collected-rosaries-save.decoded.json";
@@ -139,6 +140,219 @@ describe("Solid Web app routing", () => {
       ),
     ).toBeDefined();
     expect(getRepoSessionConnection).not.toHaveBeenCalled();
+  });
+
+  it("renders busy and active-mutation repository transition results without replacing Local History", async () => {
+    const getRepoSessionConnection = vi.fn(() => ({
+      endpoint: "http://127.0.0.1:4312",
+      token: "session-token",
+    }));
+    const openExternalRepository = vi
+      .fn<
+        () => Promise<
+          { readonly kind: "busy" } | { readonly kind: "blockedByMutation" }
+        >
+      >()
+      .mockResolvedValueOnce({ kind: "busy" })
+      .mockResolvedValueOnce({ kind: "blockedByMutation" });
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection,
+      openExternalRepository,
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    const open = screen.getByRole("button", { name: "Open Local History" });
+    fireEvent.click(open);
+    expect(
+      await screen.findByText(
+        "Desktop Local History is already changing sessions. Try again when it finishes.",
+      ),
+    ).toBeDefined();
+    fireEvent.click(open);
+    expect(
+      await screen.findByText(
+        "Wait for the active Manual Checkpoint or restore to finish before changing repositories.",
+      ),
+    ).toBeDefined();
+    expect(getRepoSessionConnection).not.toHaveBeenCalled();
+  });
+
+  it("offers explicit reopen after a safe Desktop invalidation and reconnects without watcher control", async () => {
+    const getRepoSessionConnection = vi
+      .fn<
+        () => Promise<{ readonly endpoint: string; readonly token: string }>
+      >()
+      .mockRejectedValueOnce(new Error("sidecar unavailable"))
+      .mockResolvedValueOnce({
+        endpoint: "http://127.0.0.1:4312",
+        token: "fresh-session-token",
+      });
+    const reopenRepository = vi.fn(async () => ({ kind: "opened" as const }));
+    const startWatching = vi.fn(async () => undefined);
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection,
+      openExternalRepository: async () => ({ kind: "opened" }),
+      reopenRepository,
+      startWatching,
+      stopWatching: async () => undefined,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        requestUrl(input).includes("/api/v1/watcher")
+          ? Response.json({ ...localHistoryWatcher, status: "inactive" })
+          : Response.json({ status: "empty" }),
+      ),
+    );
+
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Local History" }));
+    expect(
+      await screen.findByText(
+        "Desktop Local History stopped because its local protocol became incompatible. Reopen the selected repository to start a fresh reader session.",
+      ),
+    ).toBeDefined();
+    const reopenButton = getRequiredElement(
+      "#reopen-selected-local-history",
+    ) as HTMLButtonElement;
+    await waitFor(() => {
+      expect(reopenButton.disabled).toBe(false);
+    });
+    fireEvent.click(reopenButton);
+    await waitFor(() => {
+      expect(reopenRepository).toHaveBeenCalledTimes(1);
+    });
+    expect(startWatching).not.toHaveBeenCalled();
+  });
+
+  it("replaces an invalidated connected session with recovery before more Local History work", async () => {
+    const startWatching = vi.fn(async () => undefined);
+    const requestedUrls: string[] = [];
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      reopenRepository: async () => ({ kind: "opened" }),
+      startWatching,
+      stopWatching: async () => undefined,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        requestedUrls.push(url);
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json(localHistoryWatcher);
+        }
+        if (url.includes("commit=unavailable")) {
+          throw new TypeError("Local endpoint became unavailable.");
+        }
+
+        return Response.json({
+          status: "available",
+          observation: latestObservation,
+          decodedSave: { playerData: { geo: 1234 } },
+          semanticSnapshot: {
+            items: [],
+            summary: {
+              completionPercentage: 81,
+              playTime: 9876,
+              rosaries: 1234,
+              shellShards: 88,
+            },
+            version: {
+              saveSchemaVersion: "1",
+              semanticCoreVersion: "test",
+            },
+          },
+        });
+      }),
+    );
+
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Local History" }));
+    await screen.findByRole("button", { name: "Disconnect WebView" });
+
+    globalThis.location.hash = "#/progress?commit=unavailable";
+    globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+
+    expect(
+      await screen.findByText(
+        "Desktop Local History stopped unexpectedly. Reopen the selected repository to start a fresh reader session.",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Reopen selected repository" }),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Disconnect WebView" }),
+    ).toBeNull();
+
+    globalThis.location.hash = "#/watcher";
+    globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
+    expect(
+      await screen.findByTestId("local-connection-required"),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Start Watching" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Create checkpoint" }),
+    ).toBeNull();
+    expect(startWatching).not.toHaveBeenCalled();
+    expect(requestedUrls.some((url) => url.includes("/checkpoints"))).toBe(
+      false,
+    );
+  });
+
+  it("shows a protocol diagnostic when explicit reopen fails its local reader handshake", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {
+      // The component reports rejected user actions after the store has recorded the safe
+      // diagnostic.
+    });
+    const getRepoSessionConnection = vi
+      .fn<
+        () => Promise<{ readonly endpoint: string; readonly token: string }>
+      >()
+      .mockRejectedValueOnce(
+        new LocalHistoryClientError({
+          kind: "unavailable",
+          message: "The sidecar stopped.",
+        }),
+      );
+    const reopenRepository = vi.fn(async () => {
+      throw new LocalHistoryClientError({
+        kind: "protocol",
+        message: "The sidecar returned an incompatible protocol.",
+      });
+    });
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection,
+      openExternalRepository: async () => ({ kind: "opened" }),
+      reopenRepository,
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Local History" }));
+    await screen.findByRole("button", { name: "Reopen selected repository" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reopen selected repository" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Desktop Local History stopped because its local protocol became incompatible. Reopen the selected repository to start a fresh reader session.",
+      ),
+    ).toBeDefined();
+    expect(reopenRepository).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(consoleError).toHaveBeenCalledTimes(1);
+    });
+    consoleError.mockRestore();
   });
 
   it("reveals Back to Top after scrolling and returns the main view to the top", async () => {
@@ -375,7 +589,7 @@ describe("Solid Web app routing", () => {
     ).toBeDefined();
   });
 
-  it("keeps loaded Local Save data visible when a later request makes the session stale", async () => {
+  it("invalidates Desktop Local History when a later request loses the sidecar", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -420,8 +634,14 @@ describe("Solid Web app routing", () => {
     globalThis.location.hash = "#/progress?commit=unavailable";
     globalThis.dispatchEvent(new HashChangeEvent("hashchange"));
 
-    expect(await screen.findByText("Local History stale")).toBeDefined();
-    expect(document.querySelector("#completionValue")?.textContent).toBe("81%");
+    expect(
+      await screen.findByText(
+        "Desktop Local History stopped unexpectedly. Reopen the selected repository to start a fresh reader session.",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Reopen selected repository" }),
+    ).toBeDefined();
   });
 
   it("polls Watcher status only while the Local History page is visible", async () => {

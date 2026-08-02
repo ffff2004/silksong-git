@@ -19,6 +19,9 @@ export function LocalHistoryRuntime() {
 
   createEffect(() => {
     const connection = localHistory.connection();
+    if (localHistory.workflowState().kind !== "active") {
+      return;
+    }
     if (connection.kind === "connected") {
       hadLocalSession = true;
       if (connection.availability.kind === "stale") {
@@ -66,6 +69,11 @@ export function LocalHistoryRuntime() {
 
   createEffect(() => {
     const connection = localHistory.connection();
+    if (localHistory.workflowState().kind !== "active") {
+      revisionSession = undefined;
+      previousObservationRevision = undefined;
+      return;
+    }
     if (connection.kind !== "connected") {
       revisionSession = undefined;
       previousObservationRevision = undefined;
@@ -116,7 +124,8 @@ export function LocalHistoryRuntime() {
   createEffect(() => {
     const connection = localHistory.connection();
     if (
-      connection.kind !== "connected"
+      localHistory.workflowState().kind !== "active"
+      || connection.kind !== "connected"
       || (connection.availability.kind === "stale"
         && connection.availability.automaticRequestsPaused)
     ) {

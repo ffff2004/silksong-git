@@ -6,9 +6,10 @@ use tauri::{
     utils::config::WebviewUrl,
     webview::{NewWindowResponse, WebviewWindowBuilder},
 };
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::desktop_runtime::DesktopRuntime;
+use crate::desktop_runtime::DesktopWorkflow;
 
 const MAIN_WINDOW_LABEL: &str = "main";
 
@@ -25,10 +26,11 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
-        .manage(DesktopRuntime::default())
+        .manage(DesktopWorkflow::default())
         .invoke_handler(tauri::generate_handler![
             desktop_runtime::desktop_get_repo_session_connection,
             desktop_runtime::desktop_open_external_repository,
+            desktop_runtime::desktop_reopen_repository,
             desktop_runtime::desktop_start_watching,
             desktop_runtime::desktop_stop_watching,
         ])
@@ -53,8 +55,31 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build Silksong Git")
         .run(|app, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                let _ = app.state::<DesktopRuntime>().shutdown();
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                let workflow = app.state::<DesktopWorkflow>();
+                match workflow.close_requires_confirmation() {
+                    Ok(false) => {
+                        if workflow.shutdown().is_err() {
+                            api.prevent_exit();
+                        }
+                    }
+                    Err(_) => api.prevent_exit(),
+                    Ok(true) => {
+                        api.prevent_exit();
+                        let app_handle = app.clone();
+                        app.dialog()
+                            .message("Watching will stop after all admitted work drains. Quit Silksong Git?")
+                            .title("Stop watching and quit?")
+                            .buttons(MessageDialogButtons::OkCancel)
+                            .show(move |confirmed| {
+                                if confirmed
+                                    && app_handle.state::<DesktopWorkflow>().shutdown().is_ok()
+                                {
+                                    app_handle.exit(0);
+                                }
+                            });
+                    }
+                }
             }
         });
 }
@@ -121,6 +146,7 @@ mod tests {
             serde_json::json!([
                 "allow-desktop-get-repo-session-connection",
                 "allow-desktop-open-external-repository",
+                "allow-desktop-reopen-repository",
                 "allow-desktop-start-watching",
                 "allow-desktop-stop-watching",
             ])

@@ -9,6 +9,7 @@ export function createDesktopRuntimeCapabilities(input: {
     | Promise<RepoSessionConnection>
     | RepoSessionConnection;
   readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
+  readonly reopenRepository?: () => Promise<OpenExternalRepositoryResult>;
   readonly startWatching: () => Promise<void>;
   readonly stopWatching: () => Promise<void>;
 }): RuntimeCapabilities {
@@ -16,6 +17,7 @@ export function createDesktopRuntimeCapabilities(input: {
     getRepoSessionConnection: input.getRepoSessionConnection,
     kind: "desktop",
     openExternalRepository: input.openExternalRepository,
+    reopenRepository: input.reopenRepository,
     startWatching: input.startWatching,
     stopWatching: input.stopWatching,
   };

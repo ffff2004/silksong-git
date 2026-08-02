@@ -6,6 +6,7 @@
   "permissions": [
     "allow-desktop-get-repo-session-connection",
     "allow-desktop-open-external-repository",
+    "allow-desktop-reopen-repository",
     "allow-desktop-start-watching",
     "allow-desktop-stop-watching"
   ]

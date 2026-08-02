@@ -41,6 +41,14 @@ export type LocalHistoryConnection =
     }
   | { readonly error: LocalHistoryClientError; readonly kind: "error" };
 
+export type DesktopWorkflowState =
+  | { readonly kind: "active" }
+  | { readonly kind: "transitioning" }
+  | {
+      readonly diagnostic: "sidecarUnavailable" | "protocolFailure";
+      readonly kind: "invalidated";
+    };
+
 interface LocalHistoryStore {
   readonly connect: () => Promise<boolean>;
   readonly connection: () => LocalHistoryConnection;
@@ -51,8 +59,10 @@ interface LocalHistoryStore {
   readonly reportRequestSuccess: () => void;
   readonly startWatching: () => Promise<void>;
   readonly stopWatching: () => Promise<void>;
+  readonly reopenRepository: () => Promise<OpenExternalRepositoryResult>;
   readonly updateLatestSaveState: (state: LocalHttpSaveState) => void;
   readonly updateWatcherStatus: (status: LocalHttpWatcherStatus) => void;
+  readonly workflowState: () => DesktopWorkflowState;
 }
 
 const LocalHistoryContext = createContext<LocalHistoryStore>();
@@ -64,8 +74,22 @@ export function LocalHistoryProvider(props: {
   const [connection, setConnection] = createSignal<LocalHistoryConnection>({
     kind: "disconnected",
   });
+  const [workflowState, setWorkflowState] = createSignal<DesktopWorkflowState>({
+    kind: "active",
+  });
   let setWatcherStatus: Setter<LocalHttpWatcherStatus | undefined> | undefined;
   let setLatestSaveState: Setter<LocalHttpSaveState | undefined> | undefined;
+  const discardSession = () => {
+    setLatestSaveState = undefined;
+    setWatcherStatus = undefined;
+    setConnection({ kind: "disconnected" });
+  };
+  const invalidateDesktopWorkflow = (
+    diagnostic: "sidecarUnavailable" | "protocolFailure",
+  ) => {
+    discardSession();
+    setWorkflowState({ diagnostic, kind: "invalidated" });
+  };
 
   const store: LocalHistoryStore = {
     async connect() {
@@ -109,15 +133,20 @@ export function LocalHistoryProvider(props: {
           kind: "error",
           error: clientError,
         });
+        if (
+          props.runtimeCapabilities.kind === "desktop"
+          && (clientError.kind === "unavailable"
+            || clientError.kind === "protocol")
+        ) {
+          invalidateDesktopWorkflow(diagnosticFor(clientError));
+        }
 
         return false;
       }
     },
     connection,
     disconnect() {
-      setLatestSaveState = undefined;
-      setWatcherStatus = undefined;
-      setConnection({ kind: "disconnected" });
+      discardSession();
     },
     isSupported: props.runtimeCapabilities.kind === "desktop",
     async openExternalRepository() {
@@ -125,7 +154,12 @@ export function LocalHistoryProvider(props: {
         throw new Error("Local History is unavailable in this runtime.");
       }
 
-      return await props.runtimeCapabilities.openExternalRepository();
+      setWorkflowState({ kind: "transitioning" });
+      try {
+        return await props.runtimeCapabilities.openExternalRepository();
+      } finally {
+        setWorkflowState({ kind: "active" });
+      }
     },
     reportRequestFailure(error) {
       const current = connection();
@@ -136,6 +170,14 @@ export function LocalHistoryProvider(props: {
         error,
         "Local History request failed.",
       );
+      if (
+        props.runtimeCapabilities.kind === "desktop"
+        && (clientError.kind === "unavailable"
+          || clientError.kind === "protocol")
+      ) {
+        invalidateDesktopWorkflow(diagnosticFor(clientError));
+        return;
+      }
       setConnection({
         ...current,
         availability: {
@@ -158,6 +200,7 @@ export function LocalHistoryProvider(props: {
       }
     },
     async startWatching() {
+      ensureWorkflowActive(workflowState());
       if (props.runtimeCapabilities.kind !== "desktop") {
         throw new Error("Watching is unavailable in this runtime.");
       }
@@ -165,11 +208,48 @@ export function LocalHistoryProvider(props: {
       await props.runtimeCapabilities.startWatching();
     },
     async stopWatching() {
+      ensureWorkflowActive(workflowState());
       if (props.runtimeCapabilities.kind !== "desktop") {
         throw new Error("Watching is unavailable in this runtime.");
       }
 
       await props.runtimeCapabilities.stopWatching();
+    },
+    async reopenRepository() {
+      if (
+        props.runtimeCapabilities.kind !== "desktop"
+        || props.runtimeCapabilities.reopenRepository === undefined
+      ) {
+        throw new Error(
+          "Reopening Local History is unavailable in this runtime.",
+        );
+      }
+      const previousWorkflowState = workflowState();
+      if (previousWorkflowState.kind !== "invalidated") {
+        throw new Error("Local History has not been invalidated.");
+      }
+
+      const { diagnostic } = previousWorkflowState;
+      setWorkflowState({ kind: "transitioning" });
+      try {
+        const result = await props.runtimeCapabilities.reopenRepository();
+        if (result.kind === "opened") {
+          setWorkflowState({ kind: "active" });
+        } else {
+          setWorkflowState({ diagnostic, kind: "invalidated" });
+        }
+        return result;
+      } catch (error) {
+        const clientError = toLocalHistoryClientError(
+          error,
+          "Local History reopen failed.",
+        );
+        setWorkflowState({
+          diagnostic: diagnosticFor(clientError),
+          kind: "invalidated",
+        });
+        throw error;
+      }
     },
     updateLatestSaveState(state) {
       const updateState = setLatestSaveState;
@@ -183,6 +263,7 @@ export function LocalHistoryProvider(props: {
         updateStatus(status);
       }
     },
+    workflowState,
   };
 
   return (
@@ -190,6 +271,23 @@ export function LocalHistoryProvider(props: {
       {props.children}
     </LocalHistoryContext.Provider>
   );
+}
+
+function ensureWorkflowActive(state: DesktopWorkflowState) {
+  if (state.kind === "transitioning") {
+    throw new Error("Desktop Local History is changing sessions.");
+  }
+  if (state.kind === "invalidated") {
+    throw new Error(
+      "Desktop Local History must be reopened before starting new work.",
+    );
+  }
+}
+
+function diagnosticFor(
+  error: LocalHistoryClientError,
+): "sidecarUnavailable" | "protocolFailure" {
+  return error.kind === "protocol" ? "protocolFailure" : "sidecarUnavailable";
 }
 
 function toLocalHistoryClientError(

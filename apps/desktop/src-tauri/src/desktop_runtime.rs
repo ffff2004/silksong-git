@@ -4,8 +4,11 @@ use std::{
     fs,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
-    sync::Mutex,
+    process::{Child, ChildStderr, ChildStdin, Command, Stdio},
+    sync::{
+        Mutex,
+        mpsc::{self, Receiver, TryRecvError},
+    },
     thread,
 };
 
@@ -18,20 +21,35 @@ const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 3;
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
 const BUNDLED_SIDECAR_NAME: &str = "silksong-git-desktop-sidecar";
 
-/// The only long-lived repository connection owned by this Desktop process.
+/// The high-level Desktop session and lifecycle owner.
 #[derive(Default)]
-pub struct DesktopRuntime {
-    state: Mutex<DesktopRuntimeState>,
+pub struct DesktopWorkflow {
+    state: Mutex<DesktopWorkflowState>,
 }
 
 #[derive(Default)]
-struct DesktopRuntimeState {
+struct DesktopWorkflowState {
     current_session: Option<ManagedSession>,
+    transitioning: bool,
+    invalidated: Option<InvalidatedSession>,
+}
+
+struct InvalidatedSession {
+    _diagnostic: SafeDiagnostic,
+    repo_path: String,
+}
+
+#[derive(Clone, Copy)]
+enum SafeDiagnostic {
+    SidecarUnavailable,
+    SidecarProtocol,
 }
 
 struct ManagedSession {
     connection: RepoSessionConnection,
-    sidecar: SidecarProcess,
+    repo_path: String,
+    sidecar: SidecarSupervisor,
+    watching: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -50,6 +68,8 @@ pub enum OpenExternalRepositoryResult {
         action: RepositoryRequiredAction,
         status: RepositoryStatus,
     },
+    BlockedByMutation,
+    Busy,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -71,7 +91,7 @@ pub enum RepositoryRequiredAction {
     UseNewerApp,
 }
 
-impl DesktopRuntime {
+impl DesktopWorkflow {
     fn open_repository_path<R: Runtime>(
         &self,
         app: &AppHandle<R>,
@@ -87,7 +107,7 @@ impl DesktopRuntime {
     ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
         let repo_path = canonicalize_repository_path(&selected_path)?;
         let repo_path = repository_path_for_protocol(&repo_path)?;
-        let mut candidate = SidecarProcess::spawn(launch)?;
+        let mut candidate = SidecarSupervisor::spawn(launch)?;
 
         let inspection = match candidate.command(json!({
             "type": "repository.inspect",
@@ -116,11 +136,33 @@ impl DesktopRuntime {
             });
         }
 
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| DesktopRuntimeError::Unavailable)?;
-        if let Err(error) = state.shutdown_current_session() {
+        let prior_session = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            if state.transitioning {
+                Err(OpenExternalRepositoryResult::Busy)
+            } else if state.current_session.as_mut().is_some_and(|session| {
+                session.sidecar.poll().is_ok() && session.sidecar.mutation_active()
+            }) {
+                Err(OpenExternalRepositoryResult::BlockedByMutation)
+            } else {
+                state.transitioning = true;
+                Ok(state.current_session.take())
+            }
+        };
+        let prior_session = match prior_session {
+            Ok(session) => session,
+            Err(result) => {
+                candidate.shutdown_without_session();
+                return Ok(result);
+            }
+        };
+        if let Some(mut prior_session) = prior_session
+            && let Err(error) = prior_session.sidecar.shutdown()
+        {
+            self.finish_transition(Some(prior_session));
             candidate.shutdown_without_session();
             return Err(error);
         }
@@ -134,40 +176,59 @@ impl DesktopRuntime {
             Ok(response) => response,
             Err(error) => {
                 candidate.shutdown_without_session();
+                self.finish_transition(None);
                 return Err(error.into());
             }
         };
         let connection = parse_connection(&opened)?;
-        state.current_session = Some(ManagedSession {
+        self.finish_transition(Some(ManagedSession {
             connection,
+            repo_path,
             sidecar: candidate,
-        });
+            watching: false,
+        }));
 
         Ok(OpenExternalRepositoryResult::Opened)
     }
 
     fn connection(&self) -> Result<RepoSessionConnection, DesktopRuntimeError> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| DesktopRuntimeError::Unavailable)?;
-        state
-            .current_session
-            .as_ref()
-            .map(|session| session.connection.clone())
-            .ok_or(DesktopRuntimeError::NoOpenSession)
-    }
-
-    fn control_watcher(&self, command_type: &str) -> Result<(), DesktopRuntimeError> {
         let mut state = self
             .state
             .lock()
             .map_err(|_| DesktopRuntimeError::Unavailable)?;
+        if state.transitioning {
+            return Err(DesktopRuntimeError::Busy);
+        }
+        if state.invalidated.is_some() {
+            return Err(DesktopRuntimeError::Invalidated);
+        }
         let session = state
             .current_session
             .as_mut()
             .ok_or(DesktopRuntimeError::NoOpenSession)?;
-        let response = session.sidecar.command(json!({ "type": command_type }))?;
+        if let Err(error) = session.sidecar.poll() {
+            let repo_path = session.repo_path.clone();
+            state.current_session = None;
+            state.invalidated = Some(InvalidatedSession {
+                _diagnostic: diagnostic_for(&error),
+                repo_path,
+            });
+            return Err(error);
+        }
+        Ok(session.connection.clone())
+    }
+
+    fn control_watcher(&self, command_type: &str) -> Result<(), DesktopRuntimeError> {
+        let Some(mut session) = self.take_session_for_operation()? else {
+            return Err(DesktopRuntimeError::NoOpenSession);
+        };
+        let response = match session.sidecar.command(json!({ "type": command_type })) {
+            Ok(response) => response,
+            Err(error) => {
+                self.finish_transition(Some(session));
+                return Err(error.into());
+            }
+        };
         let expected_result = match command_type {
             "watcher.start" => "watcher.started",
             "watcher.stop" => "watcher.stopped",
@@ -179,34 +240,111 @@ impl DesktopRuntime {
             ));
         }
 
+        session.watching = command_type == "watcher.start";
+        self.finish_transition(Some(session));
         Ok(())
     }
 
     pub(crate) fn shutdown(&self) -> Result<(), DesktopRuntimeError> {
+        let session = self.take_session_for_operation()?;
+        let result = match session {
+            Some(mut session) => session.sidecar.shutdown(),
+            None => Ok(()),
+        };
+        self.finish_transition(None);
+        result
+    }
+
+    pub(crate) fn close_requires_confirmation(&self) -> Result<bool, DesktopRuntimeError> {
         let mut state = self
             .state
             .lock()
             .map_err(|_| DesktopRuntimeError::Unavailable)?;
-        state.shutdown_current_session()
-    }
-}
-
-impl DesktopRuntimeState {
-    fn shutdown_current_session(&mut self) -> Result<(), DesktopRuntimeError> {
-        let Some(session) = self.current_session.as_mut() else {
-            return Ok(());
+        if state.transitioning {
+            return Err(DesktopRuntimeError::Busy);
+        }
+        let Some(session) = state.current_session.as_mut() else {
+            return Ok(false);
         };
+        session.sidecar.poll()?;
+        if session.sidecar.mutation_active() {
+            return Err(DesktopRuntimeError::BlockedByMutation);
+        }
+        Ok(session.watching)
+    }
 
-        session.sidecar.shutdown()?;
-        self.current_session = None;
-        Ok(())
+    fn reopen<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+    ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
+        let path = {
+            let state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            state
+                .invalidated
+                .as_ref()
+                .map(|invalidated| invalidated.repo_path.clone())
+        }
+        .ok_or(DesktopRuntimeError::NoOpenSession)?;
+        self.open_repository_path_with_launch(PathBuf::from(path), SidecarLaunch::for_app(app)?)
+    }
+
+    #[cfg(test)]
+    fn reopen_with_launch(
+        &self,
+        launch: SidecarLaunch,
+    ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
+        let path = {
+            let state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            state
+                .invalidated
+                .as_ref()
+                .map(|invalidated| invalidated.repo_path.clone())
+        }
+        .ok_or(DesktopRuntimeError::NoOpenSession)?;
+        self.open_repository_path_with_launch(PathBuf::from(path), launch)
+    }
+
+    fn take_session_for_operation(&self) -> Result<Option<ManagedSession>, DesktopRuntimeError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| DesktopRuntimeError::Unavailable)?;
+        if state.transitioning {
+            return Err(DesktopRuntimeError::Busy);
+        }
+        if state.invalidated.is_some() {
+            return Err(DesktopRuntimeError::Invalidated);
+        }
+        if state.current_session.as_mut().is_some_and(|session| {
+            session.sidecar.poll().is_ok() && session.sidecar.mutation_active()
+        }) {
+            return Err(DesktopRuntimeError::BlockedByMutation);
+        }
+        state.transitioning = true;
+        Ok(state.current_session.take())
+    }
+
+    fn finish_transition(&self, session: Option<ManagedSession>) {
+        if let Ok(mut state) = self.state.lock() {
+            state.current_session = session;
+            state.transitioning = false;
+            if state.current_session.is_some() {
+                state.invalidated = None;
+            }
+        }
     }
 }
 
 #[tauri::command]
 pub async fn desktop_open_external_repository(
     app: AppHandle,
-    runtime: State<'_, DesktopRuntime>,
+    runtime: State<'_, DesktopWorkflow>,
 ) -> Result<OpenExternalRepositoryResult, String> {
     let Some(selected) = app
         .dialog()
@@ -225,23 +363,33 @@ pub async fn desktop_open_external_repository(
         .map_err(|error| error.user_message())
 }
 
+/// Reopens only the in-memory repository selection after a sidecar failure.
+/// It never restarts watching and never retries a mutation.
+#[tauri::command]
+pub fn desktop_reopen_repository(
+    app: AppHandle,
+    workflow: State<'_, DesktopWorkflow>,
+) -> Result<OpenExternalRepositoryResult, String> {
+    workflow.reopen(&app).map_err(|error| error.user_message())
+}
+
 /// Returns only the current in-memory Local HTTP connection for the shared Web client closure.
 #[tauri::command]
 pub fn desktop_get_repo_session_connection(
-    runtime: State<'_, DesktopRuntime>,
+    runtime: State<'_, DesktopWorkflow>,
 ) -> Result<RepoSessionConnection, String> {
     runtime.connection().map_err(|error| error.user_message())
 }
 
 #[tauri::command]
-pub fn desktop_start_watching(runtime: State<'_, DesktopRuntime>) -> Result<(), String> {
+pub fn desktop_start_watching(runtime: State<'_, DesktopWorkflow>) -> Result<(), String> {
     runtime
         .control_watcher("watcher.start")
         .map_err(|error| error.user_message())
 }
 
 #[tauri::command]
-pub fn desktop_stop_watching(runtime: State<'_, DesktopRuntime>) -> Result<(), String> {
+pub fn desktop_stop_watching(runtime: State<'_, DesktopWorkflow>) -> Result<(), String> {
     runtime
         .control_watcher("watcher.stop")
         .map_err(|error| error.user_message())
@@ -395,14 +543,23 @@ impl SidecarLaunch {
     }
 }
 
-struct SidecarProcess {
+/// The only stdout reader for a sidecar. It demultiplexes JSONL by request ID,
+/// records safe lifecycle events, drains stderr, and owns child exit checking.
+struct SidecarSupervisor {
     child: Child,
     input: ChildStdin,
-    output: BufReader<ChildStdout>,
+    output: Receiver<SidecarOutput>,
     request_sequence: u64,
+    mutation_active: bool,
 }
 
-impl SidecarProcess {
+enum SidecarOutput {
+    Message(Value),
+    Eof,
+    Protocol,
+}
+
+impl SidecarSupervisor {
     fn spawn(launch: SidecarLaunch) -> Result<Self, DesktopRuntimeError> {
         let mut child = launch
             .command()
@@ -425,14 +582,43 @@ impl SidecarProcess {
             .stdout
             .take()
             .ok_or(DesktopRuntimeError::SidecarUnavailable)?;
+        let (output_sender, output_receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let mut reader = BufReader::new(output);
+            loop {
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Ok(0) => {
+                        let _ = output_sender.send(SidecarOutput::Eof);
+                        return;
+                    }
+                    Ok(_) => match serde_json::from_str(&line) {
+                        Ok(message) => {
+                            if output_sender.send(SidecarOutput::Message(message)).is_err() {
+                                return;
+                            }
+                        }
+                        Err(_) => {
+                            let _ = output_sender.send(SidecarOutput::Protocol);
+                            return;
+                        }
+                    },
+                    Err(_) => {
+                        let _ = output_sender.send(SidecarOutput::Eof);
+                        return;
+                    }
+                }
+            }
+        });
         let mut process = Self {
             child,
             input,
-            output: BufReader::new(output),
+            output: output_receiver,
             request_sequence: 0,
+            mutation_active: false,
         };
 
-        let ready = process.read_message()?;
+        let ready = process.next_message()?;
         if ready.get("protocolVersion").and_then(Value::as_u64)
             != Some(u64::from(DESKTOP_SIDECAR_PROTOCOL_VERSION))
             || ready.get("kind").and_then(Value::as_str) != Some("event")
@@ -460,7 +646,7 @@ impl SidecarProcess {
         self.input.flush().map_err(|_| SidecarError::Io)?;
 
         loop {
-            let message = self.read_message().map_err(|error| match error {
+            let message = self.next_message().map_err(|error| match error {
                 DesktopRuntimeError::Protocol(_) => SidecarError::Protocol,
                 _ => SidecarError::Io,
             })?;
@@ -470,7 +656,13 @@ impl SidecarProcess {
                 return Err(SidecarError::Protocol);
             }
             match message.get("kind").and_then(Value::as_str) {
-                Some("event") => continue,
+                Some("event") => {
+                    self.handle_event(&message).map_err(|error| match error {
+                        DesktopRuntimeError::Protocol(_) => SidecarError::Protocol,
+                        _ => SidecarError::Io,
+                    })?;
+                    continue;
+                }
                 Some("response") => {
                     if message.get("requestId").and_then(Value::as_str) != Some(request_id.as_str())
                     {
@@ -498,19 +690,87 @@ impl SidecarProcess {
         }
     }
 
-    fn read_message(&mut self) -> Result<Value, DesktopRuntimeError> {
-        let mut line = String::new();
-        let bytes = self
+    fn next_message(&mut self) -> Result<Value, DesktopRuntimeError> {
+        match self
             .output
-            .read_line(&mut line)
-            .map_err(|_| DesktopRuntimeError::SidecarUnavailable)?;
-        if bytes == 0 {
+            .recv()
+            .map_err(|_| DesktopRuntimeError::SidecarUnavailable)?
+        {
+            SidecarOutput::Message(message) => Ok(message),
+            SidecarOutput::Eof => Err(DesktopRuntimeError::SidecarUnavailable),
+            SidecarOutput::Protocol => Err(DesktopRuntimeError::Protocol(
+                "The Desktop sidecar sent an invalid message.".into(),
+            )),
+        }
+    }
+
+    fn poll(&mut self) -> Result<(), DesktopRuntimeError> {
+        loop {
+            match self.output.try_recv() {
+                Ok(SidecarOutput::Message(message)) => {
+                    if message.get("protocolVersion").and_then(Value::as_u64)
+                        != Some(u64::from(DESKTOP_SIDECAR_PROTOCOL_VERSION))
+                    {
+                        return Err(DesktopRuntimeError::Protocol(
+                            "The Desktop sidecar returned an incompatible response.".into(),
+                        ));
+                    }
+                    if message.get("kind").and_then(Value::as_str) != Some("event") {
+                        return Err(DesktopRuntimeError::Protocol(
+                            "The Desktop sidecar sent an unexpected response.".into(),
+                        ));
+                    }
+                    self.handle_event(&message)?;
+                }
+                Ok(SidecarOutput::Eof) | Err(TryRecvError::Disconnected) => {
+                    return Err(DesktopRuntimeError::SidecarUnavailable);
+                }
+                Ok(SidecarOutput::Protocol) => {
+                    return Err(DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar sent an invalid message.".into(),
+                    ));
+                }
+                Err(TryRecvError::Empty) => break,
+            }
+        }
+        if self
+            .child
+            .try_wait()
+            .map_err(|_| DesktopRuntimeError::SidecarUnavailable)?
+            .is_some()
+        {
             return Err(DesktopRuntimeError::SidecarUnavailable);
         }
+        Ok(())
+    }
 
-        serde_json::from_str(&line).map_err(|_| {
-            DesktopRuntimeError::Protocol("The Desktop sidecar sent an invalid message.".into())
-        })
+    fn mutation_active(&self) -> bool {
+        self.mutation_active
+    }
+
+    fn handle_event(&mut self, message: &Value) -> Result<(), DesktopRuntimeError> {
+        match message.pointer("/event/type").and_then(Value::as_str) {
+            Some("mutation.activity") => {
+                match message.pointer("/event/status").and_then(Value::as_str) {
+                    Some("started") => self.mutation_active = true,
+                    Some("finished") => self.mutation_active = false,
+                    _ => {
+                        return Err(DesktopRuntimeError::Protocol(
+                            "The Desktop sidecar sent an invalid mutation event.".into(),
+                        ));
+                    }
+                }
+            }
+            Some("session.failed") => return Err(DesktopRuntimeError::SidecarUnavailable),
+            Some("process.ready") | Some("watcher.observation") | Some("watcher.failed") => {}
+            Some(_) => {} // Forward-compatible events are safe to ignore.
+            None => {
+                return Err(DesktopRuntimeError::Protocol(
+                    "The Desktop sidecar sent an invalid event.".into(),
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn shutdown(&mut self) -> Result<(), DesktopRuntimeError> {
@@ -570,11 +830,21 @@ impl From<SidecarError> for DesktopRuntimeError {
     }
 }
 
+fn diagnostic_for(error: &DesktopRuntimeError) -> SafeDiagnostic {
+    match error {
+        DesktopRuntimeError::Protocol(_) => SafeDiagnostic::SidecarProtocol,
+        _ => SafeDiagnostic::SidecarUnavailable,
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum DesktopRuntimeError {
+    BlockedByMutation,
+    Busy,
     BundledSidecarUnavailable,
     DevelopmentSidecarUnavailable,
     InvalidDirectory,
+    Invalidated,
     NoOpenSession,
     Protocol(String),
     SidecarRejected { code: String, message: String },
@@ -586,6 +856,8 @@ pub(crate) enum DesktopRuntimeError {
 impl DesktopRuntimeError {
     fn user_message(&self) -> String {
         match self {
+            Self::BlockedByMutation => "Wait for the active Manual Checkpoint or restore to finish before changing the Desktop session.".into(),
+            Self::Busy => "Desktop Local History is changing sessions. Try again when the current operation finishes.".into(),
             Self::BundledSidecarUnavailable | Self::SidecarUnavailable => {
                 "The Desktop Local History service is unavailable. Close and reopen the app, then try again."
                     .into()
@@ -595,6 +867,7 @@ impl DesktopRuntimeError {
                     .into()
             }
             Self::InvalidDirectory => "Choose an existing repository directory.".into(),
+            Self::Invalidated => "The Desktop Local History connection stopped unexpectedly. Reopen the selected repository to continue browsing.".into(),
             Self::NoOpenSession => "Open a repository before using Local History controls.".into(),
             Self::Protocol(reason) => {
                 let _ = reason;
@@ -623,11 +896,16 @@ impl Display for DesktopRuntimeError {
 impl std::error::Error for DesktopRuntimeError {}
 
 #[cfg(test)]
+type DesktopRuntime = DesktopWorkflow;
+
+#[cfg(test)]
 mod tests {
     use std::{
         fs,
         path::{Path, PathBuf},
         sync::atomic::{AtomicUsize, Ordering},
+        thread,
+        time::Duration,
     };
 
     use super::{
@@ -712,6 +990,158 @@ mod tests {
     }
 
     #[test]
+    fn active_mutation_blocks_a_normal_repository_switch_before_shutdown() {
+        let temp = TestDirectory::new();
+        let first_repository = temp.path().join("first-repository");
+        let candidate_repository = temp.path().join("candidate-repository");
+        fs::create_dir(&first_repository).expect("create first repository");
+        fs::create_dir(&candidate_repository).expect("create candidate repository");
+        let first_script = temp.path().join("first-sidecar.mjs");
+        let candidate_script = temp.path().join("candidate-sidecar.mjs");
+        fs::write(
+            &first_script,
+            fixture_sidecar_source(first_repository.to_str().expect("UTF-8 path"), "mutation"),
+        )
+        .expect("write first fixture");
+        fs::write(
+            &candidate_script,
+            fixture_sidecar_source(candidate_repository.to_str().expect("UTF-8 path"), "ready"),
+        )
+        .expect("write candidate fixture");
+
+        let runtime = DesktopRuntime::default();
+        runtime
+            .open_repository_path_with_launch(
+                first_repository,
+                SidecarLaunch::Development {
+                    entry: first_script,
+                    node: PathBuf::from("node"),
+                },
+            )
+            .expect("open first repository");
+        let result = runtime.open_repository_path_with_launch(
+            candidate_repository,
+            SidecarLaunch::Development {
+                entry: candidate_script,
+                node: PathBuf::from("node"),
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Ok(OpenExternalRepositoryResult::BlockedByMutation)
+        ));
+        assert_eq!(
+            runtime
+                .connection()
+                .expect("existing session remains active")
+                .endpoint,
+            "http://127.0.0.1:4312"
+        );
+    }
+
+    #[test]
+    fn close_confirms_only_when_this_workflow_owns_an_active_watcher() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("repository");
+        fs::create_dir(&repository).expect("create repository");
+        let script = temp.path().join("sidecar.mjs");
+        fs::write(
+            &script,
+            fixture_sidecar_source(repository.to_str().expect("UTF-8 path"), "ready"),
+        )
+        .expect("write fixture");
+
+        let workflow = DesktopRuntime::default();
+        workflow
+            .open_repository_path_with_launch(
+                repository,
+                SidecarLaunch::Development {
+                    entry: script,
+                    node: PathBuf::from("node"),
+                },
+            )
+            .expect("open reader session");
+        assert!(
+            !workflow
+                .close_requires_confirmation()
+                .expect("reader close state")
+        );
+        workflow
+            .control_watcher("watcher.start")
+            .expect("start watcher");
+        assert!(
+            workflow
+                .close_requires_confirmation()
+                .expect("watcher close state")
+        );
+        workflow.shutdown().expect("graceful watcher shutdown");
+        assert!(matches!(
+            workflow.connection(),
+            Err(DesktopRuntimeError::NoOpenSession)
+        ));
+    }
+
+    #[test]
+    fn unexpected_sidecar_exit_invalidates_then_requires_explicit_reopen() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("repository");
+        fs::create_dir(&repository).expect("create repository");
+        let failing_script = temp.path().join("failing-sidecar.mjs");
+        let replacement_script = temp.path().join("replacement-sidecar.mjs");
+        fs::write(
+            &failing_script,
+            unexpected_exit_fixture_sidecar_source(repository.to_str().expect("UTF-8 path")),
+        )
+        .expect("write failing fixture");
+        fs::write(
+            &replacement_script,
+            fixture_sidecar_source(repository.to_str().expect("UTF-8 path"), "ready"),
+        )
+        .expect("write replacement fixture");
+
+        let workflow = DesktopRuntime::default();
+        workflow
+            .open_repository_path_with_launch(
+                repository,
+                SidecarLaunch::Development {
+                    entry: failing_script,
+                    node: PathBuf::from("node"),
+                },
+            )
+            .expect("open failing reader session");
+        let mut observed_unexpected_exit = false;
+        for _ in 0..50 {
+            if matches!(
+                workflow.connection(),
+                Err(DesktopRuntimeError::SidecarUnavailable)
+            ) {
+                observed_unexpected_exit = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(observed_unexpected_exit, "sidecar should exit unexpectedly");
+        assert!(matches!(
+            workflow.connection(),
+            Err(DesktopRuntimeError::Invalidated)
+        ));
+        assert!(matches!(
+            workflow.reopen_with_launch(SidecarLaunch::Development {
+                entry: replacement_script,
+                node: PathBuf::from("node"),
+            }),
+            Ok(OpenExternalRepositoryResult::Opened)
+        ));
+        assert!(
+            !workflow
+                .close_requires_confirmation()
+                .expect("reopened reader is not watching")
+        );
+        workflow.shutdown().expect("shutdown reopened reader");
+    }
+
+    #[test]
     fn replacing_a_repository_waits_for_the_previous_sidecar_shutdown() {
         let temp = TestDirectory::new();
         let first_repository = temp.path().join("first-repository");
@@ -768,7 +1198,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_previous_shutdown_closes_the_inspected_candidate() {
+    fn failed_previous_shutdown_closes_the_inspected_candidate_and_drops_the_stale_connection() {
         let temp = TestDirectory::new();
         let first_repository = temp.path().join("first-repository");
         let candidate_repository = temp.path().join("candidate-repository");
@@ -824,18 +1254,15 @@ mod tests {
             fs::read_to_string(candidate_shutdown).expect("candidate shutdown marker"),
             "shutdown"
         );
-        assert_eq!(
-            runtime
-                .connection()
-                .expect("original session stays managed")
-                .endpoint,
-            "http://127.0.0.1:4312"
-        );
+        assert!(matches!(
+            runtime.connection(),
+            Err(DesktopRuntimeError::SidecarUnavailable)
+        ));
     }
 
     fn fixture_sidecar_source(repository: &str, status: &str) -> String {
         let repository = serde_json::to_string(repository).expect("serialize repository path");
-        let inspection = if status == "ready" {
+        let inspection = if status == "ready" || status == "mutation" {
             r#"{ status: "ready", requiredAction: "open", capabilities: ["read"] }"#
         } else {
             r#"{ status: "invalid", requiredAction: "chooseAnotherDirectory", capabilities: [] }"#
@@ -862,7 +1289,7 @@ process.stdin.on("data", (chunk) => {{
       if (request.command.repoPath !== repository) throw new Error("repository path was not sent over stdin");
       result = {{ type: "repository.inspected", inspection: {inspection} }};
     }} else if (request.command.type === "session.open") {{
-      if ({status:?} !== "ready") throw new Error("invalid repositories must not open sessions");
+      if (!({status:?} === "ready" || {status:?} === "mutation")) throw new Error("invalid repositories must not open sessions");
       result = {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
     }} else if (request.command.type === "process.shutdown") {{
       result = {{ type: "process.shutdownComplete" }};
@@ -872,7 +1299,34 @@ process.stdin.on("data", (chunk) => {{
       result = {{ type: request.command.type === "watcher.start" ? "watcher.started" : "watcher.stopped" }};
     }}
     process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+    if (request.command.type === "session.open" && {status:?} === "mutation") {{
+      process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
+    }}
   }}
+}});
+"#
+        )
+    }
+
+    fn unexpected_exit_fixture_sidecar_source(repository: &str) -> String {
+        let repository = serde_json::to_string(repository).expect("serialize repository path");
+        format!(
+            r#"
+const repository = {repository};
+process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+let buffer = "";
+process.stdin.on("data", (chunk) => {{
+  buffer += chunk;
+  const newline = buffer.indexOf("\n");
+  if (newline < 0) return;
+  const request = JSON.parse(buffer.slice(0, newline));
+  buffer = buffer.slice(newline + 1);
+  const result = request.command.type === "repository.inspect"
+    ? {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }}
+    : {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
+  if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) throw new Error("wrong repository");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 3, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  if (request.command.type === "session.open") process.exit(1);
 }});
 "#
         )

@@ -23,6 +23,8 @@ const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
     await invoke<OpenExternalRepositoryResult>(
       "desktop_open_external_repository",
     ),
+  reopenRepository: async () =>
+    await invoke<OpenExternalRepositoryResult>("desktop_reopen_repository"),
   startWatching: async () => {
     await invoke("desktop_start_watching");
   },
