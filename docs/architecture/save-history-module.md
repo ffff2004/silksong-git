@@ -25,10 +25,20 @@ Config contents, Git layout, lock state, or SQLite details.
 The durable Project Config owns the monotonic `repositoryFormatVersion`.
 The currently supported value is `1`. A valid unversioned config is a strict
 `legacyConfig`; a known lower value is `migrationRequired`; and a valid higher
-value is `newerIncompatible`. Malformed candidates, corrupt repositories, and
-non-repositories are `invalid`. A newer incompatible repository exposes no
-ordinary read or write capability by default; a caller must use a compatible
+value is `newerIncompatible`. Malformed candidates, structurally invalid
+repositories, and non-repositories are `invalid`. Strict inspection uses both
+the Git work-tree check and Git integrity validation, preserving the CLI's
+refusal of damaged repositories. Desktop's migration preflight may request
+structural classification with an advisory integrity policy; its verified
+snapshot reports any Git integrity warning while allowing migration. A newer
+incompatible repository exposes
+no ordinary read or write capability by default; a caller must use a compatible
 newer application rather than relying on an incidental parse of its files.
+
+The Repo Session may explicitly request read-only access for a Desktop Archived
+Repository. That access admits compatible legacy or migration-required data for
+read and export workflows, using advisory integrity classification, while the
+normal History and CLI paths retain strict compatibility and capability checks.
 
 An explicitly confirmed migration consumes the inspection ID under History's
 write serialization. History re-inspects the candidate, rejects stale IDs,
@@ -38,6 +48,24 @@ Observations. All ordinary writers—including observation, watcher acquisition,
 restore, and read-model rebuild—pass through the same compatibility guard.
 Initialization likewise refuses to overwrite an existing incompatible
 repository.
+
+Desktop's migration workflow uses the two-phase
+`prepareSaveHistoryMigration` Interface. Desktop supplies the canonical source
+repository path, an opaque target snapshot path, the inspection ID, and the
+literal confirmation; History does not own managed/archive roots or parse
+archive names. Preparation holds repository serialization and watcher
+exclusion, copies the complete durable repository to a staging directory,
+compares canonical SHA-256 Merkle directory digests before and after the copy,
+advises on Git integrity, and atomically publishes the collision-adjusted
+snapshot path. It returns a non-cancelable in-memory operation lease. Desktop
+reports that actual path and any advisory warning before calling the operation's
+`commit`, which then performs the existing migration ordering. Every migration
+result reports whether the source is unchanged, migrated, or unknown and
+whether an archive snapshot was not created or remains retained. Snapshot
+failure does not migrate or modify the source; a published snapshot is
+retained even when migration later fails. Lease-release failure is reported as
+a separate lifecycle warning without replacing those source and snapshot
+states. The one-phase CLI migration remains unchanged.
 
 Semantic Read Model schema metadata is intentionally separate from the durable
 repository format. Missing, stale, corrupt, or newer SQLite state in an

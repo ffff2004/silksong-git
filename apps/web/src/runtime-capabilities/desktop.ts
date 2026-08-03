@@ -4,6 +4,8 @@ import type {
   RepoSessionConnection,
   RepositoryLibrary,
   RepositoryLifecycle,
+  RepositoryMigrationCommitResult,
+  RepositoryMigrationPreparationResult,
   RuntimeCapabilities,
 } from "./interface.ts";
 
@@ -18,6 +20,11 @@ export function createDesktopRuntimeCapabilities(input: {
   ) => Promise<() => void>;
   readonly closeRepository?: () => Promise<void>;
   readonly getRepositoryLibrary?: () => Promise<RepositoryLibrary>;
+  readonly prepareRepositoryMigration?: (input: {
+    readonly lifecycle: "managed";
+    readonly name: string;
+  }) => Promise<RepositoryMigrationPreparationResult>;
+  readonly commitRepositoryMigration?: () => Promise<RepositoryMigrationCommitResult>;
   readonly openLibraryEntry?: (input: {
     readonly lifecycle: Exclude<RepositoryLifecycle, "external">;
     readonly name: string;
@@ -30,6 +37,8 @@ export function createDesktopRuntimeCapabilities(input: {
     getRepoSessionConnection: input.getRepoSessionConnection,
     closeRepository: input.closeRepository,
     getRepositoryLibrary: input.getRepositoryLibrary,
+    prepareRepositoryMigration: input.prepareRepositoryMigration,
+    commitRepositoryMigration: input.commitRepositoryMigration,
     kind: "desktop",
     openExternalRepository: input.openExternalRepository,
     pickStaticEncodedSave:

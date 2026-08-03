@@ -583,6 +583,185 @@ describe("Solid Web app routing", () => {
     expect(getRepoSessionConnection).toHaveBeenCalledTimes(1);
   });
 
+  it("reports the verified archive before starting managed migration", async () => {
+    const openLibraryEntry = vi.fn(async () => ({ kind: "opened" as const }));
+    const prepareRepositoryMigration = vi.fn(async () => ({
+      kind: "prepared" as const,
+      snapshot: {
+        directoryDigest: "a".repeat(64),
+        gitIntegrityWarning: "Git integrity validation reported a problem.",
+        repoPath: "/archives/test-repository--pre-migration-2026-08-03",
+      },
+    }));
+    const commitRepositoryMigration = vi.fn(async () => ({
+      backupCreated: true as const,
+      cleanupFailure: "leaseReleaseFailed" as const,
+      inspection: {
+        capabilities: ["read"],
+        requiredAction: "open",
+        status: "ready",
+      },
+      snapshotState: {
+        repoPath: "/archives/test-repository--pre-migration-2026-08-03",
+        status: "retained" as const,
+      },
+      sourceState: "migrated" as const,
+      status: "migrated" as const,
+    }));
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary: async () => ({
+        ...desktopTestRepositoryLibrary,
+        archived: [
+          {
+            name: "legacy-archive",
+            lifecycle: "archived" as const,
+            status: "legacyConfig",
+            requiredAction: "confirmMigration",
+            current: false,
+            watching: false,
+          },
+        ],
+        managed: [
+          {
+            name: "test-repository",
+            lifecycle: "managed" as const,
+            status: "legacyConfig",
+            requiredAction: "confirmMigration",
+            current: false,
+            watching: false,
+          },
+        ],
+      }),
+      prepareRepositoryMigration,
+      commitRepositoryMigration,
+      openLibraryEntry,
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+
+    globalThis.location.hash = "#/repositories";
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Migrate" }));
+
+    expect(
+      await screen.findByText(/Verified archive snapshot published at/),
+    ).toBeDefined();
+    expect(screen.getByRole("status").textContent).toContain(
+      "/archives/test-repository--pre-migration-2026-08-03",
+    );
+    expect(
+      screen.getByText(
+        "Git warning: Git integrity validation reported a problem.",
+      ),
+    ).toBeDefined();
+    expect(commitRepositoryMigration).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show archived repositories" }),
+    );
+    const archiveOpen = await screen.findByRole("button", {
+      name: "Open read-only",
+    });
+    expect((archiveOpen as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(archiveOpen);
+    expect(openLibraryEntry).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start migration" }));
+    await waitFor(() => {
+      expect(commitRepositoryMigration).toHaveBeenCalledTimes(1);
+    });
+    expect(prepareRepositoryMigration).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText("Migration completed with a cleanup warning."),
+    ).toBeDefined();
+  });
+
+  it("reports both migration states and removes the dead retry after final confirmation", async () => {
+    const archivePath = "/archives/test-repository--pre-migration-2026-08-03";
+    const commitRepositoryMigration = vi.fn(async () => ({
+      cleanupFailure: "leaseReleaseFailed" as const,
+      reason: "migrationFailed",
+      snapshotState: {
+        repoPath: archivePath,
+        status: "retained" as const,
+      },
+      sourceState: "unchanged" as const,
+      status: "failed" as const,
+    }));
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary: async () => ({
+        ...desktopTestRepositoryLibrary,
+        managed: [
+          {
+            name: "test-repository",
+            lifecycle: "managed" as const,
+            status: "legacyConfig",
+            requiredAction: "confirmMigration",
+            current: false,
+            watching: false,
+          },
+        ],
+      }),
+      prepareRepositoryMigration: async () => ({
+        kind: "prepared" as const,
+        snapshot: {
+          repoPath: archivePath,
+          directoryDigest: "a".repeat(64),
+        },
+      }),
+      commitRepositoryMigration,
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+
+    globalThis.location.hash = "#/repositories";
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Migrate" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Start migration" }),
+    );
+
+    const outcome = await screen.findByTestId("repository-migration-outcome");
+    expect(outcome.textContent).toContain(
+      "Source repository (test-repository): the source was not modified.",
+    );
+    expect(outcome.textContent).toContain(
+      `Archive snapshot: preserved as an Archived Repository (read-only) at ${
+        archivePath
+      }.`,
+    );
+    expect(outcome.textContent).toContain(
+      "Migration did not complete (migrationFailed).",
+    );
+    expect(outcome.textContent).toContain(
+      "Cleanup warning: History could not confirm all lease cleanup.",
+    );
+    expect(
+      screen.queryByText("Migration completed with a cleanup warning."),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Start migration" }),
+    ).toBeNull();
+    expect(commitRepositoryMigration).toHaveBeenCalledTimes(1);
+  });
+
   it("explains when browser Local Network Access was denied", async () => {
     const navigatorWithDeniedLoopbackPermission = Object.create(
       globalThis.navigator,

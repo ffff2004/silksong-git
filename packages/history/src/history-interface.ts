@@ -40,27 +40,27 @@ export async function observeSave(
 export async function queryHistory(
   input: QueryHistoryInput,
 ): Promise<HistoryResult> {
-  await assertRepositoryCapability(input.repoPath, "read");
+  await assertRepositoryCapability(input.repoPath, "read", input.access);
   return await queryReadModelHistory(input.repoPath, input);
 }
 
 export async function queryRawObservations(
   input: QueryRawObservationsInput,
 ): Promise<RawObservationHistoryResult> {
-  await assertRepositoryCapability(input.repoPath, "read");
+  await assertRepositoryCapability(input.repoPath, "read", input.access);
   return await queryReadModelRawObservations(input.repoPath, input);
 }
 
 export async function diffCommits(
   input: DiffCommitsInput,
 ): Promise<DiffCommitsResult> {
-  await assertRepositoryCapability(input.repoPath, "read");
+  await assertRepositoryCapability(input.repoPath, "read", input.access);
   return await diffReadModelCommits(input);
 }
 
 export async function searchSemanticEvents(
   input: SearchSemanticEventsInput,
 ): Promise<SearchSemanticEventsResult> {
-  await assertRepositoryCapability(input.repoPath, "read");
+  await assertRepositoryCapability(input.repoPath, "read", input.access);
   return await searchReadModelEvents(input.repoPath, input);
 }

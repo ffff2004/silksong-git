@@ -2,10 +2,11 @@
 
 A Repo Session is the long-running reader process for one Save History
 Repository. Opening first asks History to inspect repository compatibility. It
-starts mandatory authenticated IPv4-loopback HTTP only when History reports a
-`ready` repository; migration, rebuild, invalid-candidate, and newer-app
-actions are resolved through the History Interface before opening. Once opened,
-it leaves watching inactive. The same session may start and stop watching without
+starts mandatory authenticated IPv4-loopback HTTP for a `ready` repository, or
+for a `legacyConfig`/`migrationRequired` repository when the caller explicitly
+selects `readOnly`; migration, rebuild, invalid-candidate, and newer-app
+actions are otherwise resolved through the History Interface before opening.
+Once opened, it leaves watching inactive. The same session may start and stop watching without
 changing its repository, endpoint, or bearer token. Its live public contract is
 the package-root
 [`@silksong-git/repo-session` Interface](../../packages/repo-session/src/index.ts).

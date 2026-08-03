@@ -1,6 +1,8 @@
 import { strict as assert } from "node:assert";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  chmod,
   copyFile,
   mkdir,
   mkdtemp,
@@ -24,6 +26,7 @@ import {
   InvalidRestoreBackupDirectoryError,
   migrateSaveHistoryRepository,
   observeSave,
+  prepareSaveHistoryMigration,
   queryHistory,
   queryRawObservations,
   readEncodedSave,
@@ -35,6 +38,7 @@ import {
   SaveHistoryWatcherAlreadyAcquiredError,
   searchSemanticEvents,
 } from "./index.ts";
+import { withArchiveSnapshotFileSystemForTests } from "./repository-compatibility.ts";
 import type { ProjectConfigOverrides } from "./types.ts";
 
 const fixtureDirectory = path.join(
@@ -57,7 +61,6 @@ const maskShard2CollectedRosariesEncodedSavePath = path.join(
   fixtureDirectory,
   "mask-shard-2-collected-rosaries-save.dat",
 );
-
 async function createTempDirectory(t: TestContext): Promise<string> {
   const directory = await mkdtemp(
     path.join(tmpdir(), "silksong-history-test-"),
@@ -139,6 +142,41 @@ async function removeSemanticReadModelFixture(repo: HistoryRepoFixture) {
   });
 }
 
+async function corruptUnreachableGitObject(repoPath: string) {
+  const objectSourcePath = path.join(repoPath, "corrupt-object-source");
+  await writeFile(objectSourcePath, "unreachable object");
+  const objectIdOutput = await runGitOutput(repoPath, [
+    "hash-object",
+    "-w",
+    objectSourcePath,
+  ]);
+  const objectId = objectIdOutput.trim();
+  const objectPath = path.join(
+    repoPath,
+    ".git",
+    "objects",
+    objectId.slice(0, 2),
+    objectId.slice(2),
+  );
+  await chmod(objectPath, 0o600);
+  await writeFile(objectPath, "corrupt object");
+}
+
+async function runGitOutput(
+  cwd: string,
+  args: readonly string[],
+): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    execFile("git", [...args], { cwd }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
 async function observeFixture(
   repo: HistoryRepoFixture,
   fixturePath: string,
@@ -198,19 +236,8 @@ test("initSaveHistory creates a Save History Repository project config", async (
   });
 
   assert.equal(result.repoPath, repoPath);
-  assert.equal(
-    result.configPath,
-    path.join(repoPath, ".silksong-git/config.json"),
-  );
-  await assert.doesNotReject(async () => await stat(repoPath));
-  const configJson = await readFile(result.configPath, "utf8");
-  const config = JSON.parse(configJson) as {
-    watchedSavePath?: unknown;
-    localApi?: unknown;
-  };
-
-  assert.equal(config.watchedSavePath, minimalEncodedSavePath);
-  assert.equal("localApi" in config, false);
+  const inspection = await inspectSaveHistoryRepository({ repoPath });
+  assert.equal(inspection.status, "ready");
 });
 
 test("inspectSaveHistoryRepository classifies durable compatibility separately from the Semantic Read Model", async (t) => {
@@ -331,10 +358,10 @@ test("migrateSaveHistoryRepository requires confirmation, a fresh inspection, an
     inspectionId: initialInspection.inspectionId,
     confirmation: "not-confirmed",
   });
-  assert.deepEqual(unconfirmed, {
-    status: "rejected",
-    reason: "confirmationRequired",
-  });
+  assert.equal(unconfirmed.status, "rejected");
+  assert.equal(unconfirmed.reason, "confirmationRequired");
+  assert.equal(unconfirmed.sourceState, "unchanged");
+  assert.deepEqual(unconfirmed.snapshotState, { status: "notCreated" });
 
   await setRepositoryFormatVersion(repo, 0);
   const stale = await migrateSaveHistoryRepository({
@@ -342,7 +369,10 @@ test("migrateSaveHistoryRepository requires confirmation, a fresh inspection, an
     inspectionId: initialInspection.inspectionId,
     confirmation: "migrate-save-history-repository",
   });
-  assert.deepEqual(stale, { status: "rejected", reason: "staleInspection" });
+  assert.equal(stale.status, "rejected");
+  assert.equal(stale.reason, "staleInspection");
+  assert.equal(stale.sourceState, "unchanged");
+  assert.deepEqual(stale.snapshotState, { status: "notCreated" });
 
   const freshInspection = await inspectSaveHistoryRepository({
     repoPath: repo.repoPath,
@@ -355,16 +385,300 @@ test("migrateSaveHistoryRepository requires confirmation, a fresh inspection, an
   assert.equal(migrated.status, "migrated");
   assert.equal(migrated.backupCreated, true);
   assert.equal(migrated.inspection.status, "ready");
+  assert.equal(migrated.sourceState, "migrated");
+  assert.deepEqual(migrated.snapshotState, { status: "notCreated" });
 
   const consumedToken = await migrateSaveHistoryRepository({
     repoPath: repo.repoPath,
     inspectionId: freshInspection.inspectionId,
     confirmation: "migrate-save-history-repository",
   });
-  assert.deepEqual(consumedToken, {
-    status: "rejected",
-    reason: "staleInspection",
+  assert.equal(consumedToken.status, "rejected");
+  assert.equal(consumedToken.reason, "staleInspection");
+  assert.equal(consumedToken.sourceState, "unchanged");
+  assert.deepEqual(consumedToken.snapshotState, { status: "notCreated" });
+});
+
+test("Desktop migration preparation publishes a collision-safe verified snapshot before commit", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await setRepositoryFormatVersion(repo, undefined);
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
   });
+  const snapshotBase = path.join(
+    repo.tempDirectory,
+    "archives",
+    "save--pre-migration-now",
+  );
+
+  const first = await prepareSaveHistoryMigration({
+    snapshotPath: snapshotBase,
+    repoPath: repo.repoPath,
+    inspectionId: inspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+  assert.equal(first.status, "prepared");
+  assert.equal(first.operation.snapshot.repoPath, snapshotBase);
+  assert.match(first.operation.snapshot.directoryDigest, /^[0-9a-f]{64}$/v);
+
+  const committed = await first.operation.commit();
+  assert.equal(committed.status, "migrated");
+  assert.equal(committed.sourceState, "migrated");
+  const firstSnapshot = await stat(snapshotBase);
+  assert.ok(firstSnapshot.isDirectory());
+
+  await setRepositoryFormatVersion(repo, undefined);
+  const collisionInspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  const second = await prepareSaveHistoryMigration({
+    snapshotPath: snapshotBase,
+    repoPath: repo.repoPath,
+    inspectionId: collisionInspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+  assert.equal(second.status, "prepared");
+  assert.equal(second.operation.snapshot.repoPath, `${snapshotBase}-1`);
+  await second.operation.commit();
+});
+
+test("Git integrity warnings do not block a verified archive or migration", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const observed = await observeSave({ repoPath: repo.repoPath });
+  assert.equal(observed.status, "committed");
+  await corruptUnreachableGitObject(repo.repoPath);
+  await setRepositoryFormatVersion(repo, undefined);
+
+  const strictInspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  assert.equal(strictInspection.status, "invalid");
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+    gitIntegrityPolicy: "advisory",
+  });
+  assert.equal(inspection.status, "legacyConfig");
+  const prepared = await prepareSaveHistoryMigration({
+    snapshotPath: path.join(repo.tempDirectory, "archives", "corrupt-git"),
+    repoPath: repo.repoPath,
+    inspectionId: inspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+
+  assert.equal(prepared.status, "prepared");
+  const warning = prepared.operation.snapshot.gitIntegrityWarning;
+  if (typeof warning !== "string") {
+    throw new TypeError("Expected a Git integrity warning.");
+  }
+  assert.match(warning, /Git integrity validation reported a problem/v);
+  const migrated = await prepared.operation.commit();
+  assert.equal(migrated.status, "migrated");
+  assert.equal(migrated.sourceState, "migrated");
+  assert.deepEqual(migrated.snapshotState, {
+    repoPath: prepared.operation.snapshot.repoPath,
+    status: "retained",
+  });
+});
+
+test("Desktop migration preparation copies durable content and retains a published archive when commit is stale", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await setRepositoryFormatVersion(repo, undefined);
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  const snapshotPath = path.join(
+    repo.tempDirectory,
+    "archives",
+    "opaque-target",
+  );
+  const prepared = await prepareSaveHistoryMigration({
+    snapshotPath,
+    repoPath: repo.repoPath,
+    inspectionId: inspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+
+  assert.equal(prepared.status, "prepared");
+  const snapshotInspection = await inspectSaveHistoryRepository({
+    repoPath: snapshotPath,
+    gitIntegrityPolicy: "advisory",
+  });
+  assert.equal(snapshotInspection.status, "legacyConfig");
+
+  const changedConfig = JSON.parse(await readFile(repo.configPath, "utf8")) as {
+    capturePolicy: { debounceWriteMs: number };
+  };
+  changedConfig.capturePolicy.debounceWriteMs++;
+  await writeFile(repo.configPath, `${JSON.stringify(changedConfig)}\n`);
+  const migration = await prepared.operation.commit();
+
+  assert.equal(migration.status, "rejected");
+  assert.equal(migration.reason, "staleInspection");
+  assert.equal(migration.sourceState, "unchanged");
+  assert.deepEqual(migration.snapshotState, {
+    repoPath: prepared.operation.snapshot.repoPath,
+    status: "retained",
+  });
+  const retainedSnapshot = await stat(prepared.operation.snapshot.repoPath);
+  assert.ok(retainedSnapshot.isDirectory());
+});
+
+test("Desktop migration preparation failure does not change the source", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await setRepositoryFormatVersion(repo, undefined);
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  const result = await prepareSaveHistoryMigration({
+    snapshotPath: path.join(repo.repoPath, "archive-inside-source"),
+    repoPath: repo.repoPath,
+    inspectionId: inspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reason, "snapshotFailed");
+  const sourceInspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  assert.equal(sourceInspection.status, "legacyConfig");
+
+  const retryInspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  const retry = await prepareSaveHistoryMigration({
+    snapshotPath: path.join(repo.tempDirectory, "archive-after-failure"),
+    repoPath: repo.repoPath,
+    inspectionId: retryInspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+  assert.equal(retry.status, "prepared");
+  await retry.operation.release();
+});
+
+test("migration post-write failure reports the migrated source and retains its archive", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await setRepositoryFormatVersion(repo, undefined);
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  const snapshotPath = path.join(repo.tempDirectory, "archives", "post-write");
+  const prepared = await withArchiveSnapshotFileSystemForTests(
+    (fileSystem) => ({
+      ...fileSystem,
+      async writeConfigAtomically(configPath, contents) {
+        await fileSystem.writeConfigAtomically(configPath, contents);
+        throw new Error("bounded post-write failure");
+      },
+    }),
+    async () =>
+      await prepareSaveHistoryMigration({
+        snapshotPath,
+        repoPath: repo.repoPath,
+        inspectionId: inspection.inspectionId,
+        confirmation: "migrate-save-history-repository",
+      }),
+  );
+
+  assert.equal(prepared.status, "prepared");
+  const migration = await withArchiveSnapshotFileSystemForTests(
+    (fileSystem) => ({
+      ...fileSystem,
+      async writeConfigAtomically(configPath, contents) {
+        await fileSystem.writeConfigAtomically(configPath, contents);
+        throw new Error("bounded post-write failure");
+      },
+    }),
+    async () => await prepared.operation.commit(),
+  );
+  assert.equal(migration.status, "failed");
+  assert.equal(migration.reason, "migrationFailed");
+  assert.equal(migration.sourceState, "migrated");
+  assert.deepEqual(migration.snapshotState, {
+    repoPath: snapshotPath,
+    status: "retained",
+  });
+  const sourceInspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  assert.equal(sourceInspection.status, "ready");
+  const archiveInspection = await inspectSaveHistoryRepository({
+    repoPath: snapshotPath,
+    gitIntegrityPolicy: "advisory",
+  });
+  assert.equal(archiveInspection.status, "legacyConfig");
+  await assert.doesNotReject(async () => await stat(snapshotPath));
+});
+
+test("a source/staged digest mismatch prevents migration and publication", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await setRepositoryFormatVersion(repo, undefined);
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  const snapshotPath = path.join(repo.tempDirectory, "archives", "churn");
+  const sourceMutationPath = path.join(
+    repo.repoPath,
+    "bounded-mutation-marker",
+  );
+  let result: Awaited<ReturnType<typeof prepareSaveHistoryMigration>>;
+  try {
+    result = await withArchiveSnapshotFileSystemForTests(
+      (fileSystem) => ({
+        ...fileSystem,
+        async copyRepository(sourcePath, targetPath) {
+          await fileSystem.copyRepository(sourcePath, targetPath);
+          await writeFile(sourceMutationPath, "one bounded mutation");
+        },
+      }),
+      async () =>
+        await prepareSaveHistoryMigration({
+          snapshotPath,
+          repoPath: repo.repoPath,
+          inspectionId: inspection.inspectionId,
+          confirmation: "migrate-save-history-repository",
+        }),
+    );
+  } finally {
+    await rm(sourceMutationPath, { force: true });
+  }
+
+  assert.deepEqual(result, {
+    status: "failed",
+    reason: "directoryDigestMismatch",
+    message: "The source changed while the archive snapshot was being copied.",
+  });
+  await assert.rejects(stat(snapshotPath));
+  const sourceInspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  assert.equal(sourceInspection.status, "legacyConfig");
+});
+
+test("Desktop migration preparation refuses an externally owned watcher without changing the source", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const watcher = await acquireSaveHistoryWatcher({ repoPath: repo.repoPath });
+  t.after(async () => {
+    await watcher.release();
+  });
+  await setRepositoryFormatVersion(repo, undefined);
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+
+  const result = await prepareSaveHistoryMigration({
+    snapshotPath: path.join(repo.tempDirectory, "archive"),
+    repoPath: repo.repoPath,
+    inspectionId: inspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reason, "watcherAlreadyAcquired");
+  const sourceInspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+  assert.equal(sourceInspection.status, "legacyConfig");
 });
 
 test("newer incompatible repositories refuse reads and every public write workflow", async (t) => {

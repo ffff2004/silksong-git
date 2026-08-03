@@ -98,7 +98,11 @@ export type SaveHistoryRepositoryInspection =
 
 export interface InspectSaveHistoryRepositoryInput {
   readonly repoPath: string;
+  /** Strict by default for CLI and ordinary repository workflows. */
+  readonly gitIntegrityPolicy?: GitIntegrityPolicy;
 }
+
+export type GitIntegrityPolicy = "strict" | "advisory";
 
 export interface MigrateSaveHistoryRepositoryInput {
   readonly repoPath: string;
@@ -106,11 +110,43 @@ export interface MigrateSaveHistoryRepositoryInput {
   readonly confirmation: string;
 }
 
-export type MigrateSaveHistoryRepositoryResult =
+export interface PrepareSaveHistoryMigrationInput extends MigrateSaveHistoryRepositoryInput {
+  /** An opaque, canonical destination selected by Desktop. */
+  readonly snapshotPath: string;
+}
+
+export interface ArchiveSnapshot {
+  readonly repoPath: string;
+  readonly directoryDigest: string;
+  readonly gitIntegrityWarning?: string;
+}
+
+export type MigrationCleanupFailure = "leaseReleaseFailed";
+
+export interface PreparedSaveHistoryMigration {
+  readonly snapshot: ArchiveSnapshot;
+  /**
+   * Commits the already-published snapshot's migration. There is deliberately no user cancellation
+   * or rollback path: the lease remains owned until this finishes.
+   */
+  readonly commit: () => Promise<MigrateSaveHistoryRepositoryResult>;
+  /**
+   * Releases the in-memory lease during Desktop sidecar process cleanup. This is a lifecycle
+   * finalizer, not a user cancellation or retry operation.
+   */
+  readonly release: () => Promise<MigrationCleanupFailure | undefined>;
+}
+
+export type MigrationSourceState = "unchanged" | "migrated" | "unknown";
+
+export type MigrationSnapshotState =
+  | { readonly status: "notCreated" }
+  | { readonly status: "retained"; readonly repoPath: string };
+
+export type PrepareSaveHistoryMigrationResult =
   | {
-      readonly status: "migrated";
-      readonly inspection: SaveHistoryRepositoryInspection;
-      readonly backupCreated: true;
+      readonly status: "prepared";
+      readonly operation: PreparedSaveHistoryMigration;
     }
   | {
       readonly status: "rejected";
@@ -121,7 +157,39 @@ export type MigrateSaveHistoryRepositoryResult =
     }
   | {
       readonly status: "failed";
+      readonly reason:
+        | "snapshotFailed"
+        | "directoryDigestMismatch"
+        | "repositoryBusy"
+        | "watcherAlreadyAcquired";
+      readonly message?: string;
+    };
+
+export type MigrateSaveHistoryRepositoryResult =
+  | {
+      readonly status: "migrated";
+      readonly inspection: SaveHistoryRepositoryInspection;
+      readonly backupCreated: true;
+      readonly sourceState: "migrated";
+      readonly snapshotState: MigrationSnapshotState;
+      readonly cleanupFailure?: MigrationCleanupFailure;
+    }
+  | {
+      readonly status: "rejected";
+      readonly reason:
+        | "confirmationRequired"
+        | "staleInspection"
+        | "migrationNotRequired";
+      readonly sourceState: "unchanged";
+      readonly snapshotState: MigrationSnapshotState;
+      readonly cleanupFailure?: MigrationCleanupFailure;
+    }
+  | {
+      readonly status: "failed";
       readonly reason: "backupFailed" | "repositoryBusy" | "migrationFailed";
+      readonly sourceState: MigrationSourceState;
+      readonly snapshotState: MigrationSnapshotState;
+      readonly cleanupFailure?: MigrationCleanupFailure;
     };
 
 export interface ObserveSaveInput {
@@ -213,6 +281,8 @@ export interface RebuildSemanticReadModelResult {
 
 export interface QueryHistoryInput {
   readonly repoPath: string;
+  /** Allows a read-only session to browse compatible pre-migration archives. */
+  readonly access?: "readOnly";
   readonly includeFiltered?: boolean;
   readonly limit?: number;
   readonly cursor?: string;
@@ -228,6 +298,8 @@ type HistoryOrder = "asc" | "desc";
 
 export interface QueryRawObservationsInput {
   readonly repoPath: string;
+  /** Allows a read-only session to browse compatible pre-migration archives. */
+  readonly access?: "readOnly";
   readonly limit?: number;
   readonly cursor?: string;
   readonly order?: HistoryOrder;
@@ -249,6 +321,8 @@ type SaveStateSelector =
 
 export interface GetSaveStateInput {
   readonly repoPath: string;
+  /** Allows a read-only session to browse compatible pre-migration archives. */
+  readonly access?: "readOnly";
   readonly selector: SaveStateSelector;
 }
 
@@ -263,6 +337,8 @@ export type GetSaveStateResult =
 
 export interface ReadEncodedSaveInput {
   readonly repoPath: string;
+  /** Allows a read-only session to export from compatible pre-migration archives. */
+  readonly access?: "readOnly";
   readonly commitRef: string;
 }
 
@@ -275,6 +351,8 @@ export interface ReadEncodedSaveResult {
 
 export interface DiffCommitsInput {
   readonly repoPath: string;
+  /** Allows a read-only session to browse compatible pre-migration archives. */
+  readonly access?: "readOnly";
   readonly fromRef: string;
   readonly toRef: string;
   readonly includeFiltered?: boolean;
@@ -290,6 +368,8 @@ export interface DiffCommitsResult {
 
 export interface SearchSemanticEventsInput {
   readonly repoPath: string;
+  /** Allows a read-only session to browse compatible pre-migration archives. */
+  readonly access?: "readOnly";
   readonly query: {
     readonly itemId?: string;
     readonly label?: string;

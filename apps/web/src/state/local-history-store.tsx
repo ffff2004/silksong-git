@@ -14,6 +14,8 @@ import type {
   OpenExternalRepositoryResult,
   RepositoryLibrary,
   RepositoryLifecycle,
+  RepositoryMigrationCommitResult,
+  RepositoryMigrationPreparationResult,
   RuntimeCapabilities,
 } from "../runtime-capabilities/interface.ts";
 
@@ -63,6 +65,11 @@ interface LocalHistoryStore {
     readonly lifecycle: Exclude<RepositoryLifecycle, "external">;
     readonly name: string;
   }) => Promise<OpenExternalRepositoryResult>;
+  readonly prepareRepositoryMigration: (input: {
+    readonly lifecycle: "managed";
+    readonly name: string;
+  }) => Promise<RepositoryMigrationPreparationResult>;
+  readonly commitRepositoryMigration: () => Promise<RepositoryMigrationCommitResult>;
   readonly repositoryLibrary: () => Promise<RepositoryLibrary>;
   readonly reportRequestFailure: (error: unknown) => void;
   readonly reportRequestSuccess: () => void;
@@ -198,6 +205,7 @@ export function LocalHistoryProvider(props: {
         throw new Error("Local History is unavailable in this runtime.");
       }
 
+      ensureWorkflowActive(workflowState());
       setWorkflowState({ kind: "transitioning" });
       try {
         return await props.runtimeCapabilities.openExternalRepository();
@@ -216,9 +224,51 @@ export function LocalHistoryProvider(props: {
           "Repository Library is unavailable in this Desktop version.",
         );
       }
+      ensureWorkflowActive(workflowState());
       setWorkflowState({ kind: "transitioning" });
       try {
         return await props.runtimeCapabilities.openLibraryEntry(input);
+      } finally {
+        setWorkflowState({ kind: "active" });
+      }
+    },
+    async prepareRepositoryMigration(input) {
+      if (
+        props.runtimeCapabilities.kind !== "desktop"
+        || props.runtimeCapabilities.prepareRepositoryMigration === undefined
+      ) {
+        throw new Error(
+          "Repository migration is unavailable in this Desktop version.",
+        );
+      }
+      ensureWorkflowActive(workflowState());
+      setWorkflowState({ kind: "transitioning" });
+      try {
+        const result =
+          await props.runtimeCapabilities.prepareRepositoryMigration(input);
+        if (result.kind !== "prepared") {
+          setWorkflowState({ kind: "active" });
+        }
+        return result;
+      } catch (error) {
+        setWorkflowState({ kind: "active" });
+        throw error;
+      }
+    },
+    async commitRepositoryMigration() {
+      if (
+        props.runtimeCapabilities.kind !== "desktop"
+        || props.runtimeCapabilities.commitRepositoryMigration === undefined
+      ) {
+        throw new Error(
+          "Repository migration is unavailable in this Desktop version.",
+        );
+      }
+      if (workflowState().kind !== "transitioning") {
+        throw new Error("No prepared repository migration is active.");
+      }
+      try {
+        return await props.runtimeCapabilities.commitRepositoryMigration();
       } finally {
         setWorkflowState({ kind: "active" });
       }

@@ -7,12 +7,15 @@ import type { Writable } from "node:stream";
 import { decodeEncodedSave } from "@silksong-git/core";
 import type {
   MigrateSaveHistoryRepositoryResult,
+  PrepareSaveHistoryMigrationResult,
+  PreparedSaveHistoryMigration,
   RebuildSemanticReadModelResult,
   SaveHistoryRepositoryInspection,
 } from "@silksong-git/history";
 import {
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
+  prepareSaveHistoryMigration,
   rebuildSemanticReadModel,
 } from "@silksong-git/history";
 import type { RepoSession, RepoSessionEvent } from "@silksong-git/repo-session";
@@ -33,6 +36,8 @@ import {
   processShutdownCommandSchema,
   repositoryInspectCommandSchema,
   repositoryMigrateCommandSchema,
+  repositoryMigrationCommitCommandSchema,
+  repositoryMigrationPrepareCommandSchema,
   repositoryRebuildCommandSchema,
   saveInspectCommandSchema,
   sessionOpenCommandSchema,
@@ -51,6 +56,7 @@ export async function runDesktopSidecarProcess(
 ): Promise<0 | 1> {
   const lines = createInterface({ input: input.input });
   let session: RepoSession | undefined;
+  let preparedMigration: PreparedSaveHistoryMigration | undefined;
   let commandEvents: DesktopSidecarEvent[] | undefined;
   const processState = {
     gracefulShutdown: false,
@@ -110,6 +116,7 @@ export async function runDesktopSidecarProcess(
     input.input.pause();
 
     if (!processState.gracefulShutdown) {
+      await releasePreparedMigrationAfterUnexpectedExit();
       await stopSessionAfterUnexpectedExit();
     }
 
@@ -181,6 +188,26 @@ export async function runDesktopSidecarProcess(
       case "repository.migrate": {
         return {
           response: await migrateRepository(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
+      case "repository.migration.prepare": {
+        return {
+          response: await prepareRepositoryMigration(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
+      case "repository.migration.commit": {
+        return {
+          response: await commitRepositoryMigration(
             envelope.requestId,
             envelope.command,
           ),
@@ -277,7 +304,6 @@ export async function runDesktopSidecarProcess(
         "This process already owns a Repo Session.",
       );
     }
-
     try {
       session = await openRepoSession({
         repoPath: commandResult.data.repoPath,
@@ -353,13 +379,13 @@ export async function runDesktopSidecarProcess(
         "The repository path must be absolute.",
       );
     }
-
     try {
       return createSuccessResponse(requestId, {
         type: "repository.inspected",
         inspection: toProtocolInspection(
           await inspectSaveHistoryRepository({
             repoPath: commandResult.data.repoPath,
+            gitIntegrityPolicy: commandResult.data.gitIntegrityPolicy,
           }),
         ),
       });
@@ -392,6 +418,13 @@ export async function runDesktopSidecarProcess(
         "The repository path must be absolute.",
       );
     }
+    if (session?.access === "readOnly") {
+      return createFailureResponse(
+        requestId,
+        "repository_migrate_failed",
+        "Archived repositories are read-only and cannot migrate.",
+      );
+    }
 
     try {
       return createSuccessResponse(requestId, {
@@ -407,6 +440,124 @@ export async function runDesktopSidecarProcess(
         "repository_migrate_failed",
         "The Save History Repository could not be migrated.",
       );
+    }
+  }
+
+  async function prepareRepositoryMigration(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult =
+      repositoryMigrationPrepareCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.migration.prepare command is invalid.",
+      );
+    }
+    if (
+      !path.isAbsolute(commandResult.data.repoPath)
+      || !path.isAbsolute(commandResult.data.snapshotPath)
+    ) {
+      return createFailureResponse(
+        requestId,
+        "invalid_repo_path",
+        "The repository migration paths must be absolute.",
+      );
+    }
+    if (session?.access === "readOnly") {
+      return createFailureResponse(
+        requestId,
+        "repository_migrate_failed",
+        "Archived repositories are read-only and cannot migrate.",
+      );
+    }
+    if (preparedMigration !== undefined) {
+      return createFailureResponse(
+        requestId,
+        "repository_migration_not_prepared",
+        "A Desktop repository migration is already in progress.",
+      );
+    }
+
+    emitEvent({
+      type: "mutation.activity",
+      mutation: "repositoryMigration",
+      status: "started",
+    });
+    let preparation: PrepareSaveHistoryMigrationResult;
+    try {
+      preparation = await prepareSaveHistoryMigration(commandResult.data);
+    } catch {
+      emitEvent({
+        type: "mutation.activity",
+        mutation: "repositoryMigration",
+        status: "finished",
+      });
+      writeDiagnostic("Repository archive snapshot failed.");
+      return createFailureResponse(
+        requestId,
+        "repository_migrate_failed",
+        "The repository archive snapshot could not be created.",
+      );
+    }
+    if (preparation.status === "prepared") {
+      preparedMigration = preparation.operation;
+    } else {
+      emitEvent({
+        type: "mutation.activity",
+        mutation: "repositoryMigration",
+        status: "finished",
+      });
+    }
+
+    return createSuccessResponse(requestId, {
+      type: "repository.migrationPrepared",
+      preparation: toProtocolMigrationPreparation(preparation),
+    });
+  }
+
+  async function commitRepositoryMigration(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    if (!repositoryMigrationCommitCommandSchema.safeParse(command).success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.migration.commit command is invalid.",
+      );
+    }
+    const operation = preparedMigration;
+    if (operation === undefined) {
+      return createFailureResponse(
+        requestId,
+        "repository_migration_not_prepared",
+        "No prepared Desktop repository migration is available.",
+      );
+    }
+
+    try {
+      const migration = await operation.commit();
+      return createSuccessResponse(requestId, {
+        type: "repository.migrationResult",
+        migration: toProtocolMigration(migration),
+      });
+    } catch {
+      writeDiagnostic("Repository migration commit failed.");
+      return createFailureResponse(
+        requestId,
+        "repository_migrate_failed",
+        "The Save History Repository could not be migrated.",
+      );
+    } finally {
+      preparedMigration = undefined;
+      emitEvent({
+        type: "mutation.activity",
+        mutation: "repositoryMigration",
+        status: "finished",
+      });
     }
   }
 
@@ -427,6 +578,13 @@ export async function runDesktopSidecarProcess(
         requestId,
         "invalid_repo_path",
         "The repository path must be absolute.",
+      );
+    }
+    if (session?.access === "readOnly") {
+      return createFailureResponse(
+        requestId,
+        "repository_rebuild_failed",
+        "Archived repositories are read-only and cannot rebuild their Semantic Read Model.",
       );
     }
 
@@ -471,6 +629,13 @@ export async function runDesktopSidecarProcess(
         "Open a Repo Session before controlling its watcher.",
       );
     }
+    if (session.access === "readOnly") {
+      return createFailureResponse(
+        requestId,
+        "watcher_start_failed",
+        "Archived repositories are read-only and cannot control a watcher.",
+      );
+    }
 
     try {
       await session.startWatching();
@@ -503,6 +668,13 @@ export async function runDesktopSidecarProcess(
         "Open a Repo Session before controlling its watcher.",
       );
     }
+    if (session.access === "readOnly") {
+      return createFailureResponse(
+        requestId,
+        "watcher_stop_failed",
+        "Archived repositories are read-only and cannot control a watcher.",
+      );
+    }
 
     try {
       await session.stopWatching();
@@ -526,6 +698,14 @@ export async function runDesktopSidecarProcess(
         requestId,
         "invalid_command",
         "The process.shutdown command is invalid.",
+      );
+    }
+
+    if (preparedMigration !== undefined) {
+      return createFailureResponse(
+        requestId,
+        "shutdown_failed",
+        "The Desktop sidecar could not shut down while a repository migration is in progress.",
       );
     }
 
@@ -601,6 +781,19 @@ export async function runDesktopSidecarProcess(
     }
   }
 
+  async function releasePreparedMigrationAfterUnexpectedExit() {
+    const operation = preparedMigration;
+    preparedMigration = undefined;
+    if (operation === undefined) {
+      return;
+    }
+
+    const cleanupFailure = await operation.release().catch(() => "unknown");
+    if (cleanupFailure !== undefined) {
+      writeDiagnostic("Repository migration lease cleanup failed.");
+    }
+  }
+
   async function stopOpenSession() {
     if (session !== undefined) {
       await session.stop();
@@ -665,6 +858,19 @@ function toProtocolMigration(result: MigrateSaveHistoryRepositoryResult) {
   return {
     ...result,
     inspection: toProtocolInspection(result.inspection),
+  };
+}
+
+function toProtocolMigrationPreparation(
+  result: PrepareSaveHistoryMigrationResult,
+) {
+  if (result.status !== "prepared") {
+    return result;
+  }
+
+  return {
+    status: "prepared" as const,
+    snapshot: result.operation.snapshot,
   };
 }
 

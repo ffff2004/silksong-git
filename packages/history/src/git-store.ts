@@ -136,6 +136,10 @@ export async function readCurrentHead(
   }
 }
 
+/**
+ * Checks only the repository/work-tree shape. Integrity is intentionally kept separate so archive
+ * validation can report fsck failures without making a byte-identical snapshot unsafe to publish.
+ */
 export async function isUsableGitRepository(
   repoPath: string,
 ): Promise<boolean> {
@@ -147,17 +151,36 @@ export async function isUsableGitRepository(
 }
 
 async function validateGitRepository(repoPath: string): Promise<boolean> {
-  const insideWorkTree = await runGitOutput(repoPath, [
-    "rev-parse",
-    "--is-inside-work-tree",
-  ]);
-  if (insideWorkTree !== "true") {
+  if (!(await isGitWorkTreeRepository(repoPath))) {
     return false;
   }
 
-  await runGitOutput(repoPath, ["fsck", "--no-dangling", "--no-reflogs"]);
-
+  await runGit(repoPath, ["fsck", "--no-dangling", "--no-reflogs"]);
   return true;
+}
+
+export async function isGitWorkTreeRepository(
+  repoPath: string,
+): Promise<boolean> {
+  try {
+    return (
+      (await runGitOutput(repoPath, ["rev-parse", "--is-inside-work-tree"]))
+      === "true"
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function validateGitIntegrity(
+  repoPath: string,
+): Promise<string | undefined> {
+  try {
+    await runGit(repoPath, ["fsck", "--no-dangling", "--no-reflogs"]);
+    return undefined;
+  } catch {
+    return "Git integrity validation reported a problem. The verified archive was retained, but Git may need repair.";
+  }
 }
 
 export async function readHistoryCommit(

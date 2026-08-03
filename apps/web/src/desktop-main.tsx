@@ -9,6 +9,8 @@ import type {
   PickStaticEncodedSaveResult,
   RepoSessionConnection,
   RepositoryLibrary,
+  RepositoryMigrationCommitResult,
+  RepositoryMigrationPreparationResult,
 } from "./runtime-capabilities/interface.ts";
 // Vite applies the root stylesheet through this import side effect.
 // eslint-disable-next-line import-x/no-unassigned-import
@@ -42,6 +44,15 @@ const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
   },
   getRepositoryLibrary: async () =>
     await invoke<RepositoryLibrary>("desktop_get_repository_library"),
+  prepareRepositoryMigration: async (input) =>
+    await invoke<RepositoryMigrationPreparationResult>(
+      "desktop_prepare_repository_migration",
+      { input },
+    ),
+  commitRepositoryMigration: async () =>
+    await invoke<RepositoryMigrationCommitResult>(
+      "desktop_commit_repository_migration",
+    ),
   openLibraryEntry: async (input) =>
     await invoke<OpenExternalRepositoryResult>("desktop_open_library_entry", {
       input,

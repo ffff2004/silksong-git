@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const desktopSidecarProtocolVersion = 4 as const;
+export const desktopSidecarProtocolVersion = 5 as const;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -10,6 +10,7 @@ export const desktopSidecarErrorCodes = [
   "invalid_repo_path",
   "repository_inspect_failed",
   "repository_migrate_failed",
+  "repository_migration_not_prepared",
   "repository_rebuild_failed",
   "session_already_open",
   "session_not_open",
@@ -49,6 +50,7 @@ export const repositoryInspectCommandSchema = z
   .object({
     type: z.literal("repository.inspect"),
     repoPath: z.string().min(1).max(4096),
+    gitIntegrityPolicy: z.enum(["strict", "advisory"]).default("strict"),
   })
   .strict();
 
@@ -58,6 +60,22 @@ export const repositoryMigrateCommandSchema = z
     repoPath: z.string().min(1).max(4096),
     inspectionId: z.string().min(1).max(128),
     confirmation: z.literal("migrate-save-history-repository"),
+  })
+  .strict();
+
+export const repositoryMigrationPrepareCommandSchema = z
+  .object({
+    type: z.literal("repository.migration.prepare"),
+    repoPath: z.string().min(1).max(4096),
+    inspectionId: z.string().min(1).max(128),
+    confirmation: z.literal("migrate-save-history-repository"),
+    snapshotPath: z.string().min(1).max(4096),
+  })
+  .strict();
+
+export const repositoryMigrationCommitCommandSchema = z
+  .object({
+    type: z.literal("repository.migration.commit"),
   })
   .strict();
 
@@ -133,6 +151,18 @@ const repositoryInspectionSchema = repositoryStatusSchema
   .extend({ inspectionId: z.string().min(1).max(128) })
   .strict();
 
+const migrationSourceStateSchema = z.enum(["unchanged", "migrated", "unknown"]);
+const migrationCleanupFailureSchema = z.literal("leaseReleaseFailed");
+const migrationSnapshotStateSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("notCreated") }).strict(),
+  z
+    .object({
+      status: z.literal("retained"),
+      repoPath: z.string().min(1).max(4096),
+    })
+    .strict(),
+]);
+
 const rebuildSemanticReadModelResultSchema = z
   .object({
     observationCount: z.number().int().nonnegative(),
@@ -149,6 +179,48 @@ const repositoryMigrationResultSchema = z.discriminatedUnion("status", [
       status: z.literal("migrated"),
       inspection: repositoryInspectionSchema,
       backupCreated: z.literal(true),
+      sourceState: z.literal("migrated"),
+      snapshotState: migrationSnapshotStateSchema,
+      cleanupFailure: migrationCleanupFailureSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("rejected"),
+      reason: z.enum([
+        "confirmationRequired",
+        "staleInspection",
+        "migrationNotRequired",
+      ]),
+      sourceState: z.literal("unchanged"),
+      snapshotState: migrationSnapshotStateSchema,
+      cleanupFailure: migrationCleanupFailureSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      reason: z.enum(["backupFailed", "repositoryBusy", "migrationFailed"]),
+      sourceState: migrationSourceStateSchema,
+      snapshotState: migrationSnapshotStateSchema,
+      cleanupFailure: migrationCleanupFailureSchema.optional(),
+    })
+    .strict(),
+]);
+
+const archiveSnapshotSchema = z
+  .object({
+    repoPath: z.string().min(1).max(4096),
+    directoryDigest: z.string().regex(/^[0-9a-f]{64}$/v),
+    gitIntegrityWarning: z.string().optional(),
+  })
+  .strict();
+
+const repositoryMigrationPreparationSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("prepared"),
+      snapshot: archiveSnapshotSchema,
     })
     .strict(),
   z
@@ -164,7 +236,13 @@ const repositoryMigrationResultSchema = z.discriminatedUnion("status", [
   z
     .object({
       status: z.literal("failed"),
-      reason: z.enum(["backupFailed", "repositoryBusy", "migrationFailed"]),
+      reason: z.enum([
+        "snapshotFailed",
+        "directoryDigestMismatch",
+        "repositoryBusy",
+        "watcherAlreadyAcquired",
+      ]),
+      message: z.string().optional(),
     })
     .strict(),
 ]);
@@ -189,6 +267,12 @@ const successResultSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("repository.inspected"),
       inspection: repositoryInspectionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("repository.migrationPrepared"),
+      preparation: repositoryMigrationPreparationSchema,
     })
     .strict(),
   z
@@ -281,7 +365,11 @@ const producedEventSchema = z.union([
   z
     .object({
       type: z.literal("mutation.activity"),
-      mutation: z.enum(["manualCheckpoint", "inPlaceRestore"]),
+      mutation: z.enum([
+        "manualCheckpoint",
+        "inPlaceRestore",
+        "repositoryMigration",
+      ]),
       status: z.enum(["started", "finished"]),
     })
     .strict(),
@@ -334,7 +422,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 4;
+    readonly protocolVersion: 5;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },

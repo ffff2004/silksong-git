@@ -67,6 +67,8 @@ export interface CreateLocalHttpAppInput {
   };
   /** Whether Local HTTP may admit mutations for this reader session. */
   readonly canMutate?: boolean;
+  /** History read policy for a read-only Desktop archive session. */
+  readonly historyAccess?: "readOnly";
   readonly onRequestError?: (error: HttpRequestErrorEvent) => void;
   readonly onMutationActivity?: (activity: MutationActivityEvent) => void;
 }
@@ -173,6 +175,9 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
 
       const result = await getSaveState({
         repoPath: input.repoPath,
+        ...(input.historyAccess !== undefined && {
+          access: input.historyAccess,
+        }),
         selector:
           query.commit === undefined
             ? { kind: "latest" }
@@ -183,7 +188,13 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
     })
     .openapi(localHttpRoutes.history, async (c) => {
       const query = c.req.valid("query");
-      const result = await queryHistory({ repoPath: input.repoPath, ...query });
+      const result = await queryHistory({
+        repoPath: input.repoPath,
+        ...query,
+        ...(input.historyAccess !== undefined && {
+          access: input.historyAccess,
+        }),
+      });
 
       return c.json(result, 200);
     })
@@ -192,6 +203,9 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
       const result = await queryRawObservations({
         repoPath: input.repoPath,
         ...query,
+        ...(input.historyAccess !== undefined && {
+          access: input.historyAccess,
+        }),
       });
 
       return c.json(result, 200);
@@ -201,6 +215,9 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
 
       const result = await diffCommits({
         repoPath: input.repoPath,
+        ...(input.historyAccess !== undefined && {
+          access: input.historyAccess,
+        }),
         fromRef: query.from,
         toRef: query.to,
         includeFiltered: query.includeFiltered,
@@ -214,6 +231,9 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
 
       const result = await searchSemanticEvents({
         repoPath: input.repoPath,
+        ...(input.historyAccess !== undefined && {
+          access: input.historyAccess,
+        }),
         query,
         includeFiltered,
         limit,
@@ -272,6 +292,9 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
     .openapi(localHttpRoutes.export, async (c) => {
       const result = await readEncodedSave({
         repoPath: input.repoPath,
+        ...(input.historyAccess !== undefined && {
+          access: input.historyAccess,
+        }),
         commitRef: c.req.valid("query").commit,
       });
       const disposition = createContentDisposition(result.suggestedFileName);

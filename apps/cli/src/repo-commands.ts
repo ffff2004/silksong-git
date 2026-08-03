@@ -207,7 +207,31 @@ function projectMigrationResult(
   result: MigrateSaveHistoryRepositoryResult,
   currentInspection: SaveHistoryRepositoryInspection,
 ): SafeMigrationResult {
-  return { ...result, inspection: projectInspection(currentInspection) };
+  switch (result.status) {
+    case "migrated": {
+      return {
+        status: "migrated",
+        inspection: projectInspection(currentInspection),
+        backupCreated: true,
+      };
+    }
+
+    case "rejected": {
+      return {
+        status: "rejected",
+        reason: result.reason,
+        inspection: projectInspection(currentInspection),
+      };
+    }
+
+    case "failed": {
+      return {
+        status: "failed",
+        reason: result.reason,
+        inspection: projectInspection(currentInspection),
+      };
+    }
+  }
 }
 
 function formatInspection(

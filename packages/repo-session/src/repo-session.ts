@@ -34,10 +34,19 @@ import { createWatchObservationCoordinator } from "./watch-observation-coordinat
 export async function openRepoSession(
   input: OpenRepoSessionInput,
 ): Promise<RepoSession> {
+  const access = input.access ?? "readWrite";
   const inspection = await inspectSaveHistoryRepository({
     repoPath: input.repoPath,
+    gitIntegrityPolicy: access === "readOnly" ? "advisory" : "strict",
   });
-  if (inspection.status !== "ready") {
+  if (
+    inspection.status !== "ready"
+    && !(
+      access === "readOnly"
+      && (inspection.status === "legacyConfig"
+        || inspection.status === "migrationRequired")
+    )
+  ) {
     throw new SaveHistoryRepositoryIncompatibleError({
       status: inspection.status,
       requiredAction: inspection.requiredAction,
@@ -46,7 +55,6 @@ export async function openRepoSession(
   }
 
   const emit = input.onEvent ?? (() => undefined);
-  const access = input.access ?? "readWrite";
   const admission = createHttpAdmission();
   let watcherState: RepoSessionWatcherStatus["status"] = "inactive";
   let watcher: SaveHistoryWatcher | undefined;
@@ -69,6 +77,7 @@ export async function openRepoSession(
     getWatcherStatus,
     admission,
     canMutate: access === "readWrite",
+    historyAccess: access === "readOnly" ? "readOnly" : undefined,
     onRequestError: (error) => {
       emit({ type: "httpRequestError", repoPath: input.repoPath, error });
     },
@@ -99,6 +108,9 @@ export async function openRepoSession(
       await linearize(startWatching);
     },
     stopWatching: async () => {
+      if (access === "readOnly") {
+        throw new Error("This Repo Session is read-only.");
+      }
       await linearize(stopWatching);
     },
     stop,

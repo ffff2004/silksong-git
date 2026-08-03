@@ -12,14 +12,40 @@ export async function withHistoryWriteLock<T>(
   repoPath: string,
   writeOperation: () => Promise<T>,
 ): Promise<T> {
-  const lockPath = getRepositoryLayout(repoPath).writeLockPath;
-  const lock = await acquireLock(lockPath);
+  const lease = await acquireHistoryWriteLease(repoPath);
 
   try {
     return await writeOperation();
   } finally {
-    await releaseLock(lock, lockPath);
+    await lease.release();
   }
+}
+
+export interface HistoryWriteLease {
+  readonly release: () => Promise<void>;
+}
+
+/**
+ * Holds History's repository serialization across a caller-visible two-phase operation. The caller
+ * must release the lease exactly once after the durable operation has reached its terminal result.
+ */
+export async function acquireHistoryWriteLease(
+  repoPath: string,
+): Promise<HistoryWriteLease> {
+  const lockPath = getRepositoryLayout(repoPath).writeLockPath;
+  const lock = await acquireLock(lockPath);
+  let released = false;
+
+  return {
+    async release() {
+      if (released) {
+        return;
+      }
+
+      released = true;
+      await releaseLock(lock, lockPath);
+    },
+  };
 }
 
 async function acquireLock(

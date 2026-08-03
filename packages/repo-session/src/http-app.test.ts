@@ -85,6 +85,16 @@ async function setRepositoryFormatVersionFixture(
   await writeFile(configPath, `${JSON.stringify(config)}\n`);
 }
 
+async function setLegacyRepositoryFormatFixture(repoPath: string) {
+  const configPath = path.join(repoPath, ".silksong-git/config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  delete config["repositoryFormatVersion"];
+  await writeFile(configPath, `${JSON.stringify(config)}\n`);
+}
+
 interface OpenApiDocumentProbe {
   readonly openapi: string;
   readonly security: ReadonlyArray<Record<string, readonly string[]>>;
@@ -289,6 +299,61 @@ test("a read-only Repo Session retains reads and export but rejects watcher and 
       },
     });
   }
+});
+
+test("a read-only session admits a legacy archive for browsing and export without migration access", async (t) => {
+  const tempDirectory = await mkdtemp(
+    path.join(tmpdir(), "silksong-legacy-archive-session-"),
+  );
+  const repoPath = path.join(tempDirectory, "archive");
+  const watchedSavePath = path.join(tempDirectory, "user1.dat");
+  t.after(async () => {
+    await rm(tempDirectory, { recursive: true, force: true });
+  });
+
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({ repoPath, watchedSavePath });
+  const observation = await observeSave({ repoPath });
+  assert.equal(observation.status, "committed");
+  await setLegacyRepositoryFormatFixture(repoPath);
+
+  const session = await openRepoSession({ repoPath, access: "readOnly" });
+  t.after(async () => {
+    await session.stop();
+  });
+  assert.equal(session.access, "readOnly");
+  await assert.rejects(session.startWatching(), /read-only/v);
+  await assert.rejects(session.stopWatching(), /read-only/v);
+
+  const authorization = { Authorization: `Bearer ${session.http.token}` };
+  const save = await fetch(
+    `${session.http.endpoint}/api/v1/save?selector=latest`,
+    {
+      headers: authorization,
+    },
+  );
+  assert.equal(save.status, 200);
+  const exported = await fetch(
+    `${session.http.endpoint}/api/v1/export?commit=HEAD~0`,
+    { headers: authorization },
+  );
+  assert.equal(exported.status, 200);
+
+  const checkpoint = await fetch(
+    `${session.http.endpoint}/api/v1/checkpoints`,
+    {
+      method: "POST",
+      headers: { ...authorization, "Content-Type": "application/json" },
+      body: "{}",
+    },
+  );
+  assert.equal(checkpoint.status, 403);
+  assert.deepEqual(await readJson(checkpoint), {
+    error: {
+      code: "read_only_session",
+      message: "This Repo Session is read-only.",
+    },
+  });
 });
 
 test("CORS preflight is public while actual browser requests remain authenticated", async (t) => {

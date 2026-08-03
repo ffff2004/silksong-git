@@ -12,14 +12,15 @@ use std::{
     thread,
 };
 
-use serde::Serialize;
+use chrono::Local;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::save_location::{SaveLocationPlatform, SaveLocationSystem, initial_directory};
 
-const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 4;
+const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 5;
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
 const BUNDLED_SIDECAR_NAME: &str = "silksong-git-desktop-sidecar";
 
@@ -40,6 +41,7 @@ pub(crate) struct RepositoryMenuState {
 #[derive(Default)]
 struct DesktopWorkflowState {
     current_session: Option<ManagedSession>,
+    pending_migration: Option<PendingRepositoryMigration>,
     transitioning: bool,
     invalidated: Option<InvalidatedSession>,
     last_library: Option<RepositoryLibrary>,
@@ -63,6 +65,10 @@ struct ManagedSession {
     sidecar: SidecarSupervisor,
     watching: bool,
     lifecycle: RepositoryLifecycle,
+}
+
+struct PendingRepositoryMigration {
+    sidecar: SidecarSupervisor,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
@@ -132,6 +138,85 @@ pub enum OpenExternalRepositoryResult {
     Busy,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RepositoryMigrationPreparationResult {
+    Prepared {
+        snapshot: RepositoryArchiveSnapshot,
+    },
+    RequiresAction {
+        action: RepositoryRequiredAction,
+        status: RepositoryStatus,
+    },
+    Failed {
+        reason: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+    BlockedByMutation,
+    Busy,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryArchiveSnapshot {
+    pub repo_path: String,
+    pub directory_digest: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_integrity_warning: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RepositoryMigrationSourceState {
+    Unchanged,
+    Migrated,
+    Unknown,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum RepositoryMigrationSnapshotState {
+    NotCreated,
+    Retained { repo_path: String },
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryMigrationInspection {
+    inspection_id: String,
+    status: String,
+    required_action: String,
+    capabilities: Vec<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum RepositoryMigrationCommitResult {
+    Migrated {
+        inspection: RepositoryMigrationInspection,
+        backup_created: bool,
+        source_state: RepositoryMigrationSourceState,
+        snapshot_state: RepositoryMigrationSnapshotState,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cleanup_failure: Option<String>,
+    },
+    Rejected {
+        reason: String,
+        source_state: RepositoryMigrationSourceState,
+        snapshot_state: RepositoryMigrationSnapshotState,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cleanup_failure: Option<String>,
+    },
+    Failed {
+        reason: String,
+        source_state: RepositoryMigrationSourceState,
+        snapshot_state: RepositoryMigrationSnapshotState,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cleanup_failure: Option<String>,
+    },
+}
+
 /// A path-free result for Desktop Static Save inspection.
 #[derive(Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -180,7 +265,8 @@ impl DesktopWorkflow {
         let mutation_active = state
             .current_session
             .as_ref()
-            .is_some_and(|session| session.sidecar.mutation_active());
+            .is_some_and(|session| session.sidecar.mutation_active())
+            || state.pending_migration.is_some();
         let can_change_session = !state.transitioning && !mutation_active;
         let can_control_watcher = state.current_session.as_ref().is_some_and(|session| {
             session.lifecycle != RepositoryLifecycle::Archived && !mutation_active
@@ -233,20 +319,27 @@ impl DesktopWorkflow {
         launch: SidecarLaunch,
         lifecycle: RepositoryLifecycle,
     ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
+        {
+            let state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            if state.transitioning || state.pending_migration.is_some() {
+                return Ok(OpenExternalRepositoryResult::Busy);
+            }
+        }
         let repo_path = canonicalize_repository_path(&selected_path)?;
         let repo_path = repository_path_for_protocol(&repo_path)?;
         let mut candidate = SidecarSupervisor::spawn(launch)?;
 
-        let inspection = match candidate.command(json!({
-            "type": "repository.inspect",
-            "repoPath": repo_path,
-        })) {
-            Ok(response) => response,
-            Err(error) => {
-                candidate.shutdown_without_session();
-                return Err(error.into());
-            }
-        };
+        let inspection =
+            match candidate.command(repository_open_inspection_command(&repo_path, lifecycle)) {
+                Ok(response) => response,
+                Err(error) => {
+                    candidate.shutdown_without_session();
+                    return Err(error.into());
+                }
+            };
 
         let (status, required_action) = match parse_repository_inspection(&inspection) {
             Ok(inspection) => inspection,
@@ -256,7 +349,10 @@ impl DesktopWorkflow {
             }
         };
 
-        if status != "ready" || required_action != "open" {
+        let can_open = (status == "ready" && required_action == "open")
+            || (lifecycle == RepositoryLifecycle::Archived
+                && is_read_only_archive_status(&status, &required_action));
+        if !can_open {
             candidate.shutdown_without_session();
             return Ok(OpenExternalRepositoryResult::RequiresAction {
                 action: parse_required_action(&required_action)?,
@@ -264,12 +360,12 @@ impl DesktopWorkflow {
             });
         }
 
-        let prior_session = {
+        let admission = {
             let mut state = self
                 .state
                 .lock()
                 .map_err(|_| DesktopRuntimeError::Unavailable)?;
-            if state.transitioning {
+            if state.transitioning || state.pending_migration.is_some() {
                 Err(OpenExternalRepositoryResult::Busy)
             } else if state.current_session.as_mut().is_some_and(|session| {
                 session.sidecar.poll().is_ok() && session.sidecar.mutation_active()
@@ -277,26 +373,16 @@ impl DesktopWorkflow {
                 Err(OpenExternalRepositoryResult::BlockedByMutation)
             } else {
                 state.transitioning = true;
-                Ok(state.current_session.take())
+                Ok(())
             }
         };
-        let prior_session = match prior_session {
-            Ok(session) => session,
-            Err(result) => {
-                candidate.shutdown_without_session();
-                return Ok(result);
-            }
-        };
-        if let Some(mut prior_session) = prior_session
-            && let Err(error) = prior_session.sidecar.shutdown()
-        {
-            self.finish_transition(Some(prior_session));
+        if let Err(result) = admission {
             candidate.shutdown_without_session();
-            return Err(error);
+            return Ok(result);
         }
 
-        // Repo Session repeats History's inspection. The preflight above only decides whether
-        // Desktop may replace its current session with this external repository.
+        // Open the candidate session while the current session remains owned by Desktop. This
+        // keeps a failed candidate open from destroying the only usable connection.
         let opened = match candidate.command(json!({
             "type": "session.open",
             "repoPath": repo_path,
@@ -305,11 +391,33 @@ impl DesktopWorkflow {
             Ok(response) => response,
             Err(error) => {
                 candidate.shutdown_without_session();
-                self.finish_transition(None);
+                self.finish_transition_preserving_session();
                 return Err(error.into());
             }
         };
-        let connection = parse_connection(&opened)?;
+        let connection = match parse_connection(&opened) {
+            Ok(connection) => connection,
+            Err(error) => {
+                candidate.shutdown_without_session();
+                self.finish_transition_preserving_session();
+                return Err(error);
+            }
+        };
+
+        let prior_session = self
+            .state
+            .lock()
+            .map_err(|_| DesktopRuntimeError::Unavailable)?
+            .current_session
+            .take();
+        if let Some(mut prior_session) = prior_session
+            && let Err(error) = prior_session.sidecar.shutdown()
+        {
+            candidate.shutdown_without_session();
+            self.finish_transition(Some(prior_session));
+            return Err(error);
+        }
+
         self.finish_transition(Some(ManagedSession {
             connection,
             repo_path,
@@ -328,6 +436,9 @@ impl DesktopWorkflow {
             .map_err(|_| DesktopRuntimeError::Unavailable)?;
         if state.transitioning {
             return Err(DesktopRuntimeError::Busy);
+        }
+        if state.pending_migration.is_some() {
+            return Err(DesktopRuntimeError::BlockedByMutation);
         }
         if state.invalidated.is_some() {
             return Err(DesktopRuntimeError::Invalidated);
@@ -457,6 +568,155 @@ impl DesktopWorkflow {
         )
     }
 
+    fn prepare_repository_migration<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        input: OpenLibraryEntryInput,
+    ) -> Result<RepositoryMigrationPreparationResult, DesktopRuntimeError> {
+        if input.lifecycle != RepositoryLifecycle::Managed {
+            return Err(DesktopRuntimeError::InvalidDirectory);
+        }
+        let path = resolve_library_child(app, RepositoryLifecycle::Managed, &input.name)?;
+        let repo_path = repository_path_for_protocol(&path)?;
+        let snapshot_root = managed_root(app, RepositoryLifecycle::Archived)?;
+        let snapshot_name = format!(
+            "{}--pre-migration-{}",
+            input.name,
+            Local::now().format("%Y-%m-%dT%H-%M-%S%.3f%z"),
+        );
+        let snapshot_path = snapshot_root.join(snapshot_name);
+        let snapshot_path = repository_path_for_protocol(&snapshot_path)?;
+
+        let mut candidate = SidecarSupervisor::spawn(SidecarLaunch::for_app(app)?)?;
+        let inspection = match candidate.command(advisory_repository_inspection_command(&repo_path))
+        {
+            Ok(response) => response,
+            Err(error) => {
+                candidate.shutdown_without_session();
+                return Err(error.into());
+            }
+        };
+        let details = match parse_repository_inspection_details(&inspection) {
+            Ok(details) => details,
+            Err(error) => {
+                candidate.shutdown_without_session();
+                return Err(error);
+            }
+        };
+        if details.status != "legacyConfig" && details.status != "migrationRequired" {
+            candidate.shutdown_without_session();
+            return Ok(RepositoryMigrationPreparationResult::RequiresAction {
+                action: parse_required_action(&details.required_action)?,
+                status: parse_repository_status(&details.status)?,
+            });
+        }
+        let inspection_id = details.inspection_id.ok_or_else(|| {
+            DesktopRuntimeError::Protocol(
+                "The Desktop sidecar returned an invalid repository inspection ID.".into(),
+            )
+        })?;
+
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            if state.transitioning || state.pending_migration.is_some() {
+                candidate.shutdown_without_session();
+                return Ok(RepositoryMigrationPreparationResult::Busy);
+            }
+            if state.current_session.as_mut().is_some_and(|session| {
+                session.sidecar.poll().is_ok()
+                    && (session.sidecar.mutation_active() || session.watching)
+            }) {
+                candidate.shutdown_without_session();
+                return Ok(RepositoryMigrationPreparationResult::BlockedByMutation);
+            }
+            state.transitioning = true;
+        }
+
+        let response = candidate.command(json!({
+            "type": "repository.migration.prepare",
+            "repoPath": repo_path,
+            "inspectionId": inspection_id,
+            "confirmation": "migrate-save-history-repository",
+            "snapshotPath": snapshot_path,
+        }));
+        let response = match response {
+            Ok(response) => response,
+            Err(error) => {
+                candidate.shutdown_without_session();
+                self.finish_mutation();
+                return Err(error.into());
+            }
+        };
+        let preparation = match parse_repository_migration_preparation(&response) {
+            Ok(preparation) => preparation,
+            Err(error) => {
+                candidate.shutdown_without_session();
+                self.finish_mutation();
+                return Err(error);
+            }
+        };
+        match preparation {
+            RepositoryMigrationPreparationResult::Prepared { snapshot } => {
+                if snapshot.repo_path.is_empty() || snapshot.directory_digest.len() != 64 {
+                    candidate.shutdown_without_session();
+                    self.finish_mutation();
+                    return Err(DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid archive snapshot.".into(),
+                    ));
+                }
+                if let Ok(mut state) = self.state.lock() {
+                    state.pending_migration =
+                        Some(PendingRepositoryMigration { sidecar: candidate });
+                    state.transitioning = false;
+                }
+                Ok(RepositoryMigrationPreparationResult::Prepared { snapshot })
+            }
+            other => {
+                candidate.shutdown_without_session();
+                self.finish_mutation();
+                Ok(other)
+            }
+        }
+    }
+
+    fn commit_repository_migration(
+        &self,
+    ) -> Result<RepositoryMigrationCommitResult, DesktopRuntimeError> {
+        let mut pending = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            if state.transitioning {
+                return Err(DesktopRuntimeError::Busy);
+            }
+            let pending = state
+                .pending_migration
+                .take()
+                .ok_or(DesktopRuntimeError::NoPreparedMigration)?;
+            state.transitioning = true;
+            pending
+        };
+
+        let response = pending.sidecar.command(json!({
+            "type": "repository.migration.commit",
+        }));
+        let migration = response
+            .map_err(DesktopRuntimeError::from)
+            .and_then(|response| parse_repository_migration_result(&response));
+        let shutdown = pending.sidecar.shutdown();
+        let result = match (migration, shutdown) {
+            (Err(error), _) => Err(error),
+            (Ok(_), Err(error)) => Err(error),
+            (Ok(result), Ok(())) => Ok(result),
+        };
+        self.finish_mutation();
+        result
+    }
+
     pub(crate) fn close_requires_confirmation(&self) -> Result<bool, DesktopRuntimeError> {
         let mut state = self
             .state
@@ -464,6 +724,9 @@ impl DesktopWorkflow {
             .map_err(|_| DesktopRuntimeError::Unavailable)?;
         if state.transitioning {
             return Err(DesktopRuntimeError::Busy);
+        }
+        if state.pending_migration.is_some() {
+            return Err(DesktopRuntimeError::BlockedByMutation);
         }
         let Some(session) = state.current_session.as_mut() else {
             return Ok(false);
@@ -524,6 +787,9 @@ impl DesktopWorkflow {
         if state.transitioning {
             return Err(DesktopRuntimeError::Busy);
         }
+        if state.pending_migration.is_some() {
+            return Err(DesktopRuntimeError::BlockedByMutation);
+        }
         if state.invalidated.is_some() {
             return Err(DesktopRuntimeError::Invalidated);
         }
@@ -543,6 +809,18 @@ impl DesktopWorkflow {
             if state.current_session.is_some() {
                 state.invalidated = None;
             }
+        }
+    }
+
+    fn finish_transition_preserving_session(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.transitioning = false;
+        }
+    }
+
+    fn finish_mutation(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.transitioning = false;
         }
     }
 }
@@ -705,6 +983,31 @@ pub fn desktop_open_library_entry(
 ) -> Result<OpenExternalRepositoryResult, String> {
     let result = workflow
         .open_library_entry(&app, input)
+        .map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
+}
+
+#[tauri::command]
+pub fn desktop_prepare_repository_migration(
+    app: AppHandle,
+    workflow: State<'_, DesktopWorkflow>,
+    input: OpenLibraryEntryInput,
+) -> Result<RepositoryMigrationPreparationResult, String> {
+    let result = workflow
+        .prepare_repository_migration(&app, input)
+        .map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
+}
+
+#[tauri::command]
+pub fn desktop_commit_repository_migration(
+    app: AppHandle,
+    workflow: State<'_, DesktopWorkflow>,
+) -> Result<RepositoryMigrationCommitResult, String> {
+    let result = workflow
+        .commit_repository_migration()
         .map_err(|error| error.user_message());
     crate::update_repository_menu(&app);
     result
@@ -945,8 +1248,7 @@ fn scan_repository_library<R: Runtime>(
             let (status, required_action) = if let Some(candidate) = candidate.as_ref() {
                 let repo_path = repository_path_for_protocol(candidate)?;
                 let mut inspector = SidecarSupervisor::spawn(launch.clone())?;
-                let result = inspector
-                    .command(json!({ "type": "repository.inspect", "repoPath": repo_path }));
+                let result = inspector.command(advisory_repository_inspection_command(&repo_path));
                 inspector.shutdown_without_session();
                 match result {
                     Ok(response) => parse_repository_inspection(&response)?,
@@ -963,6 +1265,11 @@ fn scan_repository_library<R: Runtime>(
                             .as_ref()
                             .is_some_and(|candidate| path == &candidate.to_string_lossy())
                 });
+            let can_migrate_managed = lifecycle == RepositoryLifecycle::Managed
+                && (status == "legacyConfig" || status == "migrationRequired")
+                && required_action == "confirmMigration";
+            let can_browse_archived = lifecycle == RepositoryLifecycle::Archived
+                && is_read_only_archive_status(&status, &required_action);
             let record = RepositoryLibraryEntry {
                 name,
                 lifecycle,
@@ -971,7 +1278,7 @@ fn scan_repository_library<R: Runtime>(
                 current: is_current,
                 watching: is_current && current.as_ref().is_some_and(|(_, _, watching)| *watching),
             };
-            if status == "ready" {
+            if status == "ready" || can_migrate_managed || can_browse_archived {
                 match lifecycle {
                     RepositoryLifecycle::Managed => library.managed.push(record),
                     RepositoryLifecycle::Archived => library.archived.push(record),
@@ -1057,6 +1364,30 @@ fn repository_path_for_protocol(path: &Path) -> Result<String, DesktopRuntimeErr
         .ok_or(DesktopRuntimeError::UnsupportedDirectoryName)
 }
 
+fn advisory_repository_inspection_command(repo_path: &str) -> Value {
+    repository_inspection_command(repo_path, "advisory")
+}
+
+fn strict_repository_inspection_command(repo_path: &str) -> Value {
+    repository_inspection_command(repo_path, "strict")
+}
+
+fn repository_open_inspection_command(repo_path: &str, lifecycle: RepositoryLifecycle) -> Value {
+    if lifecycle == RepositoryLifecycle::Archived {
+        advisory_repository_inspection_command(repo_path)
+    } else {
+        strict_repository_inspection_command(repo_path)
+    }
+}
+
+fn repository_inspection_command(repo_path: &str, git_integrity_policy: &str) -> Value {
+    json!({
+        "type": "repository.inspect",
+        "repoPath": repo_path,
+        "gitIntegrityPolicy": git_integrity_policy,
+    })
+}
+
 fn parse_connection(response: &Value) -> Result<RepoSessionConnection, DesktopRuntimeError> {
     let Some(connection) = response.pointer("/result/connection") else {
         return Err(DesktopRuntimeError::Protocol(
@@ -1093,7 +1424,15 @@ fn parse_connection(response: &Value) -> Result<RepoSessionConnection, DesktopRu
     })
 }
 
-fn parse_repository_inspection(response: &Value) -> Result<(String, String), DesktopRuntimeError> {
+struct RepositoryInspectionDetails {
+    inspection_id: Option<String>,
+    status: String,
+    required_action: String,
+}
+
+fn parse_repository_inspection_details(
+    response: &Value,
+) -> Result<RepositoryInspectionDetails, DesktopRuntimeError> {
     let Some(repository) = response
         .pointer("/result/inspection")
         .filter(|value| value.is_object())
@@ -1118,8 +1457,122 @@ fn parse_repository_inspection(response: &Value) -> Result<(String, String), Des
                 "The Desktop sidecar returned an invalid repository action.".into(),
             )
         })?;
+    let inspection_id = repository
+        .get("inspectionId")
+        .and_then(Value::as_str)
+        .filter(|inspection_id| !inspection_id.is_empty());
 
-    Ok((status.into(), action.into()))
+    Ok(RepositoryInspectionDetails {
+        inspection_id: inspection_id.map(str::to_owned),
+        status: status.into(),
+        required_action: action.into(),
+    })
+}
+
+fn parse_repository_inspection(response: &Value) -> Result<(String, String), DesktopRuntimeError> {
+    let details = parse_repository_inspection_details(response)?;
+    Ok((details.status, details.required_action))
+}
+
+fn is_read_only_archive_status(status: &str, required_action: &str) -> bool {
+    required_action == "confirmMigration" && matches!(status, "legacyConfig" | "migrationRequired")
+}
+
+fn parse_repository_migration_preparation(
+    response: &Value,
+) -> Result<RepositoryMigrationPreparationResult, DesktopRuntimeError> {
+    let preparation = response.pointer("/result/preparation").ok_or_else(|| {
+        DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid migration preparation.".into(),
+        )
+    })?;
+    match preparation.get("status").and_then(Value::as_str) {
+        Some("prepared") => {
+            let snapshot = preparation.get("snapshot").ok_or_else(|| {
+                DesktopRuntimeError::Protocol(
+                    "The Desktop sidecar returned an invalid archive snapshot.".into(),
+                )
+            })?;
+            let repo_path = snapshot
+                .get("repoPath")
+                .and_then(Value::as_str)
+                .filter(|repo_path| !repo_path.is_empty())
+                .ok_or_else(|| {
+                    DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid archive path.".into(),
+                    )
+                })?;
+            let directory_digest = snapshot
+                .get("directoryDigest")
+                .and_then(Value::as_str)
+                .filter(|digest| {
+                    digest.len() == 64 && digest.chars().all(|c| c.is_ascii_hexdigit())
+                })
+                .ok_or_else(|| {
+                    DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid archive digest.".into(),
+                    )
+                })?;
+            Ok(RepositoryMigrationPreparationResult::Prepared {
+                snapshot: RepositoryArchiveSnapshot {
+                    repo_path: repo_path.into(),
+                    directory_digest: directory_digest.into(),
+                    git_integrity_warning: snapshot
+                        .get("gitIntegrityWarning")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                },
+            })
+        }
+        Some("rejected") => {
+            let reason = preparation
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if reason == "migrationNotRequired" {
+                return Err(DesktopRuntimeError::Protocol(
+                    "The repository no longer requires migration.".into(),
+                ));
+            }
+            Ok(RepositoryMigrationPreparationResult::Failed {
+                reason: reason.into(),
+                message: None,
+            })
+        }
+        Some("failed") => Ok(RepositoryMigrationPreparationResult::Failed {
+            reason: preparation
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("snapshotFailed")
+                .into(),
+            message: preparation
+                .get("message")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        }),
+        _ => Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an unknown migration preparation status.".into(),
+        )),
+    }
+}
+
+fn parse_repository_migration_result(
+    response: &Value,
+) -> Result<RepositoryMigrationCommitResult, DesktopRuntimeError> {
+    let migration = response
+        .pointer("/result/migration")
+        .cloned()
+        .ok_or_else(|| {
+            DesktopRuntimeError::Protocol(
+                "The Desktop sidecar returned an invalid migration result.".into(),
+            )
+        })?;
+
+    serde_json::from_value(migration).map_err(|_| {
+        DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid migration result.".into(),
+        )
+    })
 }
 
 fn parse_repository_status(value: &str) -> Result<RepositoryStatus, DesktopRuntimeError> {
@@ -1527,6 +1980,7 @@ pub(crate) enum DesktopRuntimeError {
     InvalidSaveFile,
     Invalidated,
     NoOpenSession,
+    NoPreparedMigration,
     Protocol(String),
     ReadOnly,
     SidecarRejected { code: String, message: String },
@@ -1552,6 +2006,7 @@ impl DesktopRuntimeError {
             Self::InvalidSaveFile => "Choose an existing readable save file.".into(),
             Self::Invalidated => "The Desktop Local History connection stopped unexpectedly. Reopen the selected repository to continue browsing.".into(),
             Self::NoOpenSession => "Open a repository before using Local History controls.".into(),
+            Self::NoPreparedMigration => "No prepared repository migration is active.".into(),
             Self::Protocol(reason) => {
                 let _ = reason;
                 "The Desktop Local History service is incompatible. Update Desktop and try again."
@@ -1595,11 +2050,12 @@ mod tests {
 
     use super::{
         DEVELOPMENT_SIDECAR_ENTRY, DesktopRuntime, DesktopRuntimeError,
-        OpenExternalRepositoryResult, PickStaticEncodedSaveResult, RepositoryLifecycle,
-        SaveLocationPlatform, SaveLocationSystem, SidecarLaunch, StaticSaveFileSystem,
-        StaticSaveInspection, StaticSaveInspector, StaticSavePicker, canonicalize_repository_path,
+        OpenExternalRepositoryResult, PendingRepositoryMigration, PickStaticEncodedSaveResult,
+        RepositoryLifecycle, SaveLocationPlatform, SaveLocationSystem, SidecarLaunch,
+        SidecarSupervisor, StaticSaveFileSystem, StaticSaveInspection, StaticSaveInspector,
+        StaticSavePicker, advisory_repository_inspection_command, canonicalize_repository_path,
         inspect_static_encoded_save_with_adapters, menu_static_save_result, natural_name_cmp,
-        sidecar_launch_for_resource_directory,
+        repository_open_inspection_command, sidecar_launch_for_resource_directory,
     };
 
     static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
@@ -1886,6 +2342,30 @@ mod tests {
     }
 
     #[test]
+    fn desktop_repository_preflights_and_library_scans_use_advisory_git_integrity() {
+        assert_eq!(
+            advisory_repository_inspection_command("/tmp/repository"),
+            serde_json::json!({
+                "type": "repository.inspect",
+                "repoPath": "/tmp/repository",
+                "gitIntegrityPolicy": "advisory",
+            })
+        );
+        assert_eq!(
+            repository_open_inspection_command("/tmp/repository", RepositoryLifecycle::External),
+            serde_json::json!({
+                "type": "repository.inspect",
+                "repoPath": "/tmp/repository",
+                "gitIntegrityPolicy": "strict",
+            })
+        );
+        assert_eq!(
+            repository_open_inspection_command("/tmp/archive", RepositoryLifecycle::Archived),
+            advisory_repository_inspection_command("/tmp/archive")
+        );
+    }
+
+    #[test]
     fn repository_menu_tracks_reader_and_watcher_state() {
         let temp = TestDirectory::new();
         let repository = temp.path().join("repository");
@@ -2026,6 +2506,15 @@ mod tests {
             result,
             Ok(OpenExternalRepositoryResult::BlockedByMutation)
         ));
+        let menu = runtime.repository_menu_state();
+        assert!(!menu.close_enabled);
+        assert!(!menu.open_external_enabled);
+        assert!(!menu.start_watching_enabled);
+        assert!(!menu.stop_watching_enabled);
+        assert!(matches!(
+            runtime.close_requires_confirmation(),
+            Err(DesktopRuntimeError::BlockedByMutation)
+        ));
         assert_eq!(
             runtime
                 .connection()
@@ -2033,6 +2522,62 @@ mod tests {
                 .endpoint,
             "http://127.0.0.1:4312"
         );
+    }
+
+    #[test]
+    fn pending_migration_blocks_repository_switch_and_normal_exit() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("repository");
+        fs::create_dir(&repository).expect("create repository");
+        let script = temp.path().join("sidecar.mjs");
+        fs::write(
+            &script,
+            fixture_sidecar_source(repository.to_str().expect("UTF-8 path"), "ready"),
+        )
+        .expect("write sidecar fixture");
+
+        let workflow = DesktopRuntime::default();
+        let pending_sidecar = SidecarSupervisor::spawn(SidecarLaunch::Development {
+            entry: script,
+            node: PathBuf::from("node"),
+        })
+        .expect("start migration sidecar");
+        {
+            let mut state = workflow.state.lock().expect("lock workflow state");
+            state.pending_migration = Some(PendingRepositoryMigration {
+                sidecar: pending_sidecar,
+            });
+        }
+
+        let result = workflow.open_repository_path_with_launch(
+            temp.path().join("another-repository"),
+            SidecarLaunch::Development {
+                entry: temp.path().join("unused-sidecar.mjs"),
+                node: PathBuf::from("node"),
+            },
+        );
+        assert!(matches!(result, Ok(OpenExternalRepositoryResult::Busy)));
+        assert!(matches!(
+            workflow.close_requires_confirmation(),
+            Err(DesktopRuntimeError::BlockedByMutation)
+        ));
+        let menu = workflow.repository_menu_state();
+        assert!(!menu.close_enabled);
+        assert!(!menu.open_external_enabled);
+
+        let pending = workflow
+            .state
+            .lock()
+            .expect("lock workflow state")
+            .pending_migration
+            .is_some();
+        assert!(pending);
+        let pending = {
+            let mut state = workflow.state.lock().expect("lock workflow state");
+            state.pending_migration.take().expect("pending migration")
+        };
+        let mut sidecar = pending.sidecar;
+        sidecar.shutdown_without_session();
     }
 
     #[test]
@@ -2258,7 +2803,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_previous_shutdown_closes_the_inspected_candidate_and_drops_the_stale_connection() {
+    fn failed_candidate_open_preserves_the_current_session() {
         let temp = TestDirectory::new();
         let first_repository = temp.path().join("first-repository");
         let candidate_repository = temp.path().join("candidate-repository");
@@ -2269,8 +2814,9 @@ mod tests {
         let candidate_shutdown = temp.path().join("candidate-shutdown");
         fs::write(
             &first_script,
-            shutdown_failure_fixture_sidecar_source(
+            fixture_sidecar_source(
                 first_repository.to_str().expect("UTF-8 first repository"),
+                "ready",
             ),
         )
         .expect("write first sidecar fixture");
@@ -2308,16 +2854,21 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(DesktopRuntimeError::SidecarUnavailable)
+            Err(DesktopRuntimeError::SidecarRejected { code, .. })
+                if code == "session_open_failed"
         ));
         assert_eq!(
             fs::read_to_string(candidate_shutdown).expect("candidate shutdown marker"),
             "shutdown"
         );
-        assert!(matches!(
-            runtime.connection(),
-            Err(DesktopRuntimeError::SidecarUnavailable)
-        ));
+        assert_eq!(
+            runtime
+                .connection()
+                .expect("current session remains active")
+                .endpoint,
+            "http://127.0.0.1:4312"
+        );
+        runtime.shutdown().expect("shutdown current session");
     }
 
     fn fixture_sidecar_source(repository: &str, status: &str) -> String {
@@ -2334,7 +2885,7 @@ if (process.argv.includes(repository)) {{
   process.exitCode = 91;
   process.exit();
 }}
-process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -2353,14 +2904,14 @@ process.stdin.on("data", (chunk) => {{
       result = {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
     }} else if (request.command.type === "process.shutdown") {{
       result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }} else {{
       result = {{ type: request.command.type === "watcher.start" ? "watcher.started" : "watcher.stopped" }};
     }}
-    process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+    process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
     if (request.command.type === "session.open" && {status:?} === "mutation") {{
-      process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
     }}
   }}
 }});
@@ -2373,7 +2924,7 @@ process.stdin.on("data", (chunk) => {{
         format!(
             r#"
 const repository = {repository};
-process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -2385,38 +2936,8 @@ process.stdin.on("data", (chunk) => {{
     ? {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }}
     : {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
   if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) throw new Error("wrong repository");
-  process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
   if (request.command.type === "session.open") process.exit(1);
-}});
-"#
-        )
-    }
-
-    fn shutdown_failure_fixture_sidecar_source(repository: &str) -> String {
-        let repository = serde_json::to_string(repository).expect("serialize repository path");
-        format!(
-            r#"
-const repository = {repository};
-process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
-let buffer = "";
-process.stdin.on("data", (chunk) => {{
-  buffer += chunk;
-  for (;;) {{
-    const newline = buffer.indexOf("\n");
-    if (newline < 0) return;
-    const request = JSON.parse(buffer.slice(0, newline));
-    buffer = buffer.slice(newline + 1);
-    if (request.command.type === "process.shutdown") {{
-      process.exit(1);
-    }}
-    const result = request.command.type === "repository.inspect"
-      ? {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }}
-      : {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
-    if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) {{
-      throw new Error("repository path was not sent over stdin");
-    }}
-    process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
-  }}
 }});
 "#
         )
@@ -2430,7 +2951,7 @@ process.stdin.on("data", (chunk) => {{
 import fs from "node:fs";
 const repository = {repository};
 const marker = {marker};
-process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -2442,16 +2963,27 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "repository.inspect") {{
       if (request.command.repoPath !== repository) throw new Error("repository path was not sent over stdin");
       const result = {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       continue;
     }}
     if (request.command.type === "session.open") {{
-      throw new Error("candidate session must not open after previous shutdown fails");
+      const error = {{
+        protocolVersion: 5,
+        kind: "response",
+        requestId: request.requestId,
+        ok: false,
+        error: {{
+          code: "session_open_failed",
+          message: "candidate session failed to open",
+        }},
+      }};
+      process.stdout.write(JSON.stringify(error) + "\n");
+      continue;
     }}
     if (request.command.type === "process.shutdown") {{
       fs.writeFileSync(marker, "shutdown");
       const result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 4, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }}
     throw new Error("unexpected candidate command");

@@ -30,6 +30,7 @@ export {
 export {
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
+  prepareSaveHistoryMigration,
 } from "./repository-compatibility.ts";
 export { acquireSaveHistoryWatcher } from "./save-history-watcher.ts";
 export { getSaveState, readEncodedSave } from "./save-state.ts";
@@ -53,10 +54,12 @@ export {
 export { restoreEncodedSave } from "./restore.ts";
 export type {
   AcquireSaveHistoryWatcherInput,
+  ArchiveSnapshot,
   DiffCommitsInput,
   DiffCommitsResult,
   GetSaveStateInput,
   GetSaveStateResult,
+  GitIntegrityPolicy,
   HistoricalSemanticEvent,
   HistoryCommit,
   HistoryResult,
@@ -65,10 +68,16 @@ export type {
   InspectSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryResult,
+  MigrationCleanupFailure,
+  MigrationSnapshotState,
+  MigrationSourceState,
   ObservationTrigger,
   ObserveSaveHistoryWatcherInput,
   ObserveSaveInput,
   ObserveSaveResult,
+  PreparedSaveHistoryMigration,
+  PrepareSaveHistoryMigrationInput,
+  PrepareSaveHistoryMigrationResult,
   ProjectConfig,
   ProjectConfigOverrides,
   QueryHistoryInput,

@@ -24,6 +24,68 @@ export interface RepositoryLibrary {
   readonly error?: string;
 }
 
+export interface RepositoryArchiveSnapshot {
+  readonly repoPath: string;
+  readonly directoryDigest: string;
+  readonly gitIntegrityWarning?: string;
+}
+
+export type RepositoryMigrationPreparationResult =
+  | { readonly kind: "prepared"; readonly snapshot: RepositoryArchiveSnapshot }
+  | {
+      readonly action:
+        | "chooseAnotherDirectory"
+        | "confirmMigration"
+        | "rebuildReadModel"
+        | "useNewerApp";
+      readonly kind: "requiresAction";
+      readonly status:
+        | "invalid"
+        | "legacyConfig"
+        | "migrationRequired"
+        | "newerIncompatible"
+        | "rebuildRequired";
+    }
+  | {
+      readonly kind: "failed";
+      readonly reason: string;
+      readonly message?: string;
+    }
+  | { readonly kind: "blockedByMutation" }
+  | { readonly kind: "busy" };
+
+export type RepositoryMigrationCommitResult =
+  | {
+      readonly status: "migrated";
+      readonly inspection: {
+        readonly status: string;
+        readonly requiredAction: string;
+        readonly capabilities: readonly string[];
+      };
+      readonly backupCreated: true;
+      readonly sourceState: "migrated";
+      readonly snapshotState: RepositoryMigrationSnapshotState;
+      readonly cleanupFailure?: "leaseReleaseFailed";
+    }
+  | {
+      readonly status: "rejected";
+      readonly reason: string;
+      readonly sourceState: "unchanged";
+      readonly snapshotState: RepositoryMigrationSnapshotState;
+      readonly cleanupFailure?: "leaseReleaseFailed";
+    }
+  | {
+      readonly status: "failed";
+      readonly reason: string;
+      readonly sourceState: "unchanged" | "migrated" | "unknown";
+      readonly snapshotState: RepositoryMigrationSnapshotState;
+      readonly cleanupFailure?: "leaseReleaseFailed";
+    };
+
+export type RepositoryMigrationSnapshotState =
+  | { readonly status: "notCreated" }
+  | { readonly repoPath: string; readonly status: "retained" };
+
 export type OpenExternalRepositoryResult =
   | { readonly kind: "cancelled" }
   | { readonly kind: "opened" }
@@ -61,6 +123,11 @@ export type RuntimeCapabilities =
       readonly kind: "desktop";
       readonly closeRepository?: () => Promise<void>;
       readonly getRepositoryLibrary?: () => Promise<RepositoryLibrary>;
+      readonly prepareRepositoryMigration?: (input: {
+        readonly lifecycle: "managed";
+        readonly name: string;
+      }) => Promise<RepositoryMigrationPreparationResult>;
+      readonly commitRepositoryMigration?: () => Promise<RepositoryMigrationCommitResult>;
       readonly openLibraryEntry?: (input: {
         readonly lifecycle: Exclude<RepositoryLifecycle, "external">;
         readonly name: string;

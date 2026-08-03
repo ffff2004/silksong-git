@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-commit-repository-migration"
+description = "Enables the desktop_commit_repository_migration command without any pre-configured scope."
+commands.allow = ["desktop_commit_repository_migration"]
+
+[[permission]]
+identifier = "deny-desktop-commit-repository-migration"
+description = "Denies the desktop_commit_repository_migration command without any pre-configured scope."
+commands.deny = ["desktop_commit_repository_migration"]

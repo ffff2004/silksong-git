@@ -1,7 +1,14 @@
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -313,7 +320,7 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
     },
   });
 
-  sidecar.send(command("future-version", { type: "watcher.start" }, 5));
+  sidecar.send(command("future-version", { type: "watcher.start" }, 6));
   assert.deepEqual(await sidecar.readMessage(), {
     protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
@@ -563,6 +570,10 @@ test("inspects and confirms repository migration before opening a Repo Session",
   );
   assert.equal(migration.result.type, "repository.migrationResult");
   assert.equal(migration.result.migration.status, "migrated");
+  assert.equal(migration.result.migration.sourceState, "migrated");
+  assert.deepEqual(migration.result.migration.snapshotState, {
+    status: "notCreated",
+  });
 
   sidecar.send(
     command("open-current", { type: "session.open", repoPath: repo.repoPath }),
@@ -572,6 +583,167 @@ test("inspects and confirms repository migration before opening a Repo Session",
   );
   assert.equal(opened.result.type, "session.opened");
   await shutDown(sidecar);
+});
+
+test("holds the Desktop migration operation between verified snapshot publication and commit", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(repo, undefined);
+  const archivePath = path.join(path.dirname(repo.repoPath), "archive");
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  sidecar.send(
+    command("inspect-migration", {
+      type: "repository.inspect",
+      repoPath: repo.repoPath,
+    }),
+  );
+  const inspection = parseSuccessfulResponse(
+    await readResponse(sidecar, "inspect-migration"),
+  );
+  assert.equal(inspection.result.type, "repository.inspected");
+
+  sidecar.send(
+    command("prepare-migration", {
+      type: "repository.migration.prepare",
+      repoPath: repo.repoPath,
+      inspectionId: inspection.result.inspection.inspectionId,
+      confirmation: "migrate-save-history-repository",
+      snapshotPath: archivePath,
+    }),
+  );
+  const prepared = parseSuccessfulResponse(
+    await readResponse(sidecar, "prepare-migration"),
+  );
+  assert.equal(prepared.result.type, "repository.migrationPrepared");
+  assert.equal(prepared.result.preparation.status, "prepared");
+  assert.equal(prepared.result.preparation.snapshot.repoPath, archivePath);
+  assert.match(
+    prepared.result.preparation.snapshot.directoryDigest,
+    /^[0-9a-f]{64}$/v,
+  );
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "repositoryMigration",
+      status: "started",
+    },
+  });
+  await assert.doesNotReject(async () => await stat(archivePath));
+
+  sidecar.send(
+    command("commit-migration", { type: "repository.migration.commit" }),
+  );
+  const committed = parseSuccessfulResponse(
+    await readResponse(sidecar, "commit-migration"),
+  );
+  assert.equal(committed.result.type, "repository.migrationResult");
+  assert.equal(committed.result.migration.status, "migrated");
+  assert.equal(committed.result.migration.sourceState, "migrated");
+  assert.deepEqual(committed.result.migration.snapshotState, {
+    repoPath: archivePath,
+    status: "retained",
+  });
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "repositoryMigration",
+      status: "finished",
+    },
+  });
+
+  await shutDown(sidecar);
+});
+
+test("abnormal sidecar cleanup releases a prepared migration lease", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(repo, undefined);
+  const archivePath = path.join(path.dirname(repo.repoPath), "archive");
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  sidecar.send(
+    command("inspect", { type: "repository.inspect", repoPath: repo.repoPath }),
+  );
+  const inspection = parseSuccessfulResponse(
+    await readResponse(sidecar, "inspect"),
+  );
+  assert.equal(inspection.result.type, "repository.inspected");
+
+  sidecar.send(
+    command("prepare", {
+      type: "repository.migration.prepare",
+      repoPath: repo.repoPath,
+      inspectionId: inspection.result.inspection.inspectionId,
+      confirmation: "migrate-save-history-repository",
+      snapshotPath: archivePath,
+    }),
+  );
+  const prepared = parseSuccessfulResponse(
+    await readResponse(sidecar, "prepare"),
+  );
+  assert.equal(prepared.result.type, "repository.migrationPrepared");
+  assert.equal(prepared.result.preparation.status, "prepared");
+
+  sidecar.closeInput();
+  assert.deepEqual(
+    await withTimeout(
+      sidecar.waitForExit(),
+      10_000,
+      "Timed out waiting for sidecar cleanup.",
+    ),
+    { code: 1, signal: undefined },
+  );
+
+  const replacement = spawnSidecar(t);
+  await readReady(replacement);
+  replacement.send(
+    command("replacement-inspect", {
+      type: "repository.inspect",
+      repoPath: repo.repoPath,
+    }),
+  );
+  const replacementInspection = parseSuccessfulResponse(
+    await readResponse(replacement, "replacement-inspect"),
+  );
+  if (replacementInspection.result.type !== "repository.inspected") {
+    throw new Error("Expected a replacement repository inspection.");
+  }
+  assert.equal(replacementInspection.result.inspection.status, "legacyConfig");
+  replacement.send(
+    command("replacement-prepare", {
+      type: "repository.migration.prepare",
+      repoPath: repo.repoPath,
+      inspectionId: replacementInspection.result.inspection.inspectionId,
+      confirmation: "migrate-save-history-repository",
+      snapshotPath: archivePath,
+    }),
+  );
+  const replacementPrepared = parseSuccessfulResponse(
+    await readResponse(replacement, "replacement-prepare"),
+  );
+  if (replacementPrepared.result.type !== "repository.migrationPrepared") {
+    throw new Error("Expected a replacement migration preparation.");
+  }
+  assert.equal(replacementPrepared.result.preparation.status, "prepared");
+
+  replacement.send(
+    command("replacement-commit", {
+      type: "repository.migration.commit",
+    }),
+  );
+  const committed = parseSuccessfulResponse(
+    await readResponse(replacement, "replacement-commit"),
+  );
+  if (committed.result.type !== "repository.migrationResult") {
+    throw new Error("Expected a replacement migration result.");
+  }
+  assert.equal(committed.result.migration.status, "migrated");
+  await shutDown(replacement);
 });
 
 test("refuses sidecar rebuilds for older and newer durable formats", async (t) => {

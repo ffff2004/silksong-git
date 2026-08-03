@@ -72,9 +72,11 @@ JavaScript link handling is disabled, and the WebView receives no opener
 permission.
 
 The global Tauri object is disabled. The unique `main` capability allows only
-narrow application intent commands: inspect one local Encoded Save, open an external repository, explicitly
-reopen an invalidated in-memory selection, obtain the current Repo Session
-connection, and start or stop watching for that current session. It grants no
+narrow application intent commands: inspect one local Encoded Save, prepare
+and commit one confirmed managed-repository migration, open an external
+repository, explicitly reopen an invalidated in-memory selection, obtain the
+current Repo Session connection, and start or stop watching for that current
+session. It grants no
 generic filesystem, shell, process, arbitrary HTTP, or native command
 Interface. The CSP allows bundled application resources, the Tauri IPC origin,
 and IPv4-loopback connections.
@@ -96,14 +98,24 @@ Runtime Capabilities seam remain owned by the
 ## Repo Session Process Boundary
 
 The private Desktop sidecar accepts versioned JSONL commands on stdin and
-reserves stdout for responses and safe lifecycle events. It has exactly two
-public-interface responsibilities: lifecycle commands call the public
-`@silksong-git/repo-session` Interface, while the stateless `save.inspect`
-command calls the public `@silksong-git/core` decoder Interface. A lifecycle
-process opens at most one Repo Session; History reads and mutations remain
-behind that session's authenticated loopback HTTP endpoints instead of becoming
-process RPC. `save.inspect` never opens a Repo Session or touches History,
-Git, SQLite, or watcher state.
+reserves stdout for responses and safe lifecycle events. Ordinary lifecycle
+commands call the public `@silksong-git/repo-session` Interface, while the
+stateless `save.inspect` command calls the public
+`@silksong-git/core` decoder Interface. A lifecycle process opens at most one
+Repo Session; ordinary History reads and mutations remain behind that session's
+authenticated loopback HTTP endpoints instead of becoming process RPC.
+`save.inspect` never opens a Repo Session or touches History, Git, SQLite, or
+watcher state.
+
+Confirmed migration is the explicit exception to the ordinary HTTP boundary.
+An incompatible Managed Repository cannot open Repo Session HTTP, so the
+migration prepare and commit commands call History's public migration
+Interface directly through this private sidecar. They carry only Desktop-owned
+canonical source and opaque archive paths; they do not turn the sidecar into a
+generic History adapter. History still owns migration mechanics, serialization,
+watcher exclusion, snapshot verification, and source writes. Once migration
+completes, the resulting compatible repository is opened through the normal
+authenticated Repo Session HTTP lifecycle.
 
 The Desktop runtime owns `DesktopWorkflow`: landing entry, refresh, opening a
 library entry, and closing the current session. It scans only direct child
@@ -114,14 +126,30 @@ visible in the library's Need attention area. A failed whole refresh retains
 the last successful result marked stale. Library opening revalidates direct
 root containment before the normal inspection/open sequence.
 
+Managed legacy and lower-format candidates that History reports as requiring
+confirmed migration are landing candidates; archived, external, invalid, and
+newer-incompatible candidates remain in the attention presentation and cannot
+enter the managed migration workflow. Compatible legacy and migration-required
+entries beneath `archives/` remain Archived Repository candidates for read-only
+browsing. Desktop generates the archive base name from the managed
+entry name, migration reason, and local timestamp, then passes the resulting
+opaque path to History through the sidecar. The final confirmation starts a
+tracked Desktop mutation. Preparation must complete before the UI reports the
+actual published snapshot path and advisory Git warning; only then may the UI
+request commit. The pending operation blocks repository switching and normal
+exit, has no ordinary cancellation or retry, and preserves a published archive
+if migration fails.
+
 Opening is ordered deliberately: Rust waits for a native directory selection,
 canonicalizes it, starts a candidate sidecar, and sends `repository.inspect`.
-Only a `ready` result may replace the current session; Rust gracefully shuts
-down the prior sidecar and then sends `session.open`, which re-inspects through
-the Repo Session Interface. Invalid, migration-required, rebuild-required, and
-newer-incompatible selections return structured actionable states without
-opening a session. The temporary external path is neither copied, persisted,
-registered, nor reopened after exit.
+Managed and external sessions require a `ready` result. An Archived Repository
+may additionally admit a `legacyConfig` or `migrationRequired` result as a
+read-only session; Rust gracefully shuts down the prior sidecar and then sends
+`session.open`, which re-inspects through the Repo Session Interface with the
+same read-only policy. Invalid, rebuild-required, and newer-incompatible
+selections return structured actionable states without opening a session. The
+temporary external path is neither copied, persisted, registered, nor reopened
+after exit.
 
 The session endpoint and bearer token are held in the Rust runtime state. The
 WebView can obtain them only through the one narrow connection command, where
@@ -131,10 +159,11 @@ put in a URL, or persisted. Disconnecting the WebView drops only that closure;
 it can request the current connection again without reopening a directory.
 Start and stop watcher commands carry no repository path and act only on the
 current sidecar session. Archived placement is passed as a read-only Repo
-Session policy; Rust, the sidecar, Repo Session watcher admission, and Local
-HTTP mutation routes all reject watch, checkpoint, and in-place restore while
-read, diff, search, raw-observation, and export routes remain available. A
-watch-lock conflict leaves that reader session and
+Session policy; Rust, the sidecar, Repo Session watcher admission, rebuild and
+migration paths, and Local HTTP mutation routes all reject watch, checkpoint,
+restore, relink, and other mutation paths while read, diff, search,
+raw-observation, and export routes remain available. A watch-lock conflict
+leaves that reader session and
 its HTTP browsing capability intact. Session replacement and App exit request
 sidecar shutdown and wait for its graceful acknowledgment.
 

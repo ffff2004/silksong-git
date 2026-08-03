@@ -21,7 +21,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 4,
+  "protocolVersion": 5,
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +36,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 4,
+  "protocolVersion": 5,
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,11 +49,17 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 4 accepts these commands:
+Version 5 accepts these commands:
 
-- `repository.inspect` with one absolute `repoPath`;
+- `repository.inspect` with one absolute `repoPath` and an optional
+  `gitIntegrityPolicy` of `strict` (default) or `advisory`;
 - `repository.migrate` with one absolute `repoPath`, a prior opaque inspection
   ID, and the literal migration confirmation;
+- `repository.migration.prepare` with one absolute source `repoPath`, a prior
+  opaque inspection ID, the literal migration confirmation, and one absolute
+  opaque `snapshotPath`;
+- `repository.migration.commit` with no arguments, committing the currently
+  prepared non-cancelable migration operation;
 - `repository.rebuild` with one absolute `repoPath`;
 - `save.inspect` with one absolute canonical `savePath`;
 - `session.open` with one absolute `repoPath` and an optional `access` policy
@@ -62,12 +68,33 @@ Version 4 accepts these commands:
 - `watcher.stop`; and
 - `process.shutdown`.
 
-A `repository.inspect` response projects History's safe compatibility result:
+A strict `repository.inspect` response projects History's safe compatibility result:
 the repository status, required user action, opaque inspection ID, and allowed
 capabilities. It does not contain config, Git, SQLite, or lock details.
+Ordinary external and managed repository opens use the strict policy. Archived
+read-only browsing and the Desktop migration preflight are the only advisory
+callers; they use structural Git classification so a snapshot or read-only
+session can proceed while the published snapshot reports any Git integrity
+warning.
 `repository.migrate` returns History's safe migration result, including an
-explicit stale-inspection or confirmation rejection when applicable. The
+explicit stale-inspection or confirmation rejection when applicable. Migration
+results also report `sourceState` (`unchanged`, `migrated`, or `unknown`) and
+`snapshotState` (`notCreated` or a retained archive path). A result may also
+report `cleanupFailure: "leaseReleaseFailed"`; this is a separate lifecycle
+warning and does not replace the source or snapshot state. The
 sidecar never evaluates repository versions or carries out migration itself.
+`repository.migration.prepare` calls History's public migration Interface and
+returns either a verified published snapshot
+with its actual collision-adjusted path, canonical directory digest, and
+optional advisory Git integrity warning, or a safe rejection/failure. The
+sidecar holds the History operation lease until `repository.migration.commit`
+is received. Desktop reports the snapshot path and warning before sending that
+commit command. A snapshot failure prevents migration; a later migration
+failure does not remove a published snapshot. The sidecar refuses shutdown
+while a prepared operation is held. If the process instead receives EOF or a
+termination signal after preparation, its internal cleanup releases that
+History lease; this is lifecycle cleanup, not a user cancellation or retry
+command.
 `repository.rebuild` calls only History's public Semantic Read Model rebuild
 workflow. History decides whether rebuilding is currently permitted and holds
 its write serialization. A successful response returns rebuild counts and the
@@ -89,7 +116,7 @@ compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 4,
+  "protocolVersion": 5,
   "kind": "response",
   "requestId": "open-1",
   "ok": true,
@@ -110,9 +137,11 @@ URL. History and watcher status data remain on the authenticated Local HTTP
 Interface; the process protocol does not duplicate them.
 
 `access` is selected by Desktop lifecycle policy, not by History inspection.
-For `readOnly`, the sidecar opens a read-only Repo Session: watcher controls
-and Local HTTP checkpoint and in-place restore requests are rejected, while all
-read routes and exact Encoded Save export remain available.
+For `readOnly`, the sidecar opens a read-only Repo Session: compatible legacy
+and migration-required archive candidates may be admitted, watcher controls,
+rebuild/migration paths, and Local HTTP checkpoint and in-place restore
+requests are rejected, while all read routes and exact Encoded Save export
+remain available.
 
 The current event types are:
 
@@ -121,11 +150,11 @@ The current event types are:
 - `watcher.failed`, without a raw error; and
 - `session.failed`, without a raw error.
 
-`mutation.activity` projects only the mutation class (`manualCheckpoint` or
-`inPlaceRestore`) and `started` or `finished`. It contains no request body,
-save path, commit reference, or result. Desktop uses it solely to reject a
-normal replacement or exit while the admitted mutation is active; Repo Session
-retains admission and drain ownership.
+`mutation.activity` projects only the mutation class (`manualCheckpoint`,
+`inPlaceRestore`, or `repositoryMigration`) and `started` or `finished`. It
+contains no request body, save path, commit reference, or result. Desktop uses
+it solely to reject a normal replacement or exit while the admitted mutation
+is active; Repo Session retains admission and drain ownership.
 
 The sidecar never forwards repository paths, Watched Save paths, Semantic Event
 payloads, commit references, or raw exception messages in events.

@@ -26,7 +26,7 @@ CLI --------------------+-------------> @silksong-git/history
 | [`apps/cli`](../../apps/cli/src/main.ts)                            | Parses commands and renders terminal or JSON output. Save inspection calls Core; repository, history, and restore commands call History, while `watch start` starts a Repo Session. It does not own persistence rules.                                                                                                                                                                        |
 | [`apps/web`](../../apps/web/src/main.tsx)                           | Runs one Solid frontend in Static Web Mode or Local History Web Mode. Browser Static mode calls Core in the browser; Desktop Static inspection receives already-decoded data through a narrow native capability. Local mode uses Repo Session's browser-safe HTTP wire contract and an authenticated HTTP client; it does not import a Node runtime or access local storage systems directly. |
 | [`apps/desktop`](../../apps/desktop/src-tauri/src/lib.rs)           | Runs the single-instance Tauri shell around a dedicated build of the shared Web source. It owns the one native window, bundled-content boundary, navigation policy, external opening, external repository selection, and the one sidecar-backed Repo Session runtime.                                                                                                                         |
-| [`apps/desktop-sidecar`](../../apps/desktop-sidecar/src/main.ts)    | Provides the private versioned JSONL process Adapter for exactly two public Interfaces: Repo Session lifecycle commands and stateless Core save inspection. Desktop Rust spawns its fixed development entry through Node and communicates over its stdin/stdout protocol.                                                                                                                     |
+| [`apps/desktop-sidecar`](../../apps/desktop-sidecar/src/main.ts)    | Provides the private versioned JSONL process Adapter for Repo Session lifecycle commands, the confirmed migration exception through History's public Interface, and stateless Core save inspection. Desktop Rust spawns its fixed development entry through Node and communicates over its stdin/stdout protocol.                                                                             |
 
 The package split follows
 [ADR-0011](../adr/0011-workspace-package-architecture.md). Exact callable
@@ -119,6 +119,11 @@ listener lifecycle, while frontend serving remains separate. See
   Core Interface. History data remains on authenticated loopback HTTP; the
   Adapter does not bypass either public Interface or open History state for
   static inspection.
+- Confirmed migration is the explicit exception: incompatible Managed
+  Repositories cannot open Repo Session HTTP, so the sidecar calls History's
+  public migration Interface directly for the prepare/commit workflow. History
+  still owns migration mechanics and locks; the sidecar does not become a
+  generic History adapter.
 - Raw capture and semantic display are independent: display filters neither
   suppress Git observations nor delete Semantic Events from SQLite.
 - Only an active Repo Session watcher is singleton for a repository. Multiple

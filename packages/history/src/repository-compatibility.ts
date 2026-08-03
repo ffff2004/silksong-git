@@ -1,6 +1,21 @@
 import { createHash, randomBytes } from "node:crypto";
-import { copyFile, lstat, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  readlink,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   currentRepositoryFormatVersion,
@@ -10,20 +25,37 @@ import {
 import {
   SaveHistoryRepositoryBusyError,
   SaveHistoryRepositoryIncompatibleError,
+  SaveHistoryWatcherAlreadyAcquiredError,
 } from "./errors.ts";
-import { isUsableGitRepository, readCurrentHead } from "./git-store.ts";
+import {
+  isGitWorkTreeRepository,
+  isUsableGitRepository,
+  readCurrentHead,
+  validateGitIntegrity,
+} from "./git-store.ts";
 import { getRepositoryLayout } from "./layout.ts";
 import { isSemanticReadModelCurrent } from "./read-model.ts";
 import type {
+  ArchiveSnapshot,
+  GitIntegrityPolicy,
   InspectSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryResult,
+  MigrationCleanupFailure,
+  MigrationSourceState,
+  PrepareSaveHistoryMigrationInput,
+  PrepareSaveHistoryMigrationResult,
+  PreparedSaveHistoryMigration,
   SaveHistoryRepositoryCapability,
   SaveHistoryRepositoryInspection,
   SaveHistoryRepositoryRequiredAction,
   SaveHistoryRepositoryStatus,
 } from "./types.ts";
-import { withHistoryWriteLock } from "./write-lock.ts";
+import { acquireWatchLock } from "./watch-lock.ts";
+import {
+  acquireHistoryWriteLease,
+  withHistoryWriteLock,
+} from "./write-lock.ts";
 
 const inspectionTokenLifetimeMs = 5 * 60 * 1000;
 const inspectionTokens = new Map<string, InspectionToken>();
@@ -32,6 +64,7 @@ interface InspectionToken {
   readonly repoPath: string;
   readonly fingerprint: string;
   readonly status: SaveHistoryRepositoryStatus;
+  readonly gitIntegrityPolicy: GitIntegrityPolicy;
   readonly expiresAt: number;
 }
 
@@ -40,16 +73,68 @@ interface InspectedRepository {
   readonly fingerprint: string;
 }
 
+interface ArchiveSnapshotFileSystem {
+  readonly copyRepository: (
+    sourcePath: string,
+    targetPath: string,
+  ) => Promise<void>;
+  readonly writeConfigAtomically: (
+    configPath: string,
+    contents: string,
+  ) => Promise<void>;
+}
+
+const archiveSnapshotFileSystemState: {
+  override: ArchiveSnapshotFileSystem | undefined;
+} = { override: undefined };
+
 export async function inspectSaveHistoryRepository(
   input: InspectSaveHistoryRepositoryInput,
 ): Promise<SaveHistoryRepositoryInspection> {
-  const inspected = await inspectRepository(input.repoPath);
+  const inspected = await inspectRepository(
+    input.repoPath,
+    input.gitIntegrityPolicy ?? "strict",
+  );
   return inspected.inspection;
 }
 
 export async function migrateSaveHistoryRepository(
   input: MigrateSaveHistoryRepositoryInput,
 ): Promise<MigrateSaveHistoryRepositoryResult> {
+  if (input.confirmation !== "migrate-save-history-repository") {
+    return createRejectedMigrationResult("confirmationRequired");
+  }
+
+  const token = inspectionTokens.get(input.inspectionId);
+  if (
+    token === undefined
+    || token.repoPath !== input.repoPath
+    || token.expiresAt < Date.now()
+    || token.gitIntegrityPolicy !== "strict"
+    || !isMigrationStatus(token.status)
+  ) {
+    return createRejectedMigrationResult("staleInspection");
+  }
+
+  const beforeLock = await inspectRepository(
+    input.repoPath,
+    token.gitIntegrityPolicy,
+  );
+  if (!matchesInspectionToken(beforeLock, token)) {
+    return createRejectedMigrationResult("staleInspection");
+  }
+
+  return await migrateWithSerialization(input, token);
+}
+
+/**
+ * Creates and publishes a verified archive while retaining History's write and watcher leases. The
+ * returned operation is intentionally one-way: Desktop must report the snapshot before calling
+ * commit, and there is no cancellation path that could leave the lease ownership ambiguous.
+ */
+export async function prepareSaveHistoryMigration(
+  input: PrepareSaveHistoryMigrationInput,
+): Promise<PrepareSaveHistoryMigrationResult> {
   if (input.confirmation !== "migrate-save-history-repository") {
     return { status: "rejected", reason: "confirmationRequired" };
   }
@@ -64,12 +149,447 @@ export async function migrateSaveHistoryRepository(
     return { status: "rejected", reason: "staleInspection" };
   }
 
-  const beforeLock = await inspectRepository(input.repoPath);
+  const beforeLock = await inspectRepository(
+    input.repoPath,
+    token.gitIntegrityPolicy,
+  );
   if (!matchesInspectionToken(beforeLock, token)) {
     return { status: "rejected", reason: "staleInspection" };
   }
 
-  return await migrateWithSerialization(input, token);
+  let writeLease: Awaited<ReturnType<typeof acquireHistoryWriteLease>>;
+  try {
+    writeLease = await acquireHistoryWriteLease(input.repoPath);
+  } catch (error) {
+    if (error instanceof SaveHistoryRepositoryBusyError) {
+      return { status: "failed", reason: "repositoryBusy" };
+    }
+
+    return {
+      status: "failed",
+      reason: "snapshotFailed",
+      message: "The repository could not be prepared for an archive snapshot.",
+    };
+  }
+
+  const underLock = await inspectRepository(
+    input.repoPath,
+    token.gitIntegrityPolicy,
+  );
+  if (!matchesInspectionToken(underLock, token)) {
+    await releaseMigrationLeases(undefined, writeLease);
+    return { status: "rejected", reason: "staleInspection" };
+  }
+  if (!isMigrationStatus(underLock.inspection.status)) {
+    await releaseMigrationLeases(undefined, writeLease);
+    return { status: "rejected", reason: "migrationNotRequired" };
+  }
+
+  let watcherLease: Awaited<ReturnType<typeof acquireWatchLock>> | undefined;
+  try {
+    watcherLease = await acquireMigrationWatcherExclusion(input.repoPath);
+    const snapshot = await createArchiveSnapshot(input);
+    let completed = false;
+    let leasesReleased = false;
+    const operation: PreparedSaveHistoryMigration = Object.freeze({
+      snapshot,
+      async commit() {
+        if (completed) {
+          throw new Error(
+            "The prepared Save History migration was already committed.",
+          );
+        }
+        completed = true;
+
+        let result!: MigrateSaveHistoryRepositoryResult;
+        let cleanupFailure: MigrationCleanupFailure | undefined;
+        try {
+          result = withSnapshotState(
+            await migrateUnderLock(input, token),
+            snapshot,
+          );
+        } finally {
+          cleanupFailure = await releaseLeases();
+        }
+
+        return withCleanupFailure(result, cleanupFailure);
+      },
+      release: async () => await releaseLeases(),
+    });
+
+    async function releaseLeases(): Promise<
+      MigrationCleanupFailure | undefined
+    > {
+      if (leasesReleased) {
+        return undefined;
+      }
+
+      leasesReleased = true;
+      return await releaseMigrationLeases(watcherLease, writeLease);
+    }
+
+    return { status: "prepared", operation };
+  } catch (error) {
+    try {
+      await releaseMigrationLeases(watcherLease, writeLease);
+    } catch {
+      // Preserve the primary preparation result while still attempting both releases.
+    }
+
+    if (error instanceof SaveHistoryWatcherAlreadyAcquiredError) {
+      return { status: "failed", reason: "watcherAlreadyAcquired" };
+    }
+    if (error instanceof SnapshotDirectoryDigestMismatchError) {
+      return {
+        status: "failed",
+        reason: "directoryDigestMismatch",
+        message: error.message,
+      };
+    }
+    if (error instanceof SaveHistoryRepositoryBusyError) {
+      return { status: "failed", reason: "repositoryBusy" };
+    }
+
+    return {
+      status: "failed",
+      reason: "snapshotFailed",
+      message: "The archive snapshot could not be verified or published.",
+    };
+  }
+}
+
+async function acquireMigrationWatcherExclusion(
+  repoPath: string,
+): Promise<Awaited<ReturnType<typeof acquireWatchLock>>> {
+  const parsed = parseProjectConfig(
+    await readFile(getRepositoryLayout(repoPath).configPath, "utf8"),
+  );
+  if (parsed.status !== "legacy" && parsed.status !== "migrationRequired") {
+    throw new Error("The repository no longer requires durable migration.");
+  }
+
+  return await acquireWatchLock({
+    repoPath,
+    watchedSavePath: parsed.config.watchedSavePath,
+    now: new Date(),
+  });
+}
+
+class SnapshotDirectoryDigestMismatchError extends Error {
+  override name = "SnapshotDirectoryDigestMismatchError";
+}
+
+async function createArchiveSnapshot(
+  input: PrepareSaveHistoryMigrationInput,
+): Promise<ArchiveSnapshot> {
+  if (
+    !path.isAbsolute(input.repoPath)
+    || !path.isAbsolute(input.snapshotPath)
+  ) {
+    throw new Error("Snapshot source and destination must be absolute paths.");
+  }
+
+  const sourcePath = path.resolve(input.repoPath);
+  const targetPath = path.resolve(input.snapshotPath);
+  if (isPathWithin(sourcePath, targetPath)) {
+    throw new Error(
+      "The archive snapshot destination cannot be inside its source.",
+    );
+  }
+
+  const sourceDigestBefore = await calculateDirectoryDigest(sourcePath);
+  const stagingPath = path.join(
+    path.dirname(targetPath),
+    `.${path.basename(targetPath)}.staging-${createOpaqueId(12)}`,
+  );
+  const archiveFileSystem = getArchiveSnapshotFileSystem();
+
+  try {
+    await mkdir(path.dirname(targetPath), { recursive: true });
+    await archiveFileSystem.copyRepository(sourcePath, stagingPath);
+
+    const sourceDigestAfter = await calculateDirectoryDigest(sourcePath);
+    const stagedDigest = await calculateDirectoryDigest(stagingPath);
+    assertSnapshotDigestsMatch(
+      sourceDigestBefore,
+      sourceDigestAfter,
+      stagedDigest,
+    );
+
+    const gitIntegrityWarning = await validateGitIntegrity(stagingPath);
+    const publishedPath = await publishSnapshotNoReplace(
+      stagingPath,
+      targetPath,
+    );
+
+    return withGitIntegrityWarning(
+      {
+        repoPath: publishedPath,
+        directoryDigest: stagedDigest,
+      },
+      gitIntegrityWarning,
+    );
+  } catch (error) {
+    await rm(stagingPath, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function withGitIntegrityWarning(
+  snapshot: Omit<ArchiveSnapshot, "gitIntegrityWarning">,
+  warning: string | undefined,
+): ArchiveSnapshot {
+  if (warning === undefined) {
+    return snapshot;
+  }
+
+  return { ...snapshot, gitIntegrityWarning: warning };
+}
+
+async function copyDurableRepository(sourcePath: string, targetPath: string) {
+  await copyDurableEntry(sourcePath, targetPath, "");
+}
+
+const nodeArchiveSnapshotFileSystem: ArchiveSnapshotFileSystem = Object.freeze({
+  copyRepository: copyDurableRepository,
+  writeConfigAtomically,
+});
+
+function getArchiveSnapshotFileSystem(): ArchiveSnapshotFileSystem {
+  return (
+    archiveSnapshotFileSystemState.override ?? nodeArchiveSnapshotFileSystem
+  );
+}
+
+/**
+ * Test-only fault injection. The public migration preparation Interface remains the only entry
+ * point exercised by the behavior tests; this private adapter hook cannot be imported from the
+ * package root or supplied by Desktop/CLI callers.
+ */
+export async function withArchiveSnapshotFileSystemForTests<T>(
+  configure: (
+    fileSystem: ArchiveSnapshotFileSystem,
+  ) => ArchiveSnapshotFileSystem,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = archiveSnapshotFileSystemState.override;
+  archiveSnapshotFileSystemState.override = configure(
+    nodeArchiveSnapshotFileSystem,
+  );
+  try {
+    return await operation();
+  } finally {
+    archiveSnapshotFileSystemState.override = previous;
+  }
+}
+
+async function copyDurableEntry(
+  sourcePath: string,
+  targetPath: string,
+  relativePath: string,
+) {
+  const sourceMetadata = await lstat(sourcePath);
+  if (sourceMetadata.isDirectory()) {
+    await mkdir(targetPath, { recursive: true, mode: sourceMetadata.mode });
+    const entries = await readdir(sourcePath, { withFileTypes: true });
+    for (const entry of entries) {
+      const childRelativePath =
+        relativePath === "" ? entry.name : path.join(relativePath, entry.name);
+      if (isEphemeralRepositoryPath(childRelativePath)) {
+        continue;
+      }
+
+      await copyDurableEntry(
+        path.join(sourcePath, entry.name),
+        path.join(targetPath, entry.name),
+        childRelativePath,
+      );
+    }
+    await chmod(targetPath, sourceMetadata.mode);
+    return;
+  }
+
+  if (sourceMetadata.isFile()) {
+    await copyFile(sourcePath, targetPath);
+    await chmod(targetPath, sourceMetadata.mode);
+    return;
+  }
+
+  if (sourceMetadata.isSymbolicLink()) {
+    await symlink(await readlink(sourcePath), targetPath);
+    return;
+  }
+
+  throw new Error("The repository contains an unsupported filesystem entry.");
+}
+
+async function calculateDirectoryDigest(rootPath: string): Promise<string> {
+  return await digestEntry(rootPath, "");
+}
+
+async function digestEntry(
+  entryPath: string,
+  relativePath: string,
+): Promise<string> {
+  const metadata = await lstat(entryPath);
+  if (metadata.isDirectory()) {
+    const children: string[] = [];
+    const entries = await readdir(entryPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const childRelativePath =
+        relativePath === "" ? entry.name : path.join(relativePath, entry.name);
+      if (isEphemeralRepositoryPath(childRelativePath)) {
+        continue;
+      }
+
+      const digest = await digestEntry(
+        path.join(entryPath, entry.name),
+        childRelativePath,
+      );
+      children.push(`${entry.name}\0${digest}`);
+    }
+    children.sort();
+    return createHash("sha256")
+      .update(`directory\0${relativePath}\0`)
+      .update(children.join("\0"))
+      .digest("hex");
+  }
+
+  if (metadata.isFile()) {
+    return createHash("sha256")
+      .update(`file\0${relativePath}\0`)
+      .update(await readFile(entryPath))
+      .digest("hex");
+  }
+
+  if (metadata.isSymbolicLink()) {
+    return createHash("sha256")
+      .update(`symlink\0${relativePath}\0`)
+      .update(await readlink(entryPath))
+      .digest("hex");
+  }
+
+  throw new Error("The repository contains an unsupported filesystem entry.");
+}
+
+function isEphemeralRepositoryPath(relativePath: string): boolean {
+  const normalized = relativePath.split(path.sep).join("/");
+  if (normalized === ".silksong-git/read-model.sqlite") {
+    return true;
+  }
+  if (
+    normalized === ".silksong-git/write.lock"
+    || normalized === ".silksong-git/watch.lock"
+    || normalized === ".silksong-git/no-hooks"
+    || normalized === ".silksong-git/global-attributes"
+  ) {
+    return true;
+  }
+
+  return normalized.startsWith(".git/") && normalized.endsWith(".lock");
+}
+
+function assertSnapshotDigestsMatch(
+  sourceDigestBefore: string,
+  sourceDigestAfter: string,
+  stagedDigest: string,
+) {
+  if (
+    sourceDigestBefore !== sourceDigestAfter
+    || sourceDigestBefore !== stagedDigest
+  ) {
+    throw new SnapshotDirectoryDigestMismatchError(
+      "The source changed while the archive snapshot was being copied.",
+    );
+  }
+}
+
+async function publishSnapshotNoReplace(
+  stagingPath: string,
+  targetPath: string,
+): Promise<string> {
+  return await withPublicationLock(path.dirname(targetPath), async () => {
+    for (let collision = 0; collision < 10_000; collision++) {
+      const candidate =
+        collision === 0 ? targetPath : `${targetPath}-${collision}`;
+      if (await pathExists(candidate)) {
+        continue;
+      }
+
+      try {
+        await rename(stagingPath, candidate);
+        return candidate;
+      } catch (error) {
+        if (isExistingPathError(error)) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new Error("Could not find an unused archive snapshot path.");
+  });
+}
+
+async function withPublicationLock<T>(
+  parentPath: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const lockName = createHash("sha256")
+    .update(path.resolve(parentPath))
+    .digest("hex");
+  const lockPath = path.join(
+    tmpdir(),
+    `silksong-history-publication-${lockName}.lock`,
+  );
+  const deadline = Date.now() + 3000;
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  while (handle === undefined) {
+    try {
+      handle = await open(lockPath, "wx");
+    } catch (error) {
+      if (!isExistingPathError(error) || Date.now() >= deadline) {
+        throw new SaveHistoryRepositoryBusyError({ cause: error });
+      }
+      await sleep(25);
+    }
+  }
+
+  try {
+    return await operation();
+  } finally {
+    await handle.close();
+    await rm(lockPath, { force: true });
+  }
+}
+
+async function pathExists(entryPath: string): Promise<boolean> {
+  try {
+    await lstat(entryPath);
+    return true;
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function isPathWithin(parentPath: string, childPath: string): boolean {
+  const relative = path.relative(parentPath, childPath);
+  return (
+    relative === ""
+    || (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}
+
+function isExistingPathError(error: unknown): boolean {
+  return (
+    error instanceof Error
+    && "code" in error
+    && ((error as NodeJS.ErrnoException).code === "EEXIST"
+      || (error as NodeJS.ErrnoException).code === "ENOTEMPTY")
+  );
 }
 
 async function migrateWithSerialization(
@@ -90,17 +610,20 @@ async function migrateUnderLock(
   input: MigrateSaveHistoryRepositoryInput,
   token: InspectionToken,
 ): Promise<MigrateSaveHistoryRepositoryResult> {
-  const underLock = await inspectRepository(input.repoPath);
+  const underLock = await inspectRepository(
+    input.repoPath,
+    token.gitIntegrityPolicy,
+  );
   if (!matchesInspectionToken(underLock, token)) {
-    return { status: "rejected", reason: "staleInspection" };
+    return createRejectedMigrationResult("staleInspection");
   }
   if (!isMigrationStatus(underLock.inspection.status)) {
-    return { status: "rejected", reason: "migrationNotRequired" };
+    return createRejectedMigrationResult("migrationNotRequired");
   }
 
   const layout = getRepositoryLayout(input.repoPath);
   if (!(await backUpConfig(layout.configPath))) {
-    return { status: "failed", reason: "backupFailed" };
+    return createFailedMigrationResult("backupFailed", "unchanged");
   }
   const configText = await readFile(layout.configPath, "utf8");
   const parsedConfig = parseProjectConfig(configText);
@@ -108,24 +631,34 @@ async function migrateUnderLock(
     parsedConfig.status !== "legacy"
     && parsedConfig.status !== "migrationRequired"
   ) {
-    return { status: "rejected", reason: "staleInspection" };
+    return createRejectedMigrationResult("staleInspection");
   }
 
   const migratedConfig = createMigratedConfig(configText);
   if (migratedConfig === undefined) {
-    return { status: "failed", reason: "migrationFailed" };
+    return createFailedMigrationResult("migrationFailed", "unchanged");
   }
-  if (!(await persistMigratedConfig(layout.configPath, migratedConfig))) {
-    return { status: "failed", reason: "migrationFailed" };
+  const persisted = await persistMigratedConfig(
+    layout.configPath,
+    migratedConfig,
+  );
+  if (persisted.status === "failed") {
+    return createFailedMigrationResult(
+      "migrationFailed",
+      persisted.sourceState,
+    );
   }
 
-  const inspected = await inspectRepository(input.repoPath);
+  const inspected = await inspectRepository(
+    input.repoPath,
+    token.gitIntegrityPolicy,
+  );
   const { inspection } = inspected;
   if (
     inspection.status !== "ready"
     && inspection.status !== "rebuildRequired"
   ) {
-    return { status: "failed", reason: "migrationFailed" };
+    return createFailedMigrationResult("migrationFailed", "migrated");
   }
 
   inspectionTokens.delete(input.inspectionId);
@@ -133,6 +666,8 @@ async function migrateUnderLock(
     status: "migrated",
     inspection,
     backupCreated: true,
+    sourceState: "migrated",
+    snapshotState: { status: "notCreated" },
   };
 }
 
@@ -140,17 +675,93 @@ function toMigrationSerializationFailure(
   error: unknown,
 ): MigrateSaveHistoryRepositoryResult {
   return error instanceof SaveHistoryRepositoryBusyError
-    ? { status: "failed", reason: "repositoryBusy" }
-    : { status: "failed", reason: "migrationFailed" };
+    ? createFailedMigrationResult("repositoryBusy", "unchanged")
+    : createFailedMigrationResult("migrationFailed", "unknown");
+}
+
+function createRejectedMigrationResult(
+  reason: "confirmationRequired" | "staleInspection" | "migrationNotRequired",
+): MigrateSaveHistoryRepositoryResult {
+  return {
+    status: "rejected",
+    reason,
+    sourceState: "unchanged",
+    snapshotState: { status: "notCreated" },
+  };
+}
+
+function createFailedMigrationResult(
+  reason: "backupFailed" | "repositoryBusy" | "migrationFailed",
+  sourceState: MigrationSourceState,
+): MigrateSaveHistoryRepositoryResult {
+  return {
+    status: "failed",
+    reason,
+    sourceState,
+    snapshotState: { status: "notCreated" },
+  };
+}
+
+function withSnapshotState(
+  result: MigrateSaveHistoryRepositoryResult,
+  snapshot: ArchiveSnapshot,
+): MigrateSaveHistoryRepositoryResult {
+  return {
+    ...result,
+    snapshotState: {
+      status: "retained",
+      repoPath: snapshot.repoPath,
+    },
+  };
+}
+
+function withCleanupFailure(
+  result: MigrateSaveHistoryRepositoryResult,
+  cleanupFailure: MigrationCleanupFailure | undefined,
+): MigrateSaveHistoryRepositoryResult {
+  if (cleanupFailure === undefined) {
+    return result;
+  }
+
+  return { ...result, cleanupFailure };
+}
+
+async function releaseMigrationLeases(
+  watcherLease: Awaited<ReturnType<typeof acquireWatchLock>> | undefined,
+  writeLease: Awaited<ReturnType<typeof acquireHistoryWriteLease>>,
+): Promise<MigrationCleanupFailure | undefined> {
+  const releaseResults = await Promise.allSettled([
+    watcherLease?.release() ?? Promise.resolve(),
+    writeLease.release(),
+  ]);
+  const firstFailure = releaseResults.find(
+    (result) => result.status === "rejected",
+  );
+  if (firstFailure?.status === "rejected") {
+    return "leaseReleaseFailed";
+  }
+
+  return undefined;
 }
 
 export async function assertRepositoryCapability(
   repoPath: string,
   capability: SaveHistoryRepositoryCapability,
+  access?: "readOnly",
 ): Promise<void> {
-  const inspected = await inspectRepository(repoPath);
+  const inspected = await inspectRepository(
+    repoPath,
+    access === "readOnly" ? "advisory" : "strict",
+  );
   const { inspection } = inspected;
 
+  if (
+    access === "readOnly"
+    && capability === "read"
+    && isReadOnlyArchiveStatus(inspection.status)
+  ) {
+    return;
+  }
   if (inspection.capabilities.includes(capability)) {
     return;
   }
@@ -192,25 +803,33 @@ export async function hasExistingSaveHistoryRepository(
 
 async function inspectRepository(
   repoPath: string,
+  gitIntegrityPolicy: GitIntegrityPolicy = "strict",
 ): Promise<InspectedRepository> {
   try {
-    return await inspectRepositoryCandidate(repoPath);
+    return await inspectRepositoryCandidate(repoPath, gitIntegrityPolicy);
   } catch {
     return createInspectedRepository({
       repoPath,
       status: "invalid",
       fingerprint: createRepositoryFingerprint({ repoPath }),
+      gitIntegrityPolicy,
     });
   }
 }
 
 async function inspectRepositoryCandidate(
   repoPath: string,
+  gitIntegrityPolicy: GitIntegrityPolicy,
 ): Promise<InspectedRepository> {
   const configText = await readConfigText(repoPath);
   const config =
     configText === undefined ? undefined : parseProjectConfig(configText);
-  const gitRepository = await isUsableGitRepository(repoPath);
+  // Repository compatibility is structural. Git fsck is advisory for the Desktop archive workflow
+  // and must not turn an otherwise migratable repository into an invalid candidate.
+  const gitRepository =
+    gitIntegrityPolicy === "strict"
+      ? await isUsableGitRepository(repoPath)
+      : await isGitWorkTreeRepository(repoPath);
   const headRef = gitRepository
     ? await readCurrentHeadSafely(repoPath)
     : undefined;
@@ -227,7 +846,12 @@ async function inspectRepositoryCandidate(
     gitRepository,
     headRef,
   });
-  return createInspectedRepository({ repoPath, status, fingerprint });
+  return createInspectedRepository({
+    repoPath,
+    status,
+    fingerprint,
+    gitIntegrityPolicy,
+  });
 }
 
 async function classifyRepository(input: {
@@ -276,6 +900,7 @@ function createInspectedRepository(input: {
   readonly repoPath: string;
   readonly status: SaveHistoryRepositoryStatus;
   readonly fingerprint: string;
+  readonly gitIntegrityPolicy: GitIntegrityPolicy;
 }): InspectedRepository {
   pruneExpiredInspectionTokens();
   const inspectionId = createOpaqueId(24);
@@ -284,6 +909,7 @@ function createInspectedRepository(input: {
     repoPath: input.repoPath,
     fingerprint: input.fingerprint,
     status: input.status,
+    gitIntegrityPolicy: input.gitIntegrityPolicy,
     expiresAt: Date.now() + inspectionTokenLifetimeMs,
   });
 
@@ -355,6 +981,10 @@ function matchesInspectionToken(
 
 function isMigrationStatus(status: SaveHistoryRepositoryStatus): boolean {
   return status === "legacyConfig" || status === "migrationRequired";
+}
+
+function isReadOnlyArchiveStatus(status: SaveHistoryRepositoryStatus): boolean {
+  return isMigrationStatus(status);
 }
 
 async function readConfigText(repoPath: string): Promise<string | undefined> {
@@ -432,14 +1062,48 @@ function createMigratedConfig(configText: string): string | undefined {
 async function persistMigratedConfig(
   configPath: string,
   contents: string,
-): Promise<boolean> {
+): Promise<
+  | { readonly status: "written" }
+  | { readonly status: "failed"; readonly sourceState: MigrationSourceState }
+> {
+  const archiveFileSystem = getArchiveSnapshotFileSystem();
+
   try {
-    await writeConfigAtomically(configPath, contents);
+    await archiveFileSystem.writeConfigAtomically(configPath, contents);
   } catch {
-    return false;
+    return {
+      status: "failed",
+      sourceState: await classifySourceAfterMigrationWrite(configPath),
+    };
   }
 
-  return true;
+  return { status: "written" };
+}
+
+async function classifySourceAfterMigrationWrite(
+  configPath: string,
+): Promise<MigrationSourceState> {
+  let config: ReturnType<typeof parseProjectConfig>;
+  try {
+    config = parseProjectConfig(await readFile(configPath, "utf8"));
+  } catch {
+    return "unknown";
+  }
+
+  switch (config.status) {
+    case "current": {
+      return "migrated";
+    }
+
+    case "legacy":
+    case "migrationRequired": {
+      return "unchanged";
+    }
+
+    default: {
+      return "unknown";
+    }
+  }
 }
 
 async function writeConfigAtomically(configPath: string, contents: string) {

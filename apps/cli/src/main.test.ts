@@ -1,5 +1,13 @@
 import { strict as assert } from "node:assert";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
@@ -106,6 +114,34 @@ async function readJsonFile(filePath: string): Promise<unknown> {
   return JSON.parse(await readFile(filePath, "utf8")) as unknown;
 }
 
+async function corruptUnreachableGitObject(repoPath: string) {
+  const objectSourcePath = path.join(repoPath, "corrupt-object-source");
+  await writeFile(objectSourcePath, "unreachable object");
+  const objectId = await new Promise<string>((resolve, reject) => {
+    execFile(
+      "git",
+      ["hash-object", "-w", objectSourcePath],
+      { cwd: repoPath },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr));
+          return;
+        }
+        resolve(stdout.trim());
+      },
+    );
+  });
+  const objectPath = path.join(
+    repoPath,
+    ".git",
+    "objects",
+    objectId.slice(0, 2),
+    objectId.slice(2),
+  );
+  await chmod(objectPath, 0o600);
+  await writeFile(objectPath, "corrupt object");
+}
+
 test("repo init creates a Save History Repository with JSON output", async (t) => {
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
@@ -128,15 +164,14 @@ test("repo init creates a Save History Repository with JSON output", async (t) =
   };
 
   assert.equal(initResult.repoPath, repoPath);
-  assert.equal(
-    initResult.configPath,
-    path.join(repoPath, ".silksong-git/config.json"),
-  );
-  const config = (await readJsonFile(initResult.configPath)) as {
-    readonly watchedSavePath?: unknown;
-  };
-
-  assert.equal(config.watchedSavePath, minimalEncodedSavePath);
+  const inspectionResult = await runCli([
+    "repo",
+    "inspect",
+    "--repo",
+    repoPath,
+    "--json",
+  ]);
+  assert.equal(inspectionResult.exitCode, 0);
 });
 
 test("repo init refuses an invalid Watched Save path", async (t) => {
@@ -313,6 +348,45 @@ test("repo migrate performs inspection and migration in one command", async (t) 
     capabilities: ["read", "observe", "restore", "rebuildReadModel", "watch"],
   });
   assert.equal("inspectionId" in (migration.inspection ?? {}), false);
+});
+
+test("repo migration preserves strict fsck refusal for an invalid Git repository", async (t) => {
+  const repo = await createCliHistoryRepo(t);
+  await setRepositoryFormatVersionFixture(repo.repoPath, undefined);
+  await corruptUnreachableGitObject(repo.repoPath);
+
+  const inspectionResult = await runCli([
+    "repo",
+    "inspect",
+    "--repo",
+    repo.repoPath,
+    "--json",
+  ]);
+  assert.equal(inspectionResult.exitCode, 5);
+  assert.deepEqual(parseStdoutJson(inspectionResult), {
+    status: "invalid",
+    requiredAction: "chooseAnotherDirectory",
+    capabilities: [],
+  });
+
+  const migrationResult = await runCli([
+    "repo",
+    "migrate",
+    "--repo",
+    repo.repoPath,
+    "--confirm-migration",
+    "--json",
+  ]);
+  assert.equal(migrationResult.exitCode, 5);
+  assert.deepEqual(parseStdoutJson(migrationResult), {
+    status: "rejected",
+    reason: "staleInspection",
+    inspection: {
+      status: "invalid",
+      requiredAction: "chooseAnotherDirectory",
+      capabilities: [],
+    },
+  });
 });
 
 test("repo migrate safely guides read-model rebuild and newer incompatible repositories", async (t) => {

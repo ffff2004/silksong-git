@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-prepare-repository-migration"
+description = "Enables the desktop_prepare_repository_migration command without any pre-configured scope."
+commands.allow = ["desktop_prepare_repository_migration"]
+
+[[permission]]
+identifier = "deny-desktop-prepare-repository-migration"
+description = "Denies the desktop_prepare_repository_migration command without any pre-configured scope."
+commands.deny = ["desktop_prepare_repository_migration"]

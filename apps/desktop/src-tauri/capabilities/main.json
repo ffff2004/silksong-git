@@ -7,6 +7,8 @@
     "allow-desktop-get-repo-session-connection",
     "allow-desktop-get-repository-library",
     "allow-desktop-open-library-entry",
+    "allow-desktop-prepare-repository-migration",
+    "allow-desktop-commit-repository-migration",
     "allow-desktop-close-repository",
     "allow-desktop-open-external-repository",
     "allow-desktop-pick-static-encoded-save",
