@@ -157,14 +157,21 @@ if migration fails.
 
 Opening is ordered deliberately: Rust waits for a native directory selection,
 canonicalizes it, starts a candidate sidecar, and sends `repository.inspect`.
-Managed and external sessions require a `ready` result. An Archived Repository
-may additionally admit a `legacyConfig` or `migrationRequired` result as a
-read-only session; Rust gracefully shuts down the prior sidecar and then sends
-`session.open`, which re-inspects through the Repo Session Interface with the
-same read-only policy. Invalid, rebuild-required, and newer-incompatible
-selections return structured actionable states without opening a session. The
-temporary external path is neither copied, persisted, registered, nor reopened
-after exit.
+Managed and external sessions require a `ready` result. The public library-open
+capability carries an explicit `open` or `rebuild` intent. A normal `open`
+intent returns a structured rebuild-required result when fresh inspection
+finds stale Semantic Read Model data; it never rebuilds implicitly. An
+explicitly clicked `rebuild` intent for a Managed Repository with
+`rebuildRequired` enters the existing Rust
+`Transitioning` guard, calls the sidecar rebuild, strictly re-inspects, and only
+then continues to `session.open`; it never starts watching automatically. An
+Archived Repository may additionally admit a `legacyConfig` or
+`migrationRequired` result as a read-only session; Rust gracefully shuts down
+the prior sidecar and then sends `session.open`, which re-inspects through the
+Repo Session Interface with the same read-only policy. Archived, external,
+invalid, and newer-incompatible rebuild-required selections return structured
+actionable states without rebuilding or opening a session. The temporary
+external path is neither copied, persisted, registered, nor reopened after exit.
 
 The session endpoint and bearer token are held in the Rust runtime state. The
 WebView can obtain them only through the one narrow connection command, where

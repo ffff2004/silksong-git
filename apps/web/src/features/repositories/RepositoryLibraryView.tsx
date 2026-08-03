@@ -7,6 +7,7 @@ import type {
   RepositoryLibrary,
   RepositoryLibraryEntry,
   RepositoryMigrationSnapshotState,
+  RepositoryOpenIntent,
 } from "../../runtime-capabilities/interface.ts";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import { useRuntimeCapabilities } from "../../state/runtime-capabilities.tsx";
@@ -25,6 +26,11 @@ interface MigrationOutcome {
   readonly status: "failed" | "migrated" | "rejected";
 }
 
+interface RebuildState {
+  readonly key: string;
+  readonly status: "queued" | "running";
+}
+
 export function RepositoryLibraryView() {
   const runtimeCapabilities = useRuntimeCapabilities();
   const localHistory = useLocalHistoryStore();
@@ -34,6 +40,7 @@ export function RepositoryLibraryView() {
   const [library, setLibrary] = createSignal<RepositoryLibrary>();
   const [loading, setLoading] = createSignal(true);
   const [opening, setOpening] = createSignal<string>();
+  const [rebuild, setRebuild] = createSignal<RebuildState>();
   const [error, setError] = createSignal<string>();
   const [showArchives, setShowArchives] = createSignal(false);
   const [reopening, setReopening] = createSignal(false);
@@ -48,7 +55,9 @@ export function RepositoryLibraryView() {
   const [existingInitialization, setExistingInitialization] =
     createSignal<string>();
   const repositorySwitchingDisabled = () =>
-    migrating()
+    opening() !== undefined
+    || rebuild() !== undefined
+    || migrating()
     || migration() !== undefined
     || initializing()
     || localHistory.workflowState().kind === "transitioning";
@@ -77,7 +86,7 @@ export function RepositoryLibraryView() {
     }
   };
 
-  const refresh = async () => {
+  const refresh = async (): Promise<boolean> => {
     setLoading(true);
     setError(undefined);
     try {
@@ -94,18 +103,23 @@ export function RepositoryLibraryView() {
           navigate("/progress");
         }
       }
+      return true;
     } catch (error_) {
       setError(
         error_ instanceof Error
           ? error_.message
           : "Could not refresh repositories.",
       );
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
-  const open = async (entry: RepositoryLibraryEntry) => {
+  const open = async (
+    entry: RepositoryLibraryEntry,
+    intent: RepositoryOpenIntent,
+  ) => {
     if (
       entry.current
       || opening() !== undefined
@@ -113,15 +127,36 @@ export function RepositoryLibraryView() {
     ) {
       return;
     }
-    setOpening(`${entry.lifecycle}:${entry.name}`);
+    const key = `${entry.lifecycle}:${entry.name}`;
+    const rebuildRequested = intent === "rebuild";
+    setOpening(key);
+    if (rebuildRequested) {
+      setRebuild({ key, status: "queued" });
+      // The native call owns inspection and rebuild. Yield once so the landing UI can expose the
+      // local queued state without introducing a progress endpoint or a persistent job queue.
+      await Promise.resolve();
+      if (rebuild()?.key === key) {
+        setRebuild({ key, status: "running" });
+      }
+    }
     setError(undefined);
     try {
       const result = await localHistory.openLibraryEntry({
         lifecycle: entry.lifecycle === "archived" ? "archived" : "managed",
         name: entry.name,
+        intent,
       });
       if (result.kind !== "opened") {
-        setError(formatOpenResult(result));
+        const refreshAfterFailure =
+          rebuildRequested
+          || (entry.lifecycle === "managed"
+            && result.kind === "requiresAction"
+            && result.status === "rebuildRequired");
+        await reportFailedOpen(
+          entry,
+          formatOpenResult(result),
+          refreshAfterFailure,
+        );
         return;
       }
       localHistory.disconnect();
@@ -130,12 +165,48 @@ export function RepositoryLibraryView() {
         navigate("/progress");
       }
     } catch (error_) {
-      setError(
+      await reportFailedOpen(
+        entry,
         error_ instanceof Error ? error_.message : "Could not open repository.",
+        rebuildRequested,
       );
     } finally {
       setOpening(undefined);
+      setRebuild(undefined);
     }
+  };
+
+  const reportFailedOpen = async (
+    entry: RepositoryLibraryEntry,
+    message: string,
+    refreshAfterFailure: boolean,
+  ) => {
+    if (!refreshAfterFailure) {
+      setError(message);
+      return;
+    }
+
+    const refreshed = await refresh();
+    if (!refreshed) {
+      setError(
+        `${message} The repository list could not be refreshed. Click Refresh, then try again.`,
+      );
+      return;
+    }
+    const currentEntry = [
+      ...(library()?.managed ?? []),
+      ...(library()?.archived ?? []),
+      ...(library()?.attention ?? []),
+    ].find(
+      (candidate) =>
+        candidate.lifecycle === entry.lifecycle
+        && candidate.name === entry.name,
+    );
+    setError(
+      currentEntry?.status === "rebuildRequired"
+        ? `${message} Click Rebuild to try again.`
+        : `${message} The repository list was refreshed; try opening the repository again.`,
+    );
   };
 
   const prepareMigration = async (entry: RepositoryLibraryEntry) => {
@@ -218,9 +289,7 @@ export function RepositoryLibraryView() {
           status: result.status,
         });
       }
-      try {
-        await refresh();
-      } catch {
+      if (!(await refresh())) {
         setError(
           "Migration completed, but the repository list could not be refreshed.",
         );
@@ -364,14 +433,30 @@ export function RepositoryLibraryView() {
     if (name === undefined) {
       return;
     }
+    const entry = library()?.managed.find(
+      (candidate) => candidate.name === name,
+    ) ?? {
+      current: false,
+      lifecycle: "managed" as const,
+      name,
+      requiredAction: "open",
+      status: "ready",
+      watching: false,
+    };
     setOpening(`managed:${name}`);
     try {
       const result = await localHistory.openLibraryEntry({
         lifecycle: "managed",
         name,
+        intent: "open",
       });
       if (result.kind !== "opened") {
-        setError(formatOpenResult(result));
+        await reportFailedOpen(
+          entry,
+          formatOpenResult(result),
+          result.kind === "requiresAction"
+            && result.status === "rebuildRequired",
+        );
         return;
       }
       localHistory.disconnect();
@@ -531,6 +616,7 @@ export function RepositoryLibraryView() {
             entry={entry()}
             onOpen={open}
             opening={opening()}
+            rebuild={rebuild()}
             switchingDisabled={repositorySwitchingDisabled()}
           />
         )}
@@ -541,6 +627,7 @@ export function RepositoryLibraryView() {
         onOpen={open}
         onMigrate={prepareMigration}
         opening={opening()}
+        rebuild={rebuild()}
         migrating={migrating()}
         switchingDisabled={repositorySwitchingDisabled()}
       />
@@ -562,6 +649,7 @@ export function RepositoryLibraryView() {
           entries={library()?.archived ?? []}
           onOpen={open}
           opening={opening()}
+          rebuild={rebuild()}
           switchingDisabled={repositorySwitchingDisabled()}
         />
       </Show>
@@ -683,9 +771,13 @@ function formatRequiredAction(
 
 function RepositoryRows(props: {
   readonly entries: readonly RepositoryLibraryEntry[];
-  readonly onOpen: (entry: RepositoryLibraryEntry) => Promise<void>;
+  readonly onOpen: (
+    entry: RepositoryLibraryEntry,
+    intent: RepositoryOpenIntent,
+  ) => Promise<void>;
   readonly onMigrate?: (entry: RepositoryLibraryEntry) => Promise<void>;
   readonly opening?: string;
+  readonly rebuild?: RebuildState;
   readonly migrating?: boolean;
   readonly switchingDisabled?: boolean;
 }) {
@@ -698,6 +790,7 @@ function RepositoryRows(props: {
             onOpen={props.onOpen}
             onMigrate={props.onMigrate}
             opening={props.opening}
+            rebuild={props.rebuild}
             migrating={props.migrating}
             switchingDisabled={props.switchingDisabled}
           />
@@ -709,9 +802,13 @@ function RepositoryRows(props: {
 
 function RepositoryRow(props: {
   readonly entry: RepositoryLibraryEntry;
-  readonly onOpen: (entry: RepositoryLibraryEntry) => Promise<void>;
+  readonly onOpen: (
+    entry: RepositoryLibraryEntry,
+    intent: RepositoryOpenIntent,
+  ) => Promise<void>;
   readonly onMigrate?: (entry: RepositoryLibraryEntry) => Promise<void>;
   readonly opening?: string;
+  readonly rebuild?: RebuildState;
   readonly migrating?: boolean;
   readonly switchingDisabled?: boolean;
 }) {
@@ -733,6 +830,14 @@ function RepositoryRow(props: {
     }
     return props.entry.lifecycle === "archived" ? "Open read-only" : "Open";
   };
+  const rebuildLabel = () => {
+    if (props.rebuild?.key !== key()) {
+      return "Rebuild";
+    }
+    return props.rebuild.status === "queued"
+      ? "Rebuild queued…"
+      : "Rebuilding…";
+  };
   const action = () => {
     if (props.entry.current) {
       return currentLabel();
@@ -742,6 +847,27 @@ function RepositoryRow(props: {
       && (props.entry.status === "legacyConfig"
         || props.entry.status === "migrationRequired");
     if (props.entry.status !== "ready" && !archiveIsReadOnlyOpenable) {
+      if (
+        props.entry.lifecycle === "managed"
+        && props.entry.status === "rebuildRequired"
+      ) {
+        return (
+          <button
+            class={buttonStyles["secondary"]}
+            type="button"
+            disabled={
+              props.rebuild !== undefined
+              || props.opening !== undefined
+              || props.switchingDisabled === true
+            }
+            onClick={() => {
+              props.onOpen(props.entry, "rebuild").catch(() => undefined);
+            }}
+          >
+            {rebuildLabel()}
+          </button>
+        );
+      }
       if (
         props.entry.lifecycle === "managed"
         && (props.entry.status === "legacyConfig"
@@ -773,7 +899,7 @@ function RepositoryRow(props: {
           props.opening !== undefined || props.switchingDisabled === true
         }
         onClick={() => {
-          props.onOpen(props.entry).catch(() => undefined);
+          props.onOpen(props.entry, "open").catch(() => undefined);
         }}
       >
         {openLabel()}

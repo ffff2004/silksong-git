@@ -1003,6 +1003,24 @@ test("refuses sidecar rebuilds for older and newer durable formats", async (t) =
         message: "The Semantic Read Model could not be rebuilt.",
       },
     });
+    assert.deepEqual(await sidecar.readMessage(), {
+      protocolVersion: desktopSidecarProtocolVersion,
+      kind: "event",
+      event: {
+        type: "mutation.activity",
+        mutation: "repositoryRebuild",
+        status: "started",
+      },
+    });
+    assert.deepEqual(await sidecar.readMessage(), {
+      protocolVersion: desktopSidecarProtocolVersion,
+      kind: "event",
+      event: {
+        type: "mutation.activity",
+        mutation: "repositoryRebuild",
+        status: "finished",
+      },
+    });
   }
 
   await shutDown(sidecar);
@@ -1045,6 +1063,24 @@ test("rebuilds a Semantic Read Model through the sidecar before opening a Repo S
     capabilities: ["read", "observe", "restore", "rebuildReadModel", "watch"],
   });
   assert.equal("inspectionId" in rebuilt.result.repository, false);
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "repositoryRebuild",
+      status: "started",
+    },
+  });
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "repositoryRebuild",
+      status: "finished",
+    },
+  });
 
   const rawAfter = await queryRawObservations({ repoPath: repo.repoPath });
   assert.deepEqual(rawAfter, rawBefore);

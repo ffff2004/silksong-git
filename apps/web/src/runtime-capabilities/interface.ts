@@ -6,6 +6,8 @@ export interface RepoSessionConnection {
 
 export type RepositoryLifecycle = "managed" | "archived" | "external";
 
+export type RepositoryOpenIntent = "open" | "rebuild";
+
 export interface RepositoryLibraryEntry {
   readonly name: string;
   readonly lifecycle: RepositoryLifecycle;
@@ -144,6 +146,7 @@ export type RuntimeCapabilities =
       readonly openLibraryEntry?: (input: {
         readonly lifecycle: Exclude<RepositoryLifecycle, "external">;
         readonly name: string;
+        readonly intent: RepositoryOpenIntent;
       }) => Promise<OpenExternalRepositoryResult>;
       readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
       readonly initializeManagedRepository?: () => Promise<ManagedInitializationResult>;

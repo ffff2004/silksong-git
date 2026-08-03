@@ -741,6 +741,11 @@ export async function runDesktopSidecarProcess(
       );
     }
 
+    emitEvent({
+      type: "mutation.activity",
+      mutation: "repositoryRebuild",
+      status: "started",
+    });
     try {
       const rebuild = await rebuildSemanticReadModel({
         repoPath: commandResult.data.repoPath,
@@ -761,6 +766,12 @@ export async function runDesktopSidecarProcess(
         "repository_rebuild_failed",
         "The Semantic Read Model could not be rebuilt.",
       );
+    } finally {
+      emitEvent({
+        type: "mutation.activity",
+        mutation: "repositoryRebuild",
+        status: "finished",
+      });
     }
   }
 

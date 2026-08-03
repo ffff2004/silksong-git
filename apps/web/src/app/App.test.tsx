@@ -580,7 +580,239 @@ describe("Solid Web app routing", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open" }));
     await screen.findByRole("link", { name: "History" });
     expect(openLibraryEntry).toHaveBeenCalledTimes(1);
+    expect(openLibraryEntry).toHaveBeenCalledWith({
+      lifecycle: "managed",
+      intent: "open",
+      name: "test-repository",
+    });
     expect(getRepoSessionConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes a fresh rebuild requirement so normal open exposes an explicit retry", async () => {
+    const openLibraryEntry = vi.fn(async () => ({
+      action: "rebuildReadModel" as const,
+      kind: "requiresAction" as const,
+      status: "rebuildRequired" as const,
+    }));
+    const getRepositoryLibrary = vi
+      .fn()
+      .mockResolvedValueOnce(desktopTestRepositoryLibrary)
+      .mockResolvedValue({
+        ...desktopTestRepositoryLibrary,
+        managed: [
+          {
+            ...desktopTestRepositoryLibrary.managed[0],
+            requiredAction: "rebuildReadModel",
+            status: "rebuildRequired",
+          },
+        ],
+      });
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary,
+      openLibraryEntry,
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+
+    globalThis.location.hash = "#/repositories";
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open" }));
+
+    expect(
+      await screen.findByText(
+        "This repository needs its Semantic Read Model rebuilt before it can be opened. Rebuild it with a compatible current version, then try again. Click Rebuild to try again.",
+      ),
+    ).toBeDefined();
+    expect(getRepositoryLibrary).toHaveBeenCalledTimes(2);
+    expect(openLibraryEntry).toHaveBeenCalledWith({
+      lifecycle: "managed",
+      intent: "open",
+      name: "test-repository",
+    });
+    expect(screen.queryByRole("button", { name: "Rebuilding…" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Rebuild" }));
+    await waitFor(() => {
+      expect(openLibraryEntry).toHaveBeenCalledTimes(2);
+    });
+    expect(openLibraryEntry).toHaveBeenLastCalledWith({
+      lifecycle: "managed",
+      intent: "rebuild",
+      name: "test-repository",
+    });
+  });
+
+  it("refreshes an existing initialization refusal and exposes an explicit rebuild retry", async () => {
+    const rebuildRequired = {
+      action: "rebuildReadModel" as const,
+      kind: "requiresAction" as const,
+      status: "rebuildRequired" as const,
+    };
+    const initializeManagedRepository = vi.fn(async () => ({
+      kind: "existingRepository" as const,
+      name: "test-repository",
+    }));
+    const openLibraryEntry = vi
+      .fn()
+      .mockResolvedValueOnce(rebuildRequired)
+      .mockResolvedValue(rebuildRequired);
+    const getRepositoryLibrary = vi
+      .fn()
+      .mockResolvedValueOnce(desktopTestRepositoryLibrary)
+      .mockResolvedValue({
+        ...desktopTestRepositoryLibrary,
+        managed: [
+          {
+            ...desktopTestRepositoryLibrary.managed[0],
+            requiredAction: "rebuildReadModel",
+            status: "rebuildRequired",
+          },
+        ],
+      });
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      initializeManagedRepository,
+      getRepositoryLibrary,
+      openLibraryEntry,
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+
+    globalThis.location.hash = "#/repositories";
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Initialize and watch save…",
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open test-repository" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "This repository needs its Semantic Read Model rebuilt before it can be opened. Rebuild it with a compatible current version, then try again. Click Rebuild to try again.",
+      ),
+    ).toBeDefined();
+    expect(getRepositoryLibrary).toHaveBeenCalledTimes(2);
+    fireEvent.click(await screen.findByRole("button", { name: "Rebuild" }));
+    await waitFor(() => {
+      expect(openLibraryEntry).toHaveBeenCalledTimes(2);
+    });
+    expect(openLibraryEntry).toHaveBeenLastCalledWith({
+      lifecycle: "managed",
+      intent: "rebuild",
+      name: "test-repository",
+    });
+  });
+
+  it("runs an explicitly clicked managed rebuild through the normal open flow", async () => {
+    const rebuild = Promise.withResolvers<{ readonly kind: "opened" }>();
+    const openLibraryEntry = vi.fn(async () => await rebuild.promise);
+    const startWatching = vi.fn(async () => undefined);
+    const getRepositoryLibrary = vi.fn(async () => ({
+      ...desktopTestRepositoryLibrary,
+      managed: [
+        {
+          current: false,
+          lifecycle: "managed" as const,
+          name: "test-repository",
+          requiredAction: "rebuildReadModel",
+          status: "rebuildRequired",
+          watching: false,
+        },
+      ],
+    }));
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary,
+      openLibraryEntry,
+      startWatching,
+      stopWatching: async () => undefined,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        requestUrl(input).includes("/api/v1/watcher")
+          ? Response.json(localHistoryWatcher)
+          : Response.json({ status: "empty" }),
+      ),
+    );
+
+    globalThis.location.hash = "#/repositories";
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Rebuild" }));
+
+    expect(
+      screen.getByRole("button", { name: "Rebuild queued…" }),
+    ).toBeDefined();
+    await screen.findByRole("button", { name: "Rebuilding…" });
+    expect(openLibraryEntry).toHaveBeenCalledWith({
+      lifecycle: "managed",
+      intent: "rebuild",
+      name: "test-repository",
+    });
+
+    rebuild.resolve({ kind: "opened" });
+    await screen.findByTestId("progress-view");
+    expect(startWatching).not.toHaveBeenCalled();
+  });
+
+  it("refreshes a failed managed rebuild and leaves an explicit retry", async () => {
+    const openLibraryEntry = vi.fn(async () => {
+      throw new Error("The Semantic Read Model could not be rebuilt.");
+    });
+    const getRepositoryLibrary = vi.fn(async () => ({
+      ...desktopTestRepositoryLibrary,
+      managed: [
+        {
+          current: false,
+          lifecycle: "managed" as const,
+          name: "test-repository",
+          requiredAction: "rebuildReadModel",
+          status: "rebuildRequired",
+          watching: false,
+        },
+      ],
+    }));
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary,
+      openLibraryEntry,
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+
+    globalThis.location.hash = "#/repositories";
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Rebuild" }));
+
+    expect(
+      await screen.findByText(
+        "The Semantic Read Model could not be rebuilt. Click Rebuild to try again.",
+      ),
+    ).toBeDefined();
+    expect(getRepositoryLibrary).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Rebuild" }));
+    await waitFor(() => {
+      expect(openLibraryEntry).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("reports the verified archive before starting managed migration", async () => {
@@ -608,13 +840,13 @@ describe("Solid Web app routing", () => {
       sourceState: "migrated" as const,
       status: "migrated" as const,
     }));
-    const runtimeCapabilities = createDesktopRuntimeCapabilities({
-      getRepoSessionConnection: () => ({
-        endpoint: "http://127.0.0.1:4312",
-        token: "session-token",
-      }),
-      openExternalRepository: async () => ({ kind: "opened" }),
-      getRepositoryLibrary: async () => ({
+    let libraryRefreshCount = 0;
+    const getRepositoryLibrary = vi.fn(async () => {
+      libraryRefreshCount++;
+      if (libraryRefreshCount > 1) {
+        throw new Error("The repository list could not be refreshed.");
+      }
+      return {
         ...desktopTestRepositoryLibrary,
         archived: [
           {
@@ -636,7 +868,15 @@ describe("Solid Web app routing", () => {
             watching: false,
           },
         ],
+      };
+    });
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
       }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary,
       prepareRepositoryMigration,
       commitRepositoryMigration,
       openLibraryEntry,
@@ -681,6 +921,11 @@ describe("Solid Web app routing", () => {
     expect(prepareRepositoryMigration).toHaveBeenCalledTimes(1);
     expect(
       await screen.findByText("Migration completed with a cleanup warning."),
+    ).toBeDefined();
+    expect(
+      await screen.findByText(
+        "Migration completed, but the repository list could not be refreshed.",
+      ),
     ).toBeDefined();
   });
 

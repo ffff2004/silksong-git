@@ -417,6 +417,7 @@ const producedEventSchema = z.union([
         "inPlaceRestore",
         "repositoryMigration",
         "managedInitialization",
+        "repositoryRebuild",
       ]),
       status: z.enum(["started", "finished"]),
     })

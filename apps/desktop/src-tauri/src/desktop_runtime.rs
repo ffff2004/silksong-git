@@ -83,6 +83,13 @@ pub enum RepositoryLifecycle {
     External,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RepositoryOpenIntent {
+    Open,
+    Rebuild,
+}
+
 impl RepositoryLifecycle {
     fn sidecar_access(self) -> &'static str {
         match self {
@@ -117,6 +124,14 @@ pub struct RepositoryLibraryEntry {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenLibraryEntryInput {
+    pub lifecycle: RepositoryLifecycle,
+    pub name: String,
+    pub intent: RepositoryOpenIntent,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryMigrationInput {
     pub lifecycle: RepositoryLifecycle,
     pub name: String,
 }
@@ -319,6 +334,7 @@ impl DesktopWorkflow {
             selected_path,
             SidecarLaunch::for_app(app)?,
             lifecycle,
+            RepositoryOpenIntent::Open,
         )
     }
 
@@ -640,6 +656,7 @@ impl DesktopWorkflow {
             selected_path,
             launch,
             RepositoryLifecycle::External,
+            RepositoryOpenIntent::Open,
         )
     }
 
@@ -648,6 +665,7 @@ impl DesktopWorkflow {
         selected_path: PathBuf,
         launch: SidecarLaunch,
         lifecycle: RepositoryLifecycle,
+        intent: RepositoryOpenIntent,
     ) -> Result<OpenExternalRepositoryResult, DesktopRuntimeError> {
         {
             let state = self
@@ -682,7 +700,9 @@ impl DesktopWorkflow {
         let can_open = (status == "ready" && required_action == "open")
             || (lifecycle == RepositoryLifecycle::Archived
                 && is_read_only_archive_status(&status, &required_action));
-        if !can_open {
+        let can_rebuild = intent == RepositoryOpenIntent::Rebuild
+            && is_managed_rebuild_candidate(lifecycle, &status, &required_action);
+        if !can_open && !can_rebuild {
             candidate.shutdown_without_session();
             return Ok(OpenExternalRepositoryResult::RequiresAction {
                 action: parse_required_action(&required_action)?,
@@ -709,6 +729,52 @@ impl DesktopWorkflow {
         if let Err(result) = admission {
             candidate.shutdown_without_session();
             return Ok(result);
+        }
+
+        if can_rebuild {
+            let rebuilt = candidate.command(json!({
+                "type": "repository.rebuild",
+                "repoPath": repo_path,
+            }));
+            let rebuilt = match rebuilt {
+                Ok(response) => response,
+                Err(error) => {
+                    candidate.shutdown_without_session();
+                    self.finish_transition_preserving_session();
+                    return Err(error.into());
+                }
+            };
+            if let Err(error) = parse_repository_rebuild(&rebuilt) {
+                candidate.shutdown_without_session();
+                self.finish_transition_preserving_session();
+                return Err(error);
+            }
+
+            let reinspection =
+                match candidate.command(strict_repository_inspection_command(&repo_path)) {
+                    Ok(response) => response,
+                    Err(error) => {
+                        candidate.shutdown_without_session();
+                        self.finish_transition_preserving_session();
+                        return Err(error.into());
+                    }
+                };
+            let (status, required_action) = match parse_repository_inspection(&reinspection) {
+                Ok(inspection) => inspection,
+                Err(error) => {
+                    candidate.shutdown_without_session();
+                    self.finish_transition_preserving_session();
+                    return Err(error);
+                }
+            };
+            if status != "ready" || required_action != "open" {
+                candidate.shutdown_without_session();
+                self.finish_transition_preserving_session();
+                return Ok(OpenExternalRepositoryResult::RequiresAction {
+                    action: parse_required_action(&required_action)?,
+                    status: parse_repository_status(&status)?,
+                });
+            }
         }
 
         // Open the candidate session while the current session remains owned by Desktop. This
@@ -895,13 +961,14 @@ impl DesktopWorkflow {
             path,
             SidecarLaunch::for_app(app)?,
             input.lifecycle,
+            input.intent,
         )
     }
 
     fn prepare_repository_migration<R: Runtime>(
         &self,
         app: &AppHandle<R>,
-        input: OpenLibraryEntryInput,
+        input: RepositoryMigrationInput,
     ) -> Result<RepositoryMigrationPreparationResult, DesktopRuntimeError> {
         if input.lifecycle != RepositoryLifecycle::Managed {
             return Err(DesktopRuntimeError::InvalidDirectory);
@@ -1087,6 +1154,7 @@ impl DesktopWorkflow {
             PathBuf::from(path),
             SidecarLaunch::for_app(app)?,
             lifecycle,
+            RepositoryOpenIntent::Open,
         )
     }
 
@@ -1106,7 +1174,12 @@ impl DesktopWorkflow {
                 .map(|invalidated| (invalidated.repo_path.clone(), invalidated.lifecycle))
         }
         .ok_or(DesktopRuntimeError::NoOpenSession)?;
-        self.open_repository_path_with_lifecycle(PathBuf::from(path), launch, lifecycle)
+        self.open_repository_path_with_lifecycle(
+            PathBuf::from(path),
+            launch,
+            lifecycle,
+            RepositoryOpenIntent::Open,
+        )
     }
 
     fn take_session_for_operation(&self) -> Result<Option<ManagedSession>, DesktopRuntimeError> {
@@ -1385,7 +1458,7 @@ pub fn desktop_open_library_entry(
 pub fn desktop_prepare_repository_migration(
     app: AppHandle,
     workflow: State<'_, DesktopWorkflow>,
-    input: OpenLibraryEntryInput,
+    input: RepositoryMigrationInput,
 ) -> Result<RepositoryMigrationPreparationResult, String> {
     let result = workflow
         .prepare_repository_migration(&app, input)
@@ -1689,6 +1762,8 @@ fn scan_repository_library<R: Runtime>(
             let can_migrate_managed = lifecycle == RepositoryLifecycle::Managed
                 && (status == "legacyConfig" || status == "migrationRequired")
                 && required_action == "confirmMigration";
+            let can_rebuild_managed =
+                is_managed_rebuild_candidate(lifecycle, &status, &required_action);
             let can_browse_archived = lifecycle == RepositoryLifecycle::Archived
                 && is_read_only_archive_status(&status, &required_action);
             let record = RepositoryLibraryEntry {
@@ -1699,7 +1774,11 @@ fn scan_repository_library<R: Runtime>(
                 current: is_current,
                 watching: is_current && current.as_ref().is_some_and(|(_, _, watching)| *watching),
             };
-            if status == "ready" || can_migrate_managed || can_browse_archived {
+            if status == "ready"
+                || can_migrate_managed
+                || can_rebuild_managed
+                || can_browse_archived
+            {
                 match lifecycle {
                     RepositoryLifecycle::Managed => library.managed.push(record),
                     RepositoryLifecycle::Archived => library.archived.push(record),
@@ -1920,6 +1999,15 @@ fn parse_repository_inspection(response: &Value) -> Result<(String, String), Des
     Ok((details.status, details.required_action))
 }
 
+fn parse_repository_rebuild(response: &Value) -> Result<(), DesktopRuntimeError> {
+    if response.pointer("/result/type").and_then(Value::as_str) != Some("repository.rebuilt") {
+        return Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid repository rebuild result.".into(),
+        ));
+    }
+    Ok(())
+}
+
 enum ManagedInitializationOutcome {
     Initialized,
     Failed { phase: String, reason: String },
@@ -2069,6 +2157,16 @@ fn find_duplicate_managed_repository(
 
 fn is_read_only_archive_status(status: &str, required_action: &str) -> bool {
     required_action == "confirmMigration" && matches!(status, "legacyConfig" | "migrationRequired")
+}
+
+fn is_managed_rebuild_candidate(
+    lifecycle: RepositoryLifecycle,
+    status: &str,
+    required_action: &str,
+) -> bool {
+    lifecycle == RepositoryLifecycle::Managed
+        && status == "rebuildRequired"
+        && required_action == "rebuildReadModel"
 }
 
 fn parse_repository_migration_preparation(
@@ -2646,12 +2744,13 @@ mod tests {
     use super::{
         DEVELOPMENT_SIDECAR_ENTRY, DesktopRuntime, DesktopRuntimeError,
         ManagedInitializationResult, OpenExternalRepositoryResult, PendingRepositoryMigration,
-        PickStaticEncodedSaveResult, RepositoryLifecycle, SaveLocationPlatform, SaveLocationSystem,
-        SidecarLaunch, SidecarSupervisor, StaticSaveFileSystem, StaticSaveInspection,
-        StaticSaveInspector, StaticSavePicker, advisory_repository_inspection_command,
-        canonicalize_repository_path, inspect_static_encoded_save_with_adapters,
-        managed_repository_name, menu_static_save_result, natural_name_cmp,
-        repository_open_inspection_command, sidecar_launch_for_resource_directory,
+        PickStaticEncodedSaveResult, RepositoryLifecycle, RepositoryOpenIntent,
+        SaveLocationPlatform, SaveLocationSystem, SidecarLaunch, SidecarSupervisor,
+        StaticSaveFileSystem, StaticSaveInspection, StaticSaveInspector, StaticSavePicker,
+        advisory_repository_inspection_command, canonicalize_repository_path,
+        inspect_static_encoded_save_with_adapters, managed_repository_name,
+        menu_static_save_result, natural_name_cmp, repository_open_inspection_command,
+        sidecar_launch_for_resource_directory,
     };
 
     static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
@@ -2962,6 +3061,30 @@ mod tests {
     }
 
     #[test]
+    fn only_managed_rebuild_required_entries_are_landing_candidates() {
+        assert!(super::is_managed_rebuild_candidate(
+            RepositoryLifecycle::Managed,
+            "rebuildRequired",
+            "rebuildReadModel",
+        ));
+        assert!(!super::is_managed_rebuild_candidate(
+            RepositoryLifecycle::Archived,
+            "rebuildRequired",
+            "rebuildReadModel",
+        ));
+        assert!(!super::is_managed_rebuild_candidate(
+            RepositoryLifecycle::External,
+            "rebuildRequired",
+            "rebuildReadModel",
+        ));
+        assert!(!super::is_managed_rebuild_candidate(
+            RepositoryLifecycle::Managed,
+            "ready",
+            "open",
+        ));
+    }
+
+    #[test]
     fn repository_menu_tracks_reader_and_watcher_state() {
         let temp = TestDirectory::new();
         let repository = temp.path().join("repository");
@@ -3058,6 +3181,428 @@ mod tests {
             Ok(OpenExternalRepositoryResult::RequiresAction { .. })
         ));
         assert!(runtime.connection().is_err());
+    }
+
+    #[test]
+    fn managed_rebuild_reinspects_and_opens_without_starting_watching() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("managed-repository");
+        fs::create_dir(&repository).expect("create repository");
+        let script = temp.path().join("rebuild-sidecar.mjs");
+        fs::write(
+            &script,
+            rebuild_fixture_sidecar_source(
+                repository.to_str().expect("UTF-8 repository path"),
+                "success",
+                "success",
+                None,
+            ),
+        )
+        .expect("write rebuild fixture");
+
+        let runtime = DesktopRuntime::default();
+        let result = runtime.open_repository_path_with_lifecycle(
+            repository,
+            SidecarLaunch::Development {
+                entry: script,
+                node: PathBuf::from("node"),
+            },
+            RepositoryLifecycle::Managed,
+            RepositoryOpenIntent::Rebuild,
+        );
+
+        assert!(matches!(result, Ok(OpenExternalRepositoryResult::Opened)));
+        assert!(
+            !runtime
+                .close_requires_confirmation()
+                .expect("rebuild leaves watching inactive")
+        );
+        runtime.shutdown().expect("shutdown rebuilt session");
+    }
+
+    #[test]
+    fn normal_open_returns_rebuild_required_without_rebuilding() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("managed-repository");
+        fs::create_dir(&repository).expect("create repository");
+        let script = temp.path().join("normal-open-sidecar.mjs");
+        fs::write(
+            &script,
+            rebuild_fixture_sidecar_source(
+                repository.to_str().expect("UTF-8 repository path"),
+                "unexpected",
+                "success",
+                None,
+            ),
+        )
+        .expect("write normal-open fixture");
+
+        let runtime = DesktopRuntime::default();
+        let result = runtime.open_repository_path_with_lifecycle(
+            repository,
+            SidecarLaunch::Development {
+                entry: script,
+                node: PathBuf::from("node"),
+            },
+            RepositoryLifecycle::Managed,
+            RepositoryOpenIntent::Open,
+        );
+
+        assert!(matches!(
+            result,
+            Ok(OpenExternalRepositoryResult::RequiresAction {
+                action: super::RepositoryRequiredAction::RebuildReadModel,
+                status: super::RepositoryStatus::RebuildRequired,
+            })
+        ));
+        assert!(matches!(
+            runtime.connection(),
+            Err(DesktopRuntimeError::NoOpenSession)
+        ));
+    }
+
+    #[test]
+    fn failed_managed_rebuild_preserves_the_current_session_and_can_be_retried() {
+        let temp = TestDirectory::new();
+        let first_repository = temp.path().join("first-repository");
+        let candidate_repository = temp.path().join("candidate-repository");
+        fs::create_dir(&first_repository).expect("create first repository");
+        fs::create_dir(&candidate_repository).expect("create candidate repository");
+        let first_script = temp.path().join("first-sidecar.mjs");
+        let failing_script = temp.path().join("failing-rebuild-sidecar.mjs");
+        let retry_script = temp.path().join("retry-rebuild-sidecar.mjs");
+        fs::write(
+            &first_script,
+            fixture_sidecar_source(first_repository.to_str().expect("UTF-8 path"), "ready"),
+        )
+        .expect("write first fixture");
+        fs::write(
+            &failing_script,
+            rebuild_fixture_sidecar_source(
+                candidate_repository.to_str().expect("UTF-8 path"),
+                "failed",
+                "success",
+                None,
+            ),
+        )
+        .expect("write failing rebuild fixture");
+        fs::write(
+            &retry_script,
+            rebuild_fixture_sidecar_source(
+                candidate_repository.to_str().expect("UTF-8 path"),
+                "success",
+                "success",
+                None,
+            ),
+        )
+        .expect("write retry rebuild fixture");
+
+        let runtime = DesktopRuntime::default();
+        runtime
+            .open_repository_path_with_launch(
+                first_repository,
+                SidecarLaunch::Development {
+                    entry: first_script,
+                    node: PathBuf::from("node"),
+                },
+            )
+            .expect("open current repository");
+
+        let failed = runtime.open_repository_path_with_lifecycle(
+            candidate_repository.clone(),
+            SidecarLaunch::Development {
+                entry: failing_script,
+                node: PathBuf::from("node"),
+            },
+            RepositoryLifecycle::Managed,
+            RepositoryOpenIntent::Rebuild,
+        );
+        assert!(matches!(
+            failed,
+            Err(DesktopRuntimeError::SidecarRejected { code, .. })
+                if code == "repository_rebuild_failed"
+        ));
+        assert_eq!(
+            runtime
+                .connection()
+                .expect("failed rebuild preserves current session")
+                .endpoint,
+            "http://127.0.0.1:4312"
+        );
+
+        let retried = runtime.open_repository_path_with_lifecycle(
+            candidate_repository,
+            SidecarLaunch::Development {
+                entry: retry_script,
+                node: PathBuf::from("node"),
+            },
+            RepositoryLifecycle::Managed,
+            RepositoryOpenIntent::Rebuild,
+        );
+        assert!(matches!(retried, Ok(OpenExternalRepositoryResult::Opened)));
+        runtime.shutdown().expect("shutdown retried session");
+    }
+
+    #[test]
+    fn successful_rebuild_followed_by_session_failure_does_not_retry_rebuild() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("managed-repository");
+        let rebuild_marker = temp.path().join("rebuild-marker");
+        fs::create_dir(&repository).expect("create repository");
+        let failing_script = temp.path().join("rebuild-session-failure.mjs");
+        let retry_script = temp.path().join("rebuild-session-retry.mjs");
+        fs::write(
+            &failing_script,
+            rebuild_fixture_sidecar_source(
+                repository.to_str().expect("UTF-8 path"),
+                "success",
+                "failed",
+                Some(rebuild_marker.as_path()),
+            ),
+        )
+        .expect("write session failure fixture");
+        fs::write(
+            &retry_script,
+            rebuild_fixture_sidecar_source(
+                repository.to_str().expect("UTF-8 path"),
+                "success",
+                "success",
+                Some(rebuild_marker.as_path()),
+            ),
+        )
+        .expect("write retry fixture");
+
+        let runtime = DesktopRuntime::default();
+        let failed = runtime.open_repository_path_with_lifecycle(
+            repository.clone(),
+            SidecarLaunch::Development {
+                entry: failing_script,
+                node: PathBuf::from("node"),
+            },
+            RepositoryLifecycle::Managed,
+            RepositoryOpenIntent::Rebuild,
+        );
+        assert!(matches!(
+            failed,
+            Err(DesktopRuntimeError::SidecarRejected { code, .. })
+                if code == "session_open_failed"
+        ));
+        assert_eq!(
+            fs::read_to_string(&rebuild_marker).expect("rebuild marker"),
+            "rebuilt\n"
+        );
+
+        let retried = runtime.open_repository_path_with_lifecycle(
+            repository,
+            SidecarLaunch::Development {
+                entry: retry_script,
+                node: PathBuf::from("node"),
+            },
+            RepositoryLifecycle::Managed,
+            RepositoryOpenIntent::Rebuild,
+        );
+        assert!(matches!(retried, Ok(OpenExternalRepositoryResult::Opened)));
+        assert_eq!(
+            fs::read_to_string(&rebuild_marker).expect("rebuild marker after retry"),
+            "rebuilt\n"
+        );
+        runtime.shutdown().expect("shutdown retried session");
+    }
+
+    #[test]
+    fn archived_rebuild_required_repository_is_refused_before_rebuild() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("archive");
+        fs::create_dir(&repository).expect("create archive");
+        let script = temp.path().join("archive-rebuild-sidecar.mjs");
+        fs::write(
+            &script,
+            rebuild_fixture_sidecar_source(
+                repository.to_str().expect("UTF-8 repository path"),
+                "unexpected",
+                "success",
+                None,
+            ),
+        )
+        .expect("write archive fixture");
+
+        let runtime = DesktopRuntime::default();
+        let result = runtime.open_repository_path_with_lifecycle(
+            repository,
+            SidecarLaunch::Development {
+                entry: script,
+                node: PathBuf::from("node"),
+            },
+            RepositoryLifecycle::Archived,
+            RepositoryOpenIntent::Rebuild,
+        );
+
+        assert!(matches!(
+            result,
+            Ok(OpenExternalRepositoryResult::RequiresAction {
+                action: super::RepositoryRequiredAction::RebuildReadModel,
+                status: super::RepositoryStatus::RebuildRequired,
+            })
+        ));
+        assert!(matches!(
+            runtime.connection(),
+            Err(DesktopRuntimeError::NoOpenSession)
+        ));
+    }
+
+    #[test]
+    fn external_rebuild_required_repository_is_refused_before_rebuild() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("external-repository");
+        fs::create_dir(&repository).expect("create external repository");
+        let script = temp.path().join("external-rebuild-sidecar.mjs");
+        fs::write(
+            &script,
+            rebuild_fixture_sidecar_source(
+                repository.to_str().expect("UTF-8 repository path"),
+                "unexpected",
+                "success",
+                None,
+            ),
+        )
+        .expect("write external fixture");
+
+        let runtime = DesktopRuntime::default();
+        let result = runtime.open_repository_path_with_launch(
+            repository,
+            SidecarLaunch::Development {
+                entry: script,
+                node: PathBuf::from("node"),
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Ok(OpenExternalRepositoryResult::RequiresAction {
+                action: super::RepositoryRequiredAction::RebuildReadModel,
+                status: super::RepositoryStatus::RebuildRequired,
+            })
+        ));
+        assert!(matches!(
+            runtime.connection(),
+            Err(DesktopRuntimeError::NoOpenSession)
+        ));
+    }
+
+    #[test]
+    fn newer_incompatible_repository_is_refused_without_rebuild() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("newer-repository");
+        fs::create_dir(&repository).expect("create newer repository");
+        let script = temp.path().join("newer-sidecar.mjs");
+        fs::write(
+            &script,
+            fixture_sidecar_source(repository.to_str().expect("UTF-8 repository path"), "newer"),
+        )
+        .expect("write newer fixture");
+
+        let runtime = DesktopRuntime::default();
+        let result = runtime.open_repository_path_with_launch(
+            repository,
+            SidecarLaunch::Development {
+                entry: script,
+                node: PathBuf::from("node"),
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Ok(OpenExternalRepositoryResult::RequiresAction {
+                action: super::RepositoryRequiredAction::UseNewerApp,
+                status: super::RepositoryStatus::NewerIncompatible,
+            })
+        ));
+        assert!(matches!(
+            runtime.connection(),
+            Err(DesktopRuntimeError::NoOpenSession)
+        ));
+    }
+
+    #[test]
+    fn rebuild_blocks_repository_switch_and_normal_exit_until_it_finishes() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("managed-repository");
+        let replacement = temp.path().join("replacement-repository");
+        let marker = temp.path().join("rebuild-lifecycle-marker");
+        fs::create_dir(&repository).expect("create repository");
+        fs::create_dir(&replacement).expect("create replacement");
+        let rebuild_script = temp.path().join("blocked-rebuild-sidecar.mjs");
+        let replacement_script = temp.path().join("replacement-sidecar.mjs");
+        fs::write(
+            &rebuild_script,
+            rebuild_fixture_sidecar_source(
+                repository.to_str().expect("UTF-8 repository path"),
+                "blocked",
+                "success",
+                Some(marker.as_path()),
+            ),
+        )
+        .expect("write blocked rebuild fixture");
+        fs::write(
+            &replacement_script,
+            fixture_sidecar_source(
+                replacement.to_str().expect("UTF-8 replacement path"),
+                "ready",
+            ),
+        )
+        .expect("write replacement fixture");
+
+        let workflow = DesktopRuntime::default();
+        thread::scope(|scope| {
+            let rebuild = scope.spawn(|| {
+                workflow.open_repository_path_with_lifecycle(
+                    repository,
+                    SidecarLaunch::Development {
+                        entry: rebuild_script,
+                        node: PathBuf::from("node"),
+                    },
+                    RepositoryLifecycle::Managed,
+                    RepositoryOpenIntent::Rebuild,
+                )
+            });
+
+            for _ in 0..50 {
+                if fs::read_to_string(&marker).is_ok_and(|contents| contents == "entered") {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(
+                fs::read_to_string(&marker).expect("rebuild entered marker"),
+                "entered"
+            );
+
+            let replacement_result = workflow.open_repository_path_with_launch(
+                replacement,
+                SidecarLaunch::Development {
+                    entry: replacement_script,
+                    node: PathBuf::from("node"),
+                },
+            );
+            assert!(matches!(
+                replacement_result,
+                Ok(OpenExternalRepositoryResult::Busy)
+            ));
+            assert!(matches!(
+                workflow.close_requires_confirmation(),
+                Err(DesktopRuntimeError::Busy)
+            ));
+            let menu = workflow.repository_menu_state();
+            assert!(!menu.close_enabled);
+            assert!(!menu.open_external_enabled);
+
+            fs::write(&marker, "release").expect("release blocked rebuild");
+            assert!(matches!(
+                rebuild.join().expect("join rebuild"),
+                Ok(OpenExternalRepositoryResult::Opened)
+            ));
+        });
+        workflow.shutdown().expect("shutdown rebuilt session");
     }
 
     #[test]
@@ -3304,6 +3849,7 @@ mod tests {
                     node: PathBuf::from("node"),
                 },
                 RepositoryLifecycle::Archived,
+                RepositoryOpenIntent::Open,
             )
             .expect("open archived reader session");
         let mut observed_unexpected_exit = false;
@@ -4054,10 +4600,127 @@ process.stdin.on("data", (chunk) => {{
         )
     }
 
+    fn rebuild_fixture_sidecar_source(
+        repository: &str,
+        rebuild: &str,
+        session: &str,
+        marker: Option<&Path>,
+    ) -> String {
+        let repository = serde_json::to_string(repository).expect("serialize repository path");
+        let marker = serde_json::to_string(
+            &marker.map(|path| path.to_str().expect("fixture paths are UTF-8")),
+        )
+        .expect("serialize rebuild marker path");
+        format!(
+            r#"
+import fs from "node:fs";
+const repository = {repository};
+const rebuild = {rebuild:?};
+const session = {session:?};
+const marker = {marker};
+let repositoryStatus = marker !== null && fs.existsSync(marker) ? "ready" : "rebuildRequired";
+
+function write(message) {{
+  process.stdout.write(JSON.stringify(message) + "\n");
+}}
+function response(requestId, result) {{
+  write({{ protocolVersion: 6, kind: "response", requestId, ok: true, result }});
+}}
+function failure(requestId, code, message) {{
+  write({{ protocolVersion: 6, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+}}
+function mutation(status) {{
+  write({{ protocolVersion: 6, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
+}}
+function inspection() {{
+  const ready = repositoryStatus === "ready";
+  return {{
+    status: ready ? "ready" : "rebuildRequired",
+    requiredAction: ready ? "open" : "rebuildReadModel",
+    capabilities: ready ? ["read"] : ["read", "rebuildReadModel"],
+  }};
+}}
+
+write({{ protocolVersion: 6, kind: "event", event: {{ type: "process.ready" }} }});
+let buffer = "";
+process.stdin.on("data", (chunk) => {{
+  buffer += chunk;
+  for (;;) {{
+    const newline = buffer.indexOf("\n");
+    if (newline < 0) return;
+    const request = JSON.parse(buffer.slice(0, newline));
+    buffer = buffer.slice(newline + 1);
+    const type = request.command.type;
+
+    if (type === "repository.inspect") {{
+      if (request.command.repoPath !== repository) throw new Error("wrong repository path");
+      response(request.requestId, {{ type: "repository.inspected", inspection: inspection() }});
+      continue;
+    }}
+    if (type === "repository.rebuild") {{
+      if (rebuild === "unexpected") throw new Error("rebuild should not have been requested");
+      if (rebuild === "blocked") {{
+        if (marker === null) throw new Error("blocked rebuild needs a marker");
+        fs.writeFileSync(marker, "entered");
+        while (fs.readFileSync(marker, "utf8") !== "release") {{}}
+        repositoryStatus = "ready";
+        response(request.requestId, {{
+          type: "repository.rebuilt",
+          rebuild: {{ observationCount: 0, recognizedObservationCount: 0, unrecognizedObservationCount: 0, snapshotCount: 0, eventCount: 0 }},
+          repository: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }},
+        }});
+      }} else if (rebuild === "success") {{
+        repositoryStatus = "ready";
+        if (marker !== null) fs.appendFileSync(marker, "rebuilt\n");
+        response(request.requestId, {{
+          type: "repository.rebuilt",
+          rebuild: {{ observationCount: 0, recognizedObservationCount: 0, unrecognizedObservationCount: 0, snapshotCount: 0, eventCount: 0 }},
+          repository: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }},
+        }});
+      }} else {{
+        failure(request.requestId, "repository_rebuild_failed", "fixture rebuild failed");
+      }}
+      mutation("started");
+      mutation("finished");
+      continue;
+    }}
+    if (type === "session.open") {{
+      if (session === "failed") {{
+        failure(request.requestId, "session_open_failed", "fixture session open failed");
+      }} else {{
+        response(request.requestId, {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }});
+      }}
+      continue;
+    }}
+    if (type === "watcher.start") {{
+      response(request.requestId, {{ type: "watcher.started" }});
+      continue;
+    }}
+    if (type === "watcher.stop") {{
+      response(request.requestId, {{ type: "watcher.stopped" }});
+      continue;
+    }}
+    if (type === "process.shutdown") {{
+      response(request.requestId, {{ type: "process.shutdownComplete" }});
+      process.exit(0);
+    }}
+    failure(request.requestId, "unknown_command", "fixture command was unexpected");
+  }}
+}});
+"#,
+            repository = repository,
+            rebuild = rebuild,
+            session = session,
+            marker = marker,
+        )
+    }
+
     fn fixture_sidecar_source(repository: &str, status: &str) -> String {
         let repository = serde_json::to_string(repository).expect("serialize repository path");
         let inspection = if status == "ready" || status == "mutation" {
             r#"{ status: "ready", requiredAction: "open", capabilities: ["read"] }"#
+        } else if status == "newer" {
+            r#"{ status: "newerIncompatible", requiredAction: "useNewerApp", capabilities: [] }"#
         } else {
             r#"{ status: "invalid", requiredAction: "chooseAnotherDirectory", capabilities: [] }"#
         };

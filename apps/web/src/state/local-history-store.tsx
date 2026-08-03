@@ -17,6 +17,7 @@ import type {
   RepositoryLifecycle,
   RepositoryMigrationCommitResult,
   RepositoryMigrationPreparationResult,
+  RepositoryOpenIntent,
   RuntimeCapabilities,
 } from "../runtime-capabilities/interface.ts";
 
@@ -66,6 +67,7 @@ interface LocalHistoryStore {
   readonly openLibraryEntry: (input: {
     readonly lifecycle: Exclude<RepositoryLifecycle, "external">;
     readonly name: string;
+    readonly intent: RepositoryOpenIntent;
   }) => Promise<OpenExternalRepositoryResult>;
   readonly prepareRepositoryMigration: (input: {
     readonly lifecycle: "managed";

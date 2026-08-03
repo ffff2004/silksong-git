@@ -160,7 +160,8 @@ The current event types are:
 - `session.failed`, without a raw error.
 
 `mutation.activity` projects only the mutation class (`manualCheckpoint`,
-`inPlaceRestore`, `repositoryMigration`, or `managedInitialization`) and
+`inPlaceRestore`, `repositoryMigration`, `managedInitialization`, or
+`repositoryRebuild`) and
 `started` or `finished`. It
 contains no request body, save path, commit reference, or result. Desktop uses
 it solely to reject a normal replacement or exit while the admitted mutation

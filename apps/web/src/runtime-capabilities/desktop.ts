@@ -7,6 +7,7 @@ import type {
   RepositoryLifecycle,
   RepositoryMigrationCommitResult,
   RepositoryMigrationPreparationResult,
+  RepositoryOpenIntent,
   RuntimeCapabilities,
 } from "./interface.ts";
 
@@ -30,6 +31,7 @@ export function createDesktopRuntimeCapabilities(input: {
   readonly openLibraryEntry?: (input: {
     readonly lifecycle: Exclude<RepositoryLifecycle, "external">;
     readonly name: string;
+    readonly intent: RepositoryOpenIntent;
   }) => Promise<OpenExternalRepositoryResult>;
   readonly reopenRepository?: () => Promise<OpenExternalRepositoryResult>;
   readonly startWatching: () => Promise<void>;
