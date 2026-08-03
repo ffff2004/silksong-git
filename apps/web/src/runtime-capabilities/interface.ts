@@ -114,6 +114,19 @@ export type PickStaticEncodedSaveResult =
   /** Safe native picker or sidecar failure reported by the File menu event. */
   | { readonly kind: "failed"; readonly message: string };
 
+export type ManagedInitializationResult =
+  | { readonly kind: "cancelled" }
+  | { readonly kind: "initialized" }
+  | { readonly kind: "existingRepository"; readonly name: string }
+  | {
+      readonly kind: "failed";
+      readonly message: string;
+      readonly phase: string;
+      readonly residualPath?: string;
+    }
+  | { readonly kind: "blockedByMutation" }
+  | { readonly kind: "busy" };
+
 export type RuntimeCapabilities =
   | { readonly kind: "browser" }
   | {
@@ -133,6 +146,7 @@ export type RuntimeCapabilities =
         readonly name: string;
       }) => Promise<OpenExternalRepositoryResult>;
       readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
+      readonly initializeManagedRepository?: () => Promise<ManagedInitializationResult>;
       /** Opens the native Encoded Save picker without exposing filesystem authority. */
       readonly pickStaticEncodedSave: () => Promise<PickStaticEncodedSaveResult>;
       /** Receives the outcome of the native File menu's equivalent picker action. */

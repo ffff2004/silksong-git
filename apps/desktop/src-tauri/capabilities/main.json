@@ -11,6 +11,7 @@
     "allow-desktop-commit-repository-migration",
     "allow-desktop-close-repository",
     "allow-desktop-open-external-repository",
+    "allow-desktop-initialize-managed-repository",
     "allow-desktop-pick-static-encoded-save",
     "allow-desktop-reopen-repository",
     "allow-desktop-start-watching",

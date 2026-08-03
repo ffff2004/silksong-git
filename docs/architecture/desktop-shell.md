@@ -107,24 +107,39 @@ authenticated loopback HTTP endpoints instead of becoming process RPC.
 `save.inspect` never opens a Repo Session or touches History, Git, SQLite, or
 watcher state.
 
-Confirmed migration is the explicit exception to the ordinary HTTP boundary.
-An incompatible Managed Repository cannot open Repo Session HTTP, so the
-migration prepare and commit commands call History's public migration
-Interface directly through this private sidecar. They carry only Desktop-owned
-canonical source and opaque archive paths; they do not turn the sidecar into a
-generic History adapter. History still owns migration mechanics, serialization,
-watcher exclusion, snapshot verification, and source writes. Once migration
-completes, the resulting compatible repository is opened through the normal
-authenticated Repo Session HTTP lifecycle.
+Confirmed migration and managed initialization are the explicit exceptions to
+the ordinary HTTP boundary. An incompatible Managed Repository cannot open Repo
+Session HTTP, so migration prepare and commit call History's public migration
+Interface directly through this private sidecar; managed initialization likewise
+uses only its narrow public History workflows before opening a session. They
+carry only Desktop-owned canonical source and opaque paths; they do not turn the
+sidecar into a generic History adapter. History still owns migration mechanics,
+serialization, watcher exclusion, snapshot verification, and source writes.
+Once either operation produces a compatible repository, it is opened through the
+normal authenticated Repo Session HTTP lifecycle.
 
 The Desktop runtime owns `DesktopWorkflow`: landing entry, refresh, opening a
 library entry, and closing the current session. It scans only direct child
 directories beneath each fixed root, uses a short-lived sidecar to call public
-History inspection serially for every candidate, and treats directory names as
-presentation-only natural-sort keys. Invalid and incompatible children remain
-visible in the library's Need attention area. A failed whole refresh retains
+History inspection serially for every candidate, and uses History's narrow
+Watched Save comparison workflow when checking managed initialization
+duplicates. It treats directory names as presentation-only natural-sort keys.
+Invalid and incompatible children remain visible in the library's Need attention
+area. A failed whole refresh retains
 the last successful result marked stale. Library opening revalidates direct
 root containment before the normal inspection/open sequence.
+
+Managed initialization validates and decodes the selected Encoded Save before
+creating a managed child, asks History to compare the candidate Watched Save
+through its narrow identity workflow, then calls History's public
+`initSaveHistory` and `observeSave` workflows through the sidecar. Desktop
+reports success only after the baseline observation commits, opens the new Repo
+Session, and starts watching. A failed initialization cleans up only the
+atomically claimed child or reports its residual path. These are the explicit
+direct-History ownership exceptions for initialization: the sidecar exposes
+only the versioned `repository.compareWatchedSave` and `repository.initialize`
+commands, while the exact request/result/event contract remains in the
+[Desktop Sidecar Process Protocol Reference](../reference/desktop-sidecar-protocol.md).
 
 Managed legacy and lower-format candidates that History reports as requiring
 confirmed migration are landing candidates; archived, external, invalid, and

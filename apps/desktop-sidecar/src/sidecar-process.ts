@@ -13,8 +13,11 @@ import type {
   SaveHistoryRepositoryInspection,
 } from "@silksong-git/history";
 import {
+  compareWatchedSave,
+  initSaveHistory,
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
+  observeSave,
   prepareSaveHistoryMigration,
   rebuildSemanticReadModel,
 } from "@silksong-git/history";
@@ -34,6 +37,8 @@ import {
   desktopSidecarProtocolVersion,
   incomingCommandEnvelopeSchema,
   processShutdownCommandSchema,
+  repositoryCompareWatchedSaveCommandSchema,
+  repositoryInitializeCommandSchema,
   repositoryInspectCommandSchema,
   repositoryMigrateCommandSchema,
   repositoryMigrationCommitCommandSchema,
@@ -178,6 +183,26 @@ export async function runDesktopSidecarProcess(
       case "repository.inspect": {
         return {
           response: await inspectRepository(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
+      case "repository.initialize": {
+        return {
+          response: await initializeRepository(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
+      case "repository.compareWatchedSave": {
+        return {
+          response: await compareRepositoryWatchedSave(
             envelope.requestId,
             envelope.command,
           ),
@@ -395,6 +420,134 @@ export async function runDesktopSidecarProcess(
         requestId,
         "repository_inspect_failed",
         "The Save History Repository could not be inspected.",
+      );
+    }
+  }
+
+  async function initializeRepository(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult = repositoryInitializeCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.initialize command is invalid.",
+      );
+    }
+    if (
+      !path.isAbsolute(commandResult.data.repoPath)
+      || !path.isAbsolute(commandResult.data.watchedSavePath)
+    ) {
+      return createFailureResponse(
+        requestId,
+        "invalid_repo_path",
+        "The initialization paths must be absolute.",
+      );
+    }
+    if (session !== undefined) {
+      return createFailureResponse(
+        requestId,
+        "repository_initialize_failed",
+        "The repository cannot initialize while a Repo Session is open.",
+      );
+    }
+    if (preparedMigration !== undefined) {
+      return createFailureResponse(
+        requestId,
+        "repository_initialize_failed",
+        "The repository cannot initialize while a repository migration is in progress.",
+      );
+    }
+
+    emitEvent({
+      type: "mutation.activity",
+      mutation: "managedInitialization",
+      status: "started",
+    });
+    const initialized = await initSaveHistory({
+      repoPath: commandResult.data.repoPath,
+      watchedSavePath: commandResult.data.watchedSavePath,
+    }).catch(() => undefined);
+    let response: DesktopSidecarResponse;
+    if (initialized === undefined) {
+      response = createSuccessResponse(requestId, {
+        type: "repository.initializationResult",
+        initialization: {
+          status: "failed",
+          phase: "repository",
+          reason: "historyFailed",
+        },
+      });
+    } else {
+      const baseline = await observeSave({
+        repoPath: initialized.repoPath,
+        trigger: "watcher",
+      }).catch(() => undefined);
+      response = createSuccessResponse(
+        requestId,
+        baseline?.status === "committed"
+          ? {
+              type: "repository.initializationResult",
+              initialization: { status: "initialized" },
+            }
+          : {
+              type: "repository.initializationResult",
+              initialization: {
+                status: "failed",
+                phase: "baseline",
+                reason: "observationFailed",
+              },
+            },
+      );
+    }
+    emitEvent({
+      type: "mutation.activity",
+      mutation: "managedInitialization",
+      status: "finished",
+    });
+    return response;
+  }
+
+  async function compareRepositoryWatchedSave(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult =
+      repositoryCompareWatchedSaveCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.compareWatchedSave command is invalid.",
+      );
+    }
+    if (
+      !path.isAbsolute(commandResult.data.repoPath)
+      || !path.isAbsolute(commandResult.data.savePath)
+    ) {
+      return createFailureResponse(
+        requestId,
+        "invalid_repo_path",
+        "The comparison paths must be absolute.",
+      );
+    }
+
+    try {
+      return createSuccessResponse(requestId, {
+        type: "repository.watchedSaveCompared",
+        same: await compareWatchedSave({
+          repoPath: commandResult.data.repoPath,
+          savePath: commandResult.data.savePath,
+        }),
+      });
+    } catch {
+      writeDiagnostic("Watched Save comparison failed.");
+      return createFailureResponse(
+        requestId,
+        "repository_watched_save_compare_failed",
+        "The repository's Watched Save could not be compared.",
       );
     }
   }

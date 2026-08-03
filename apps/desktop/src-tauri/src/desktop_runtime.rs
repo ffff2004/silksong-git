@@ -18,9 +18,13 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::managed_initialization::{
+    ClaimedDirectoryCleanupError, ManagedDirectoryClaim, claim_managed_repository_directory,
+    managed_repository_name, remove_claimed_directory,
+};
 use crate::save_location::{SaveLocationPlatform, SaveLocationSystem, initial_directory};
 
-const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 5;
+const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 6;
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
 const BUNDLED_SIDECAR_NAME: &str = "silksong-git-desktop-sidecar";
 
@@ -233,6 +237,24 @@ pub enum PickStaticEncodedSaveResult {
     },
 }
 
+#[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ManagedInitializationResult {
+    Cancelled,
+    Initialized,
+    ExistingRepository {
+        name: String,
+    },
+    Failed {
+        phase: String,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        residual_path: Option<String>,
+    },
+    BlockedByMutation,
+    Busy,
+}
+
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RepositoryStatus {
@@ -298,6 +320,314 @@ impl DesktopWorkflow {
             SidecarLaunch::for_app(app)?,
             lifecycle,
         )
+    }
+
+    pub(crate) fn initialize_managed_repository<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        selected_path: PathBuf,
+    ) -> Result<ManagedInitializationResult, DesktopRuntimeError> {
+        self.initialize_managed_repository_at(
+            selected_path,
+            managed_root(app, RepositoryLifecycle::Managed)?,
+            SidecarLaunch::for_app(app)?,
+            Local::now().fixed_offset(),
+        )
+    }
+
+    #[cfg(test)]
+    fn initialize_managed_repository_with_launch(
+        &self,
+        selected_path: PathBuf,
+        managed_root: PathBuf,
+        launch: SidecarLaunch,
+        initialized_at: chrono::DateTime<chrono::FixedOffset>,
+    ) -> Result<ManagedInitializationResult, DesktopRuntimeError> {
+        self.initialize_managed_repository_at(selected_path, managed_root, launch, initialized_at)
+    }
+
+    fn initialize_managed_repository_at(
+        &self,
+        selected_path: PathBuf,
+        managed_root: PathBuf,
+        launch: SidecarLaunch,
+        initialized_at: chrono::DateTime<chrono::FixedOffset>,
+    ) -> Result<ManagedInitializationResult, DesktopRuntimeError> {
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            if state.transitioning || state.pending_migration.is_some() {
+                return Ok(ManagedInitializationResult::Busy);
+            }
+            if state.current_session.as_mut().is_some_and(|session| {
+                session.sidecar.poll().is_ok() && session.sidecar.mutation_active()
+            }) {
+                return Ok(ManagedInitializationResult::BlockedByMutation);
+            }
+            state.transitioning = true;
+        }
+
+        let selected_path = match canonicalize_readable_regular_file(&selected_path) {
+            Ok(path) => path,
+            Err(DesktopRuntimeError::InvalidSaveFile) => {
+                self.finish_transition_preserving_session();
+                return Ok(initialization_failure(
+                    "preflight",
+                    "Select an existing readable regular Encoded Save file.",
+                    None,
+                ));
+            }
+            Err(error) => {
+                self.finish_transition_preserving_session();
+                return Err(error);
+            }
+        };
+
+        let mut candidate = match SidecarSupervisor::spawn(launch) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                self.finish_transition_preserving_session();
+                return Err(error);
+            }
+        };
+
+        let save_path = match repository_path_for_protocol(&selected_path) {
+            Ok(path) => path,
+            Err(error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(error);
+            }
+        };
+        let preflight = candidate.command(json!({
+            "type": "save.inspect",
+            "savePath": save_path,
+        }));
+        let preflight = match preflight {
+            Ok(response) => match parse_save_inspection(&response) {
+                Ok(inspection) => inspection,
+                Err(error) => {
+                    self.finish_failed_candidate(candidate);
+                    return Err(error);
+                }
+            },
+            Err(error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(error.into());
+            }
+        };
+        if !matches!(preflight, StaticSaveInspection::Loaded(_)) {
+            self.finish_failed_candidate(candidate);
+            return Ok(initialization_failure(
+                "preflight",
+                "The selected file could not be decoded as an Encoded Save.",
+                None,
+            ));
+        }
+
+        let existing_root = match existing_managed_root(&managed_root) {
+            Ok(root) => root,
+            Err(error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(error);
+            }
+        };
+        if let Some(root) = existing_root.as_ref() {
+            let duplicate =
+                match find_duplicate_managed_repository(root, &selected_path, &mut candidate) {
+                    Ok(duplicate) => duplicate,
+                    Err(error) => {
+                        self.finish_failed_candidate(candidate);
+                        return Err(error);
+                    }
+                };
+            if let Some(name) = duplicate {
+                self.finish_failed_candidate(candidate);
+                return Ok(ManagedInitializationResult::ExistingRepository { name });
+            }
+        }
+
+        let root = match ensure_managed_root(&managed_root) {
+            Ok(root) => root,
+            Err(error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(error);
+            }
+        };
+        let base_name = managed_repository_name(&selected_path, initialized_at);
+        let claimed = match claim_managed_repository_directory(&root, &base_name) {
+            Ok(claimed) => claimed,
+            Err(_error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(DesktopRuntimeError::Unavailable);
+            }
+        };
+        let repo_path = match repository_path_for_protocol(&claimed.path) {
+            Ok(path) => path,
+            Err(error) => {
+                let result = self.finish_claimed_initialization_failure(
+                    candidate,
+                    &root,
+                    &claimed,
+                    "directoryClaim",
+                    &error.user_message(),
+                );
+                return Ok(result);
+            }
+        };
+        let watched_save_path = match repository_path_for_protocol(&selected_path) {
+            Ok(path) => path,
+            Err(error) => {
+                let result = self.finish_claimed_initialization_failure(
+                    candidate,
+                    &root,
+                    &claimed,
+                    "preflight",
+                    &error.user_message(),
+                );
+                return Ok(result);
+            }
+        };
+
+        let initialized = candidate.command(json!({
+            "type": "repository.initialize",
+            "repoPath": repo_path,
+            "watchedSavePath": watched_save_path,
+        }));
+        let initialization = match initialized {
+            Ok(response) => parse_managed_initialization_result(&response),
+            Err(_) => Err(DesktopRuntimeError::Unavailable),
+        };
+        match initialization {
+            Ok(ManagedInitializationOutcome::Initialized) => {}
+            Ok(ManagedInitializationOutcome::Failed { phase, reason }) => {
+                let result = self.finish_claimed_initialization_failure(
+                    candidate, &root, &claimed, &phase, &reason,
+                );
+                return Ok(result);
+            }
+            Err(error) => {
+                let result = self.finish_claimed_initialization_failure(
+                    candidate,
+                    &root,
+                    &claimed,
+                    "repository",
+                    &error.user_message(),
+                );
+                return Ok(result);
+            }
+        }
+
+        let opened = match candidate.command(json!({
+            "type": "session.open",
+            "repoPath": repo_path,
+            "access": "readWrite",
+        })) {
+            Ok(response) => response,
+            Err(_error) => {
+                let result = self.finish_claimed_initialization_failure(
+                    candidate,
+                    &root,
+                    &claimed,
+                    "session",
+                    "The new Repo Session could not be opened.",
+                );
+                return Ok(result);
+            }
+        };
+        let connection = match parse_connection(&opened) {
+            Ok(connection) => connection,
+            Err(error) => {
+                let result = self.finish_claimed_initialization_failure(
+                    candidate,
+                    &root,
+                    &claimed,
+                    "session",
+                    &error.user_message(),
+                );
+                return Ok(result);
+            }
+        };
+        let mut new_session = ManagedSession {
+            connection,
+            repo_path: repo_path.clone(),
+            sidecar: candidate,
+            watching: false,
+            lifecycle: RepositoryLifecycle::Managed,
+        };
+
+        let mut previous = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            if state.current_session.as_mut().is_some_and(|session| {
+                session.sidecar.poll().is_ok() && session.sidecar.mutation_active()
+            }) {
+                let result = initialization_failure_with_candidate(
+                    new_session.sidecar,
+                    &root,
+                    &claimed,
+                    "session",
+                    "The current Desktop session started a mutation during initialization.",
+                );
+                state.transitioning = false;
+                return Ok(result);
+            }
+            state.current_session.take()
+        };
+        let previous_was_watching = previous.as_ref().is_some_and(|session| session.watching);
+
+        if let Some(previous_session) = previous.as_mut()
+            && previous_was_watching
+        {
+            if let Err(_error) = send_watcher_command(previous_session, "watcher.stop") {
+                return Ok(self.finish_claimed_initialization_failure_with_session(
+                    new_session.sidecar,
+                    &root,
+                    &claimed,
+                    "watching",
+                    "The previous watcher could not be stopped safely.",
+                    previous,
+                ));
+            }
+            previous_session.watching = false;
+        }
+
+        if let Err(_error) = send_watcher_command(&mut new_session, "watcher.start") {
+            if let Some(previous_session) = previous.as_mut()
+                && previous_was_watching
+                && send_watcher_command(previous_session, "watcher.start").is_ok()
+            {
+                previous_session.watching = true;
+            }
+            return Ok(self.finish_claimed_initialization_failure_with_session(
+                new_session.sidecar,
+                &root,
+                &claimed,
+                "watching",
+                "The new watcher could not be started.",
+                previous,
+            ));
+        }
+        new_session.watching = true;
+
+        if let Some(mut previous_session) = previous
+            && let Err(_error) = previous_session.sidecar.shutdown()
+        {
+            return Ok(self.finish_claimed_initialization_failure_with_session(
+                new_session.sidecar,
+                &root,
+                &claimed,
+                "session",
+                "The previous Repo Session could not be closed safely.",
+                Some(previous_session),
+            ));
+        }
+
+        self.finish_transition(Some(new_session));
+        Ok(ManagedInitializationResult::Initialized)
     }
 
     #[cfg(test)]
@@ -818,6 +1148,40 @@ impl DesktopWorkflow {
         }
     }
 
+    fn finish_failed_candidate(&self, mut candidate: SidecarSupervisor) {
+        let _ = candidate.shutdown();
+        self.finish_transition_preserving_session();
+    }
+
+    fn finish_claimed_initialization_failure(
+        &self,
+        candidate: SidecarSupervisor,
+        root: &Path,
+        claimed: &ManagedDirectoryClaim,
+        phase: &str,
+        message: &str,
+    ) -> ManagedInitializationResult {
+        let result =
+            initialization_failure_with_candidate(candidate, root, claimed, phase, message);
+        self.finish_transition_preserving_session();
+        result
+    }
+
+    fn finish_claimed_initialization_failure_with_session(
+        &self,
+        candidate: SidecarSupervisor,
+        root: &Path,
+        claimed: &ManagedDirectoryClaim,
+        phase: &str,
+        message: &str,
+        session: Option<ManagedSession>,
+    ) -> ManagedInitializationResult {
+        let result =
+            initialization_failure_with_candidate(candidate, root, claimed, phase, message);
+        self.finish_transition(session);
+        result
+    }
+
     fn finish_mutation(&self) {
         if let Ok(mut state) = self.state.lock() {
             state.transitioning = false;
@@ -844,6 +1208,35 @@ pub async fn desktop_open_external_repository(
 
     let result = runtime
         .open_repository_path(&app, selected_path, RepositoryLifecycle::External)
+        .map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
+}
+
+#[tauri::command]
+pub async fn desktop_initialize_managed_repository(
+    app: AppHandle,
+    workflow: State<'_, DesktopWorkflow>,
+) -> Result<ManagedInitializationResult, String> {
+    let Some(selected) = app
+        .dialog()
+        .file()
+        .set_title("Initialize managed Silksong save history")
+        .add_filter("Silksong save", &["dat"])
+        .set_directory(initial_directory(
+            current_save_location_platform(),
+            &EnvironmentSaveLocationSystem,
+        ))
+        .blocking_pick_file()
+    else {
+        return Ok(ManagedInitializationResult::Cancelled);
+    };
+    let selected_path = selected
+        .into_path()
+        .map_err(|_| "The selected save file could not be opened.".to_string())?;
+
+    let result = workflow
+        .initialize_managed_repository(&app, selected_path)
         .map_err(|error| error.user_message());
     crate::update_repository_menu(&app);
     result
@@ -1133,22 +1526,26 @@ impl<R: Runtime> StaticSaveInspector for SidecarStaticSaveInspector<'_, R> {
         let response = response.map_err(DesktopRuntimeError::from)?;
         shutdown?;
 
-        match response.pointer("/result/type").and_then(Value::as_str) {
-            Some("save.inspected") => response
-                .pointer("/result/decodedSave")
-                .cloned()
-                .map(StaticSaveInspection::Loaded)
-                .ok_or_else(|| {
-                    DesktopRuntimeError::Protocol(
-                        "The Desktop sidecar returned an invalid save inspection.".into(),
-                    )
-                }),
-            Some("save.invalidFile") => Ok(StaticSaveInspection::InvalidFile),
-            Some("save.decodeFailed") => Ok(StaticSaveInspection::DecodeFailed),
-            _ => Err(DesktopRuntimeError::Protocol(
-                "The Desktop sidecar returned an invalid save inspection.".into(),
-            )),
-        }
+        parse_save_inspection(&response)
+    }
+}
+
+fn parse_save_inspection(response: &Value) -> Result<StaticSaveInspection, DesktopRuntimeError> {
+    match response.pointer("/result/type").and_then(Value::as_str) {
+        Some("save.inspected") => response
+            .pointer("/result/decodedSave")
+            .cloned()
+            .map(StaticSaveInspection::Loaded)
+            .ok_or_else(|| {
+                DesktopRuntimeError::Protocol(
+                    "The Desktop sidecar returned an invalid save inspection.".into(),
+                )
+            }),
+        Some("save.invalidFile") => Ok(StaticSaveInspection::InvalidFile),
+        Some("save.decodeFailed") => Ok(StaticSaveInspection::DecodeFailed),
+        _ => Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid save inspection.".into(),
+        )),
     }
 }
 
@@ -1195,8 +1592,29 @@ fn managed_root<R: Runtime>(
             RepositoryLifecycle::Archived => "archives",
             RepositoryLifecycle::External => return Err(DesktopRuntimeError::InvalidDirectory),
         });
-    fs::create_dir_all(&root).map_err(|_| DesktopRuntimeError::Unavailable)?;
-    canonicalize_repository_path(&root)
+    Ok(root)
+}
+
+fn existing_managed_root(root: &Path) -> Result<Option<PathBuf>, DesktopRuntimeError> {
+    match fs::symlink_metadata(root) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            Err(DesktopRuntimeError::InvalidDirectory)
+        }
+        Ok(_) => fs::canonicalize(root)
+            .map(Some)
+            .map_err(|_| DesktopRuntimeError::InvalidDirectory),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(DesktopRuntimeError::Unavailable),
+    }
+}
+
+fn ensure_managed_root(root: &Path) -> Result<PathBuf, DesktopRuntimeError> {
+    if let Some(existing) = existing_managed_root(root)? {
+        return Ok(existing);
+    }
+
+    fs::create_dir_all(root).map_err(|_| DesktopRuntimeError::Unavailable)?;
+    existing_managed_root(root)?.ok_or(DesktopRuntimeError::Unavailable)
 }
 
 fn resolve_library_child<R: Runtime>(
@@ -1207,7 +1625,8 @@ fn resolve_library_child<R: Runtime>(
     if name.is_empty() || name == "." || name == ".." || Path::new(name).components().count() != 1 {
         return Err(DesktopRuntimeError::InvalidDirectory);
     }
-    let root = managed_root(app, lifecycle)?;
+    let root = existing_managed_root(&managed_root(app, lifecycle)?)?
+        .ok_or(DesktopRuntimeError::InvalidDirectory)?;
     let child = root.join(name);
     let metadata =
         fs::symlink_metadata(&child).map_err(|_| DesktopRuntimeError::InvalidDirectory)?;
@@ -1235,7 +1654,9 @@ fn scan_repository_library<R: Runtime>(
         error: None,
     };
     for lifecycle in [RepositoryLifecycle::Managed, RepositoryLifecycle::Archived] {
-        let root = managed_root(app, lifecycle)?;
+        let Some(root) = existing_managed_root(&managed_root(app, lifecycle)?)? else {
+            continue;
+        };
         for entry in fs::read_dir(&root).map_err(|_| DesktopRuntimeError::Unavailable)? {
             let entry = entry.map_err(|_| DesktopRuntimeError::Unavailable)?;
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -1461,7 +1882,6 @@ fn parse_repository_inspection_details(
         .get("inspectionId")
         .and_then(Value::as_str)
         .filter(|inspection_id| !inspection_id.is_empty());
-
     Ok(RepositoryInspectionDetails {
         inspection_id: inspection_id.map(str::to_owned),
         status: status.into(),
@@ -1469,9 +1889,182 @@ fn parse_repository_inspection_details(
     })
 }
 
+fn repository_watched_save_comparison_command(repo_path: &str, save_path: &str) -> Value {
+    json!({
+        "type": "repository.compareWatchedSave",
+        "repoPath": repo_path,
+        "savePath": save_path,
+    })
+}
+
+fn parse_repository_watched_save_comparison(response: &Value) -> Result<bool, DesktopRuntimeError> {
+    if response.pointer("/result/type").and_then(Value::as_str)
+        != Some("repository.watchedSaveCompared")
+    {
+        return Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid Watched Save comparison.".into(),
+        ));
+    }
+    response
+        .pointer("/result/same")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| {
+            DesktopRuntimeError::Protocol(
+                "The Desktop sidecar returned an invalid Watched Save comparison.".into(),
+            )
+        })
+}
+
 fn parse_repository_inspection(response: &Value) -> Result<(String, String), DesktopRuntimeError> {
     let details = parse_repository_inspection_details(response)?;
     Ok((details.status, details.required_action))
+}
+
+enum ManagedInitializationOutcome {
+    Initialized,
+    Failed { phase: String, reason: String },
+}
+
+fn parse_managed_initialization_result(
+    response: &Value,
+) -> Result<ManagedInitializationOutcome, DesktopRuntimeError> {
+    let initialization = response.pointer("/result/initialization").ok_or_else(|| {
+        DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid initialization result.".into(),
+        )
+    })?;
+    match initialization.get("status").and_then(Value::as_str) {
+        Some("initialized") => Ok(ManagedInitializationOutcome::Initialized),
+        Some("failed") => {
+            let phase = initialization
+                .get("phase")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid initialization phase.".into(),
+                    )
+                })?;
+            let reason = initialization
+                .get("reason")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid initialization reason.".into(),
+                    )
+                })?;
+            let message = match (phase, reason) {
+                ("repository", "historyFailed") => {
+                    "History could not establish the Save History Repository."
+                }
+                ("baseline", "observationFailed") => {
+                    "History could not commit the first Raw Save Observation."
+                }
+                _ => {
+                    return Err(DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an unknown initialization failure.".into(),
+                    ));
+                }
+            };
+            Ok(ManagedInitializationOutcome::Failed {
+                phase: phase.into(),
+                reason: message.into(),
+            })
+        }
+        _ => Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an unknown initialization status.".into(),
+        )),
+    }
+}
+
+fn initialization_failure(
+    phase: &str,
+    message: &str,
+    residual_path: Option<String>,
+) -> ManagedInitializationResult {
+    ManagedInitializationResult::Failed {
+        phase: phase.into(),
+        message: message.into(),
+        residual_path,
+    }
+}
+
+fn initialization_failure_with_candidate(
+    mut candidate: SidecarSupervisor,
+    root: &Path,
+    claimed: &ManagedDirectoryClaim,
+    phase: &str,
+    message: &str,
+) -> ManagedInitializationResult {
+    let cleanup = match candidate.shutdown() {
+        Ok(()) => remove_claimed_directory(root, claimed),
+        Err(_) => Err(ClaimedDirectoryCleanupError::with_residual(
+            std::io::Error::other("candidate sidecar shutdown failed"),
+            Some(claimed.path.clone()),
+        )),
+    };
+    let residual_path = cleanup.err().and_then(|error| {
+        error
+            .residual_path
+            .or_else(|| Some(claimed.path.clone()))
+            .map(|path| path.to_string_lossy().into_owned())
+    });
+    let message = if residual_path.is_some() {
+        format!("{message} Cleanup could not remove the candidate directory.")
+    } else {
+        message.into()
+    };
+    initialization_failure(phase, &message, residual_path)
+}
+
+fn send_watcher_command(
+    session: &mut ManagedSession,
+    command_type: &str,
+) -> Result<(), SidecarError> {
+    let response = session.sidecar.command(json!({ "type": command_type }))?;
+    let expected = match command_type {
+        "watcher.start" => "watcher.started",
+        "watcher.stop" => "watcher.stopped",
+        _ => return Err(SidecarError::Protocol),
+    };
+    if response.pointer("/result/type").and_then(Value::as_str) != Some(expected) {
+        return Err(SidecarError::Protocol);
+    }
+    Ok(())
+}
+
+fn find_duplicate_managed_repository(
+    root: &Path,
+    selected_save_path: &Path,
+    inspector: &mut SidecarSupervisor,
+) -> Result<Option<String>, DesktopRuntimeError> {
+    for entry in fs::read_dir(root).map_err(|_| DesktopRuntimeError::Unavailable)? {
+        let entry = entry.map_err(|_| DesktopRuntimeError::Unavailable)?;
+        let file_type = entry
+            .file_type()
+            .map_err(|_| DesktopRuntimeError::Unavailable)?;
+        if !file_type.is_dir() || file_type.is_symlink() {
+            continue;
+        }
+
+        let candidate =
+            fs::canonicalize(entry.path()).map_err(|_| DesktopRuntimeError::InvalidDirectory)?;
+        if candidate.parent() != Some(root) {
+            continue;
+        }
+        let candidate_path = repository_path_for_protocol(&candidate)?;
+        let selected_save_path = repository_path_for_protocol(selected_save_path)?;
+        let response = inspector
+            .command(repository_watched_save_comparison_command(
+                &candidate_path,
+                &selected_save_path,
+            ))
+            .map_err(DesktopRuntimeError::from)?;
+        if parse_repository_watched_save_comparison(&response)? {
+            return Ok(Some(entry.file_name().to_string_lossy().into_owned()));
+        }
+    }
+
+    Ok(None)
 }
 
 fn is_read_only_archive_status(status: &str, required_action: &str) -> bool {
@@ -2048,13 +2641,16 @@ mod tests {
         time::Duration,
     };
 
+    use chrono::{FixedOffset, TimeZone, Timelike};
+
     use super::{
         DEVELOPMENT_SIDECAR_ENTRY, DesktopRuntime, DesktopRuntimeError,
-        OpenExternalRepositoryResult, PendingRepositoryMigration, PickStaticEncodedSaveResult,
-        RepositoryLifecycle, SaveLocationPlatform, SaveLocationSystem, SidecarLaunch,
-        SidecarSupervisor, StaticSaveFileSystem, StaticSaveInspection, StaticSaveInspector,
-        StaticSavePicker, advisory_repository_inspection_command, canonicalize_repository_path,
-        inspect_static_encoded_save_with_adapters, menu_static_save_result, natural_name_cmp,
+        ManagedInitializationResult, OpenExternalRepositoryResult, PendingRepositoryMigration,
+        PickStaticEncodedSaveResult, RepositoryLifecycle, SaveLocationPlatform, SaveLocationSystem,
+        SidecarLaunch, SidecarSupervisor, StaticSaveFileSystem, StaticSaveInspection,
+        StaticSaveInspector, StaticSavePicker, advisory_repository_inspection_command,
+        canonicalize_repository_path, inspect_static_encoded_save_with_adapters,
+        managed_repository_name, menu_static_save_result, natural_name_cmp,
         repository_open_inspection_command, sidecar_launch_for_resource_directory,
     };
 
@@ -2871,6 +3467,593 @@ mod tests {
         runtime.shutdown().expect("shutdown current session");
     }
 
+    #[test]
+    fn managed_initialization_preflight_does_not_create_a_managed_root() {
+        let temp = TestDirectory::new();
+        let managed_root = temp.path().join("repositories");
+        let runtime = DesktopRuntime::default();
+        let result = runtime.initialize_managed_repository_with_launch(
+            temp.path().join("missing-save.dat"),
+            managed_root.clone(),
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "loaded",
+                "success",
+                "success",
+                "success",
+                "success",
+                None,
+            ),
+            test_initialization_time(),
+        );
+
+        assert!(matches!(
+            result,
+            Ok(ManagedInitializationResult::Failed { phase, residual_path: None, .. })
+                if phase == "preflight"
+        ));
+        assert!(!managed_root.exists());
+    }
+
+    #[test]
+    fn managed_initialization_resets_transition_after_an_invalid_managed_root() {
+        let temp = TestDirectory::new();
+        let save_path = temp.path().join("slot.dat");
+        fs::write(&save_path, b"encoded-save").expect("write save fixture");
+        let invalid_root = temp.path().join("repositories");
+        fs::write(&invalid_root, b"not a directory").expect("create invalid managed root");
+        let runtime = DesktopRuntime::default();
+
+        let result = runtime.initialize_managed_repository_with_launch(
+            save_path.clone(),
+            invalid_root,
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "loaded",
+                "success",
+                "success",
+                "success",
+                "success",
+                None,
+            ),
+            test_initialization_time(),
+        );
+        assert!(matches!(result, Err(DesktopRuntimeError::InvalidDirectory)));
+
+        let result = runtime.initialize_managed_repository_with_launch(
+            save_path,
+            temp.path().join("valid-repositories"),
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "loaded",
+                "success",
+                "success",
+                "success",
+                "success",
+                None,
+            ),
+            test_initialization_time(),
+        );
+        assert!(matches!(
+            result,
+            Ok(ManagedInitializationResult::Initialized)
+        ));
+        runtime.shutdown().expect("shutdown initialized workflow");
+    }
+
+    #[test]
+    fn managed_initialization_reports_decode_failure_before_claiming_a_directory() {
+        let temp = TestDirectory::new();
+        let save_path = temp.path().join("slot.dat");
+        fs::write(&save_path, b"not-a-save").expect("write save fixture");
+        let managed_root = temp.path().join("repositories");
+        let runtime = DesktopRuntime::default();
+        let result = runtime.initialize_managed_repository_with_launch(
+            save_path,
+            managed_root.clone(),
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "decode",
+                "success",
+                "success",
+                "success",
+                "success",
+                None,
+            ),
+            test_initialization_time(),
+        );
+
+        assert!(matches!(
+            result,
+            Ok(ManagedInitializationResult::Failed { phase, residual_path: None, .. })
+                if phase == "preflight"
+        ));
+        assert!(!managed_root.exists());
+    }
+
+    #[test]
+    fn managed_initialization_succeeds_through_session_and_watcher_start() {
+        let temp = TestDirectory::new();
+        let save_path = temp.path().join("slot.dat");
+        fs::write(&save_path, b"encoded-save").expect("write save fixture");
+        let managed_root = temp.path().join("repositories");
+        let timestamp = test_initialization_time();
+        let runtime = DesktopRuntime::default();
+        let result = runtime.initialize_managed_repository_with_launch(
+            save_path.clone(),
+            managed_root.clone(),
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "loaded",
+                "success",
+                "success",
+                "success",
+                "success",
+                None,
+            ),
+            timestamp,
+        );
+
+        assert!(matches!(
+            result,
+            Ok(ManagedInitializationResult::Initialized)
+        ));
+        let expected_name = managed_repository_name(&save_path, timestamp);
+        assert!(managed_root.join(&expected_name).is_dir());
+        assert!(
+            runtime
+                .close_requires_confirmation()
+                .expect("watcher state")
+        );
+        runtime.shutdown().expect("shutdown initialized workflow");
+    }
+
+    #[test]
+    fn managed_initialization_rolls_back_repository_and_baseline_failures() {
+        for (failure, expected_phase) in [("repository", "repository"), ("baseline", "baseline")] {
+            let temp = TestDirectory::new();
+            let save_path = temp.path().join("slot.dat");
+            fs::write(&save_path, b"encoded-save").expect("write save fixture");
+            let managed_root = temp.path().join("repositories");
+            let runtime = DesktopRuntime::default();
+            let result = runtime.initialize_managed_repository_with_launch(
+                save_path,
+                managed_root.clone(),
+                managed_initialization_fixture_launch(
+                    temp.path(),
+                    "loaded",
+                    failure,
+                    "success",
+                    "success",
+                    "success",
+                    None,
+                ),
+                test_initialization_time(),
+            );
+
+            assert!(matches!(
+                result,
+                Ok(ManagedInitializationResult::Failed { phase, residual_path: None, .. })
+                    if phase == expected_phase
+            ));
+            assert!(managed_root.is_dir());
+            assert_eq!(
+                fs::read_dir(&managed_root)
+                    .expect("read managed root")
+                    .count(),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn managed_initialization_uses_timestamped_collision_safe_names() {
+        let temp = TestDirectory::new();
+        let save_path = temp.path().join("slot.dat");
+        fs::write(&save_path, b"encoded-save").expect("write save fixture");
+        let managed_root = temp.path().join("repositories");
+        fs::create_dir_all(&managed_root).expect("create managed root");
+        let timestamp = test_initialization_time();
+        let base_name = managed_repository_name(&save_path, timestamp);
+        let base_path = managed_root.join(&base_name);
+        fs::create_dir(&base_path).expect("create timestamp collision");
+        fs::write(base_path.join("keep"), b"keep").expect("write collision marker");
+
+        let first = DesktopRuntime::default();
+        let first_result = first.initialize_managed_repository_with_launch(
+            save_path.clone(),
+            managed_root.clone(),
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "loaded",
+                "success",
+                "success",
+                "success",
+                "success",
+                None,
+            ),
+            timestamp,
+        );
+        assert!(matches!(
+            first_result,
+            Ok(ManagedInitializationResult::Initialized)
+        ));
+        first
+            .shutdown()
+            .expect("shutdown first initialized workflow");
+        assert!(managed_root.join(format!("{base_name}-1")).is_dir());
+        assert_eq!(
+            fs::read(base_path.join("keep")).expect("collision survives"),
+            b"keep"
+        );
+
+        let second = DesktopRuntime::default();
+        let second_result = second.initialize_managed_repository_with_launch(
+            save_path,
+            managed_root.clone(),
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "loaded",
+                "success",
+                "success",
+                "success",
+                "success",
+                None,
+            ),
+            timestamp,
+        );
+        assert!(matches!(
+            second_result,
+            Ok(ManagedInitializationResult::Initialized)
+        ));
+        second
+            .shutdown()
+            .expect("shutdown second initialized workflow");
+        assert!(managed_root.join(format!("{base_name}-2")).is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_initialization_detects_duplicate_watched_save_through_symlink_and_respects_case() {
+        use std::os::unix::fs::MetadataExt;
+        use std::os::unix::fs::symlink;
+
+        let temp = TestDirectory::new();
+        let actual_save = temp.path().join("Actual-Save.dat");
+        let selected_save = temp.path().join("selected-save.dat");
+        fs::write(&actual_save, b"encoded-save").expect("write actual save");
+        symlink(&actual_save, &selected_save).expect("create selected save symlink");
+        let managed_root = temp.path().join("repositories");
+        let existing = managed_root.join("existing-repository");
+        fs::create_dir_all(&existing).expect("create existing repository");
+        let canonical_save = fs::canonicalize(&actual_save).expect("canonical save");
+        let runtime = DesktopRuntime::default();
+        let duplicate = runtime.initialize_managed_repository_with_launch(
+            selected_save,
+            managed_root.clone(),
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "loaded",
+                "success",
+                "success",
+                "success",
+                "success",
+                Some(&canonical_save),
+            ),
+            test_initialization_time(),
+        );
+        assert!(matches!(
+            duplicate,
+            Ok(ManagedInitializationResult::ExistingRepository { name })
+                if name == "existing-repository"
+        ));
+        assert_eq!(
+            fs::read_dir(&managed_root)
+                .expect("read managed root")
+                .count(),
+            1
+        );
+
+        let case_variant = temp.path().join("actual-save.dat");
+        fs::write(&case_variant, b"encoded-save").expect("write case variant save");
+        let actual_identity = fs::metadata(&actual_save).expect("stat actual save");
+        let case_variant_identity = fs::metadata(&case_variant).expect("stat case variant save");
+        let same_file = actual_identity.dev() == case_variant_identity.dev()
+            && actual_identity.ino() == case_variant_identity.ino();
+        let initialized_runtime = DesktopRuntime::default();
+        let initialized = initialized_runtime.initialize_managed_repository_with_launch(
+            case_variant,
+            managed_root.clone(),
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "loaded",
+                "success",
+                "success",
+                "success",
+                "success",
+                Some(&canonical_save),
+            ),
+            test_initialization_time(),
+        );
+        if same_file {
+            assert!(matches!(
+                initialized,
+                Ok(ManagedInitializationResult::ExistingRepository { name })
+                    if name == "existing-repository"
+            ));
+        } else {
+            assert!(matches!(
+                initialized,
+                Ok(ManagedInitializationResult::Initialized)
+            ));
+            initialized_runtime
+                .shutdown()
+                .expect("shutdown case variant workflow");
+        }
+    }
+
+    #[test]
+    fn managed_initialization_reports_session_and_watcher_failures_after_bounded_rollback() {
+        for (expected_phase, session, watcher) in [
+            ("session", "failed", "success"),
+            ("watching", "success", "failed"),
+        ] {
+            let temp = TestDirectory::new();
+            let save_path = temp.path().join("slot.dat");
+            fs::write(&save_path, b"encoded-save").expect("write save fixture");
+            let managed_root = temp.path().join("repositories");
+            let runtime = DesktopRuntime::default();
+            let result = runtime.initialize_managed_repository_with_launch(
+                save_path,
+                managed_root.clone(),
+                managed_initialization_fixture_launch(
+                    temp.path(),
+                    "loaded",
+                    "success",
+                    session,
+                    watcher,
+                    "success",
+                    None,
+                ),
+                test_initialization_time(),
+            );
+
+            assert!(matches!(
+                result,
+                Ok(ManagedInitializationResult::Failed { phase, residual_path: None, .. })
+                    if phase == expected_phase
+            ));
+            assert_eq!(
+                fs::read_dir(&managed_root)
+                    .expect("read managed root")
+                    .count(),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn managed_initialization_rollback_never_removes_a_preexisting_collision() {
+        let temp = TestDirectory::new();
+        let save_path = temp.path().join("slot.dat");
+        fs::write(&save_path, b"encoded-save").expect("write save fixture");
+        let managed_root = temp.path().join("repositories");
+        fs::create_dir_all(&managed_root).expect("create managed root");
+        let base_name = managed_repository_name(&save_path, test_initialization_time());
+        let existing = managed_root.join(&base_name);
+        fs::create_dir(&existing).expect("create preexisting collision");
+        fs::write(existing.join("keep"), b"keep").expect("write collision marker");
+
+        let result = DesktopRuntime::default().initialize_managed_repository_with_launch(
+            save_path,
+            managed_root.clone(),
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "loaded",
+                "baseline",
+                "success",
+                "success",
+                "success",
+                None,
+            ),
+            test_initialization_time(),
+        );
+
+        assert!(
+            matches!(result, Ok(ManagedInitializationResult::Failed { phase, .. }) if phase == "baseline")
+        );
+        assert_eq!(
+            fs::read(existing.join("keep")).expect("collision survives"),
+            b"keep"
+        );
+        assert_eq!(
+            fs::read_dir(&managed_root)
+                .expect("read managed root")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn managed_initialization_reports_residual_path_when_cleanup_fails() {
+        let temp = TestDirectory::new();
+        let save_path = temp.path().join("slot.dat");
+        fs::write(&save_path, b"encoded-save").expect("write save fixture");
+        let managed_root = temp.path().join("repositories");
+        let timestamp = test_initialization_time();
+        let expected_path = managed_root.join(managed_repository_name(&save_path, timestamp));
+
+        let result = DesktopRuntime::default().initialize_managed_repository_with_launch(
+            save_path,
+            managed_root,
+            managed_initialization_fixture_launch(
+                temp.path(),
+                "loaded",
+                "baseline",
+                "success",
+                "success",
+                "failed",
+                None,
+            ),
+            timestamp,
+        );
+
+        assert!(matches!(
+            result,
+            Ok(ManagedInitializationResult::Failed { phase, residual_path: Some(path), .. })
+                if phase == "baseline" && path == expected_path.to_string_lossy()
+        ));
+        assert!(expected_path.is_dir());
+    }
+
+    fn test_initialization_time() -> chrono::DateTime<FixedOffset> {
+        FixedOffset::east_opt(8 * 60 * 60)
+            .expect("offset")
+            .with_ymd_and_hms(2026, 8, 3, 14, 5, 6)
+            .single()
+            .expect("timestamp")
+            .with_nanosecond(123_000_000)
+            .expect("milliseconds")
+    }
+
+    fn managed_initialization_fixture_launch(
+        temp: &Path,
+        inspection: &str,
+        initialization: &str,
+        session: &str,
+        watcher: &str,
+        shutdown: &str,
+        duplicate_save_path: Option<&Path>,
+    ) -> SidecarLaunch {
+        let script = temp.join(format!(
+            "managed-initialization-sidecar-{}.mjs",
+            TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let duplicate_save_path = duplicate_save_path
+            .map(|path| path.to_str().expect("fixture paths are UTF-8").to_owned());
+        fs::write(
+            &script,
+            managed_initialization_fixture_sidecar_source(
+                inspection,
+                initialization,
+                session,
+                watcher,
+                shutdown,
+                duplicate_save_path.as_deref(),
+            ),
+        )
+        .expect("write managed initialization fixture");
+        SidecarLaunch::Development {
+            entry: script,
+            node: PathBuf::from("node"),
+        }
+    }
+
+    fn managed_initialization_fixture_sidecar_source(
+        inspection: &str,
+        initialization: &str,
+        session: &str,
+        watcher: &str,
+        shutdown: &str,
+        duplicate_save_path: Option<&str>,
+    ) -> String {
+        let duplicate_save_path =
+            serde_json::to_string(&duplicate_save_path).expect("serialize duplicate save path");
+        format!(
+            r#"
+const inspection = {inspection:?};
+const initialization = {initialization:?};
+const session = {session:?};
+const watcher = {watcher:?};
+const shutdown = {shutdown:?};
+const duplicateSavePath = {duplicate_save_path};
+
+function write(message) {{
+  process.stdout.write(JSON.stringify(message) + "\n");
+}}
+function response(requestId, result) {{
+  write({{ protocolVersion: 6, kind: "response", requestId, ok: true, result }});
+}}
+function failure(requestId, code, message) {{
+  write({{ protocolVersion: 6, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+}}
+
+write({{ protocolVersion: 6, kind: "event", event: {{ type: "process.ready" }} }});
+let buffer = "";
+process.stdin.on("data", (chunk) => {{
+  buffer += chunk;
+  for (;;) {{
+    const newline = buffer.indexOf("\n");
+    if (newline < 0) return;
+    const request = JSON.parse(buffer.slice(0, newline));
+    buffer = buffer.slice(newline + 1);
+    const type = request.command.type;
+
+    if (type === "save.inspect") {{
+      response(request.requestId, inspection === "loaded"
+        ? {{ type: "save.inspected", decodedSave: {{ player: "Hornet" }} }}
+        : {{ type: inspection === "invalid" ? "save.invalidFile" : "save.decodeFailed" }});
+      continue;
+    }}
+    if (type === "repository.compareWatchedSave") {{
+      response(request.requestId, {{
+        type: "repository.watchedSaveCompared",
+        same: duplicateSavePath !== null && request.command.savePath === duplicateSavePath,
+      }});
+      continue;
+    }}
+    if (type === "repository.initialize") {{
+      if (initialization === "repository") {{
+        response(request.requestId, {{ type: "repository.initializationResult", initialization: {{ status: "failed", phase: "repository", reason: "historyFailed" }} }});
+      }} else if (initialization === "baseline") {{
+        response(request.requestId, {{ type: "repository.initializationResult", initialization: {{ status: "failed", phase: "baseline", reason: "observationFailed" }} }});
+      }} else {{
+        response(request.requestId, {{ type: "repository.initializationResult", initialization: {{ status: "initialized" }} }});
+      }}
+      continue;
+    }}
+    if (type === "session.open") {{
+      if (session === "failed") {{
+        failure(request.requestId, "session_open_failed", "fixture session open failed");
+      }} else {{
+        response(request.requestId, {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }});
+      }}
+      continue;
+    }}
+    if (type === "watcher.start") {{
+      if (watcher === "failed") {{
+        failure(request.requestId, "watcher_start_failed", "fixture watcher start failed");
+      }} else {{
+        response(request.requestId, {{ type: "watcher.started" }});
+      }}
+      continue;
+    }}
+    if (type === "watcher.stop") {{
+      response(request.requestId, {{ type: "watcher.stopped" }});
+      continue;
+    }}
+    if (type === "process.shutdown") {{
+      if (shutdown === "failed") {{
+        failure(request.requestId, "shutdown_failed", "fixture shutdown failed");
+        process.exit(1);
+      }} else {{
+        response(request.requestId, {{ type: "process.shutdownComplete" }});
+        process.exit(0);
+      }}
+    }}
+    failure(request.requestId, "unknown_command", "fixture command was unexpected");
+  }}
+}});
+"#,
+            inspection = inspection,
+            initialization = initialization,
+            session = session,
+            watcher = watcher,
+            shutdown = shutdown,
+            duplicate_save_path = duplicate_save_path,
+        )
+    }
+
     fn fixture_sidecar_source(repository: &str, status: &str) -> String {
         let repository = serde_json::to_string(repository).expect("serialize repository path");
         let inspection = if status == "ready" || status == "mutation" {
@@ -2885,7 +4068,7 @@ if (process.argv.includes(repository)) {{
   process.exitCode = 91;
   process.exit();
 }}
-process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -2904,14 +4087,14 @@ process.stdin.on("data", (chunk) => {{
       result = {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
     }} else if (request.command.type === "process.shutdown") {{
       result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }} else {{
       result = {{ type: request.command.type === "watcher.start" ? "watcher.started" : "watcher.stopped" }};
     }}
-    process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+    process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
     if (request.command.type === "session.open" && {status:?} === "mutation") {{
-      process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
     }}
   }}
 }});
@@ -2924,7 +4107,7 @@ process.stdin.on("data", (chunk) => {{
         format!(
             r#"
 const repository = {repository};
-process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -2936,7 +4119,7 @@ process.stdin.on("data", (chunk) => {{
     ? {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }}
     : {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
   if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) throw new Error("wrong repository");
-  process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
   if (request.command.type === "session.open") process.exit(1);
 }});
 "#
@@ -2951,7 +4134,7 @@ process.stdin.on("data", (chunk) => {{
 import fs from "node:fs";
 const repository = {repository};
 const marker = {marker};
-process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -2963,12 +4146,12 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "repository.inspect") {{
       if (request.command.repoPath !== repository) throw new Error("repository path was not sent over stdin");
       const result = {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       continue;
     }}
     if (request.command.type === "session.open") {{
       const error = {{
-        protocolVersion: 5,
+        protocolVersion: 6,
         kind: "response",
         requestId: request.requestId,
         ok: false,
@@ -2983,7 +4166,7 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "process.shutdown") {{
       fs.writeFileSync(marker, "shutdown");
       const result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 5, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }}
     throw new Error("unexpected candidate command");

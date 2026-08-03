@@ -320,7 +320,7 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
     },
   });
 
-  sidecar.send(command("future-version", { type: "watcher.start" }, 6));
+  sidecar.send(command("future-version", { type: "watcher.start" }, 7));
   assert.deepEqual(await sidecar.readMessage(), {
     protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
@@ -424,6 +424,160 @@ test("inspects only readable regular Encoded Saves regardless of filename", asyn
     ok: true,
     result: { type: "save.decodeFailed" },
   });
+
+  await shutDown(sidecar);
+});
+
+test("initializes a repository and commits its baseline through the public protocol", async (t) => {
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), "silksong-desktop-sidecar-initialize-success-test-"),
+  );
+  t.after(async () => {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+  const watchedSavePath = path.join(temporaryDirectory, "watched-save.dat");
+  const repoPath = path.join(temporaryDirectory, "history-repo");
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+  sidecar.send(
+    command("initialize", {
+      type: "repository.initialize",
+      repoPath,
+      watchedSavePath,
+    }),
+  );
+
+  const response = parseSuccessfulResponse(
+    await readResponse(sidecar, "initialize"),
+  );
+  assert.deepEqual(response.result, {
+    type: "repository.initializationResult",
+    initialization: { status: "initialized" },
+  });
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "managedInitialization",
+      status: "started",
+    },
+  });
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "managedInitialization",
+      status: "finished",
+    },
+  });
+  const history = await queryRawObservations({ repoPath });
+  assert.equal(history.entries.length, 1);
+  assert.equal(history.entries[0]?.observation.trigger, "watcher");
+
+  await shutDown(sidecar);
+});
+
+test("reports a repository initialization failure through the public protocol", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+  sidecar.send(
+    command("initialize-existing", {
+      type: "repository.initialize",
+      repoPath: repo.repoPath,
+      watchedSavePath: repo.watchedSavePath,
+    }),
+  );
+
+  const response = parseSuccessfulResponse(
+    await readResponse(sidecar, "initialize-existing"),
+  );
+  assert.deepEqual(response.result, {
+    type: "repository.initializationResult",
+    initialization: {
+      status: "failed",
+      phase: "repository",
+      reason: "historyFailed",
+    },
+  });
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "managedInitialization",
+      status: "started",
+    },
+  });
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "managedInitialization",
+      status: "finished",
+    },
+  });
+
+  await shutDown(sidecar);
+});
+
+test("reports a baseline observation failure through the public protocol", async (t) => {
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), "silksong-desktop-sidecar-initialize-baseline-test-"),
+  );
+  t.after(async () => {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+  const repoPath = path.join(temporaryDirectory, "history-repo");
+
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+  sidecar.send(
+    command("initialize-bad-baseline", {
+      type: "repository.initialize",
+      repoPath,
+      // A directory is accepted as Project Config during initialization but cannot be observed as
+      // an Encoded Save, allowing the protocol to exercise the baseline failure phase.
+      watchedSavePath: temporaryDirectory,
+    }),
+  );
+
+  const response = parseSuccessfulResponse(
+    await readResponse(sidecar, "initialize-bad-baseline"),
+  );
+  assert.deepEqual(response.result, {
+    type: "repository.initializationResult",
+    initialization: {
+      status: "failed",
+      phase: "baseline",
+      reason: "observationFailed",
+    },
+  });
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "managedInitialization",
+      status: "started",
+    },
+  });
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "managedInitialization",
+      status: "finished",
+    },
+  });
+  const history = await queryRawObservations({ repoPath });
+  assert.equal(history.entries.length, 0);
 
   await shutDown(sidecar);
 });
@@ -585,6 +739,55 @@ test("inspects and confirms repository migration before opening a Repo Session",
   await shutDown(sidecar);
 });
 
+test("compares Watched Saves through legacy and migration-compatible configs", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const alternateSavePath = path.join(
+    path.dirname(repo.watchedSavePath),
+    "alternate-save.dat",
+  );
+  await copyFile(minimalEncodedSavePath, alternateSavePath);
+
+  for (const repositoryFormatVersion of [undefined, 0]) {
+    await setRepositoryFormatVersionFixture(repo, repositoryFormatVersion);
+    const sidecar = spawnSidecar(t);
+    await readReady(sidecar);
+
+    sidecar.send(
+      command(`compare-same-${repositoryFormatVersion ?? "legacy"}`, {
+        type: "repository.compareWatchedSave",
+        repoPath: repo.repoPath,
+        savePath: repo.watchedSavePath,
+      }),
+    );
+    const same = parseSuccessfulResponse(
+      await readResponse(
+        sidecar,
+        `compare-same-${repositoryFormatVersion ?? "legacy"}`,
+      ),
+    );
+    assert.equal(same.result.type, "repository.watchedSaveCompared");
+    assert.equal(same.result.same, true);
+
+    sidecar.send(
+      command(`compare-different-${repositoryFormatVersion ?? "legacy"}`, {
+        type: "repository.compareWatchedSave",
+        repoPath: repo.repoPath,
+        savePath: alternateSavePath,
+      }),
+    );
+    const different = parseSuccessfulResponse(
+      await readResponse(
+        sidecar,
+        `compare-different-${repositoryFormatVersion ?? "legacy"}`,
+      ),
+    );
+    assert.equal(different.result.type, "repository.watchedSaveCompared");
+    assert.equal(different.result.same, false);
+
+    await shutDown(sidecar);
+  }
+});
+
 test("holds the Desktop migration operation between verified snapshot publication and commit", async (t) => {
   const repo = await createHistoryRepo(t);
   await setRepositoryFormatVersionFixture(repo, undefined);
@@ -632,6 +835,31 @@ test("holds the Desktop migration operation between verified snapshot publicatio
     },
   });
   await assert.doesNotReject(async () => await stat(archivePath));
+
+  const repoDirectory = path.dirname(repo.repoPath);
+  const initializeRepoPath = path.join(repoDirectory, "managed-repository");
+  sidecar.send(
+    command("initialize-during-migration", {
+      type: "repository.initialize",
+      repoPath: initializeRepoPath,
+      watchedSavePath: repo.watchedSavePath,
+    }),
+  );
+  const initializeDuringMigration = await readResponse(
+    sidecar,
+    "initialize-during-migration",
+  );
+  assert.deepEqual(initializeDuringMigration, {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "response",
+    requestId: "initialize-during-migration",
+    ok: false,
+    error: {
+      code: "repository_initialize_failed",
+      message:
+        "The repository cannot initialize while a repository migration is in progress.",
+    },
+  });
 
   sidecar.send(
     command("commit-migration", { type: "repository.migration.commit" }),

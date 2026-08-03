@@ -8,8 +8,10 @@ import {
   readFile,
   readdir,
   readlink,
+  realpath,
   rename,
   rm,
+  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -37,6 +39,7 @@ import { getRepositoryLayout } from "./layout.ts";
 import { isSemanticReadModelCurrent } from "./read-model.ts";
 import type {
   ArchiveSnapshot,
+  CompareWatchedSaveInput,
   GitIntegrityPolicy,
   InspectSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryInput,
@@ -96,6 +99,67 @@ export async function inspectSaveHistoryRepository(
     input.gitIntegrityPolicy ?? "strict",
   );
   return inspected.inspection;
+}
+
+/**
+ * Compares a candidate save with a repository's configured Watched Save without exposing Project
+ * Config through generic repository inspection. File identity is resolved by History so Desktop
+ * callers do not need to know config, Git, or SQLite details.
+ */
+export async function compareWatchedSave(
+  input: CompareWatchedSaveInput,
+): Promise<boolean> {
+  const watchedSavePath = await readConfiguredWatchedSavePath(input.repoPath);
+  const [configured, candidate] = await Promise.all([
+    canonicalFileIdentity(watchedSavePath),
+    canonicalFileIdentity(input.savePath),
+  ]);
+  return (
+    configured.canonicalPath === candidate.canonicalPath
+    || (configured.device === candidate.device
+      && configured.inode === candidate.inode)
+  );
+}
+
+interface CanonicalFileIdentity {
+  readonly canonicalPath: string;
+  readonly device: bigint | number;
+  readonly inode: bigint | number;
+}
+
+async function readConfiguredWatchedSavePath(
+  repoPath: string,
+): Promise<string> {
+  const configText = await readConfigText(repoPath);
+  if (configText === undefined) {
+    throw new Error("Project Config is unavailable.");
+  }
+  const parsed = parseProjectConfig(configText);
+  switch (parsed.status) {
+    case "current":
+    case "legacy":
+    case "migrationRequired": {
+      return parsed.config.watchedSavePath;
+    }
+
+    default: {
+      throw new Error(
+        "Project Config is not compatible with Watched Save comparison.",
+      );
+    }
+  }
+}
+
+async function canonicalFileIdentity(
+  filePath: string,
+): Promise<CanonicalFileIdentity> {
+  const canonicalPath = await realpath(filePath);
+  const metadata = await stat(canonicalPath, { bigint: true });
+  return {
+    canonicalPath,
+    device: metadata.dev,
+    inode: metadata.ino,
+  };
 }
 
 export async function migrateSaveHistoryRepository(

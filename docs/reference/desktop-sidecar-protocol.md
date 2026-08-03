@@ -21,7 +21,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 5,
+  "protocolVersion": 6,
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +36,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 5,
+  "protocolVersion": 6,
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,10 +49,19 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 5 accepts these commands:
+Version 6 accepts these commands:
 
 - `repository.inspect` with one absolute `repoPath` and an optional
   `gitIntegrityPolicy` of `strict` (default) or `advisory`;
+- `repository.initialize` with one absolute managed `repoPath` and one
+  absolute `watchedSavePath`, establishing the repository and first baseline
+  observation through History's public `initSaveHistory` and `observeSave`
+  workflows;
+- `repository.compareWatchedSave` with one absolute managed `repoPath` and one
+  absolute candidate `savePath`, returning only whether History's canonical
+  Watched Save identity matches the candidate for current or legacy-compatible
+  Project Config. An unavailable or incompatible config is a comparison
+  failure, not a false match;
 - `repository.migrate` with one absolute `repoPath`, a prior opaque inspection
   ID, and the literal migration confirmation;
 - `repository.migration.prepare` with one absolute source `repoPath`, a prior
@@ -116,7 +125,7 @@ compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 5,
+  "protocolVersion": 6,
   "kind": "response",
   "requestId": "open-1",
   "ok": true,
@@ -151,7 +160,8 @@ The current event types are:
 - `session.failed`, without a raw error.
 
 `mutation.activity` projects only the mutation class (`manualCheckpoint`,
-`inPlaceRestore`, or `repositoryMigration`) and `started` or `finished`. It
+`inPlaceRestore`, `repositoryMigration`, or `managedInitialization`) and
+`started` or `finished`. It
 contains no request body, save path, commit reference, or result. Desktop uses
 it solely to reject a normal replacement or exit while the admitted mutation
 is active; Repo Session retains admission and drain ownership.

@@ -1,4 +1,5 @@
 mod desktop_runtime;
+mod managed_initialization;
 mod save_location;
 mod security;
 
@@ -42,6 +43,7 @@ pub fn run() {
             match event.id().as_ref() {
                 "repository-library" => navigate_to_library(app),
                 "file-inspect-local-save" => inspect_local_save_from_menu(app),
+                "repository-initialize" => initialize_managed_repository_from_menu(app),
                 "repository-open-external" => open_external_from_menu(app),
                 "repository-close" => {
                     if app.state::<DesktopWorkflow>().close().is_ok() {
@@ -66,6 +68,7 @@ pub fn run() {
             desktop_runtime::desktop_commit_repository_migration,
             desktop_runtime::desktop_close_repository,
             desktop_runtime::desktop_open_external_repository,
+            desktop_runtime::desktop_initialize_managed_repository,
             desktop_runtime::desktop_pick_static_encoded_save,
             desktop_runtime::desktop_reopen_repository,
             desktop_runtime::desktop_start_watching,
@@ -148,6 +151,13 @@ fn install_repository_menu<R: tauri::Runtime>(
         true,
         None::<&str>,
     )?;
+    let initialize = MenuItem::with_id(
+        app,
+        "repository-initialize",
+        "Initialize Managed Repository…",
+        true,
+        None::<&str>,
+    )?;
     let close = MenuItem::with_id(
         app,
         "repository-close",
@@ -174,7 +184,7 @@ fn install_repository_menu<R: tauri::Runtime>(
         "repository",
         "Repository",
         true,
-        &[&library, &external, &close, &start, &stop],
+        &[&library, &initialize, &external, &close, &start, &stop],
     )?;
     let file = Submenu::with_id_and_items(app, "file", "File", true, &[&inspect_local_save])?;
     let menu = Menu::with_items(app, &[&file, &repository])?;
@@ -289,6 +299,29 @@ fn open_external_from_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     update_repository_menu(app);
 }
 
+fn initialize_managed_repository_from_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(selected) = app
+        .dialog()
+        .file()
+        .set_title("Initialize managed Silksong save history")
+        .add_filter("Silksong save", &["dat"])
+        .set_directory(desktop_runtime::static_save_picker_initial_directory())
+        .blocking_pick_file()
+    else {
+        return;
+    };
+    let Ok(selected_path) = selected.into_path() else {
+        return;
+    };
+    if let Err(error) = app
+        .state::<DesktopWorkflow>()
+        .initialize_managed_repository(app, selected_path)
+    {
+        eprintln!("managed repository initialization failed: {error}");
+    }
+    update_repository_menu(app);
+}
+
 fn focus_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         return;
@@ -366,6 +399,7 @@ mod tests {
                 "allow-desktop-commit-repository-migration",
                 "allow-desktop-close-repository",
                 "allow-desktop-open-external-repository",
+                "allow-desktop-initialize-managed-repository",
                 "allow-desktop-pick-static-encoded-save",
                 "allow-desktop-reopen-repository",
                 "allow-desktop-start-watching",

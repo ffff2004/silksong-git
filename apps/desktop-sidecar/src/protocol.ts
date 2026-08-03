@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const desktopSidecarProtocolVersion = 5 as const;
+export const desktopSidecarProtocolVersion = 6 as const;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -9,6 +9,8 @@ export const desktopSidecarErrorCodes = [
   "invalid_command",
   "invalid_repo_path",
   "repository_inspect_failed",
+  "repository_initialize_failed",
+  "repository_watched_save_compare_failed",
   "repository_migrate_failed",
   "repository_migration_not_prepared",
   "repository_rebuild_failed",
@@ -51,6 +53,22 @@ export const repositoryInspectCommandSchema = z
     type: z.literal("repository.inspect"),
     repoPath: z.string().min(1).max(4096),
     gitIntegrityPolicy: z.enum(["strict", "advisory"]).default("strict"),
+  })
+  .strict();
+
+export const repositoryInitializeCommandSchema = z
+  .object({
+    type: z.literal("repository.initialize"),
+    repoPath: z.string().min(1).max(4096),
+    watchedSavePath: z.string().min(1).max(4096),
+  })
+  .strict();
+
+export const repositoryCompareWatchedSaveCommandSchema = z
+  .object({
+    type: z.literal("repository.compareWatchedSave"),
+    repoPath: z.string().min(1).max(4096),
+    savePath: z.string().min(1).max(4096),
   })
   .strict();
 
@@ -148,7 +166,24 @@ const repositoryStatusSchema = z
   .strict();
 
 const repositoryInspectionSchema = repositoryStatusSchema
-  .extend({ inspectionId: z.string().min(1).max(128) })
+  .extend({
+    inspectionId: z.string().min(1).max(128),
+  })
+  .strict();
+
+const repositoryInitializationResultSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("initialized") }).strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      phase: z.enum(["repository", "baseline"]),
+      reason: z.enum(["historyFailed", "observationFailed"]),
+    })
+    .strict(),
+]);
+
+const repositoryWatchedSaveComparisonSchema = z
+  .object({ same: z.boolean() })
   .strict();
 
 const migrationSourceStateSchema = z.enum(["unchanged", "migrated", "unknown"]);
@@ -271,6 +306,18 @@ const successResultSchema = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("repository.initializationResult"),
+      initialization: repositoryInitializationResultSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("repository.watchedSaveCompared"),
+      same: repositoryWatchedSaveComparisonSchema.shape.same,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("repository.migrationPrepared"),
       preparation: repositoryMigrationPreparationSchema,
     })
@@ -369,6 +416,7 @@ const producedEventSchema = z.union([
         "manualCheckpoint",
         "inPlaceRestore",
         "repositoryMigration",
+        "managedInitialization",
       ]),
       status: z.enum(["started", "finished"]),
     })
@@ -422,7 +470,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 5;
+    readonly protocolVersion: 6;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },

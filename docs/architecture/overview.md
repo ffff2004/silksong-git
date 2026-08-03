@@ -18,15 +18,15 @@ CLI --------------------+-------------> @silksong-git/history
 @silksong-git/history ----------------> @silksong-git/core
 ```
 
-| Module                                                              | Current responsibility and dependency boundary                                                                                                                                                                                                                                                                                                                                                |
-| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`packages/core`](../../packages/core/src/index.ts)                 | Decodes and parses saves, supplies builtin Mapping Data, creates Semantic Snapshots, and diffs them into Semantic Events. It is browser-safe and has no DOM, Git, SQLite, filesystem-watching, or HTTP responsibility.                                                                                                                                                                        |
-| [`packages/history`](../../packages/history/src/index.ts)           | Owns one Save History Repository, Git and SQLite adapters, observation and restore workflows, query/diff/search behavior, repository locks, and watcher leases. It depends on Core for semantic interpretation.                                                                                                                                                                               |
-| [`packages/repo-session`](../../packages/repo-session/src/index.ts) | Owns the long-running repository reader process, mandatory loopback HTTP Adapter, independently controlled watcher scheduling, executable HTTP contract, and browser-safe wire contract. It calls only public History workflows.                                                                                                                                                              |
-| [`apps/cli`](../../apps/cli/src/main.ts)                            | Parses commands and renders terminal or JSON output. Save inspection calls Core; repository, history, and restore commands call History, while `watch start` starts a Repo Session. It does not own persistence rules.                                                                                                                                                                        |
-| [`apps/web`](../../apps/web/src/main.tsx)                           | Runs one Solid frontend in Static Web Mode or Local History Web Mode. Browser Static mode calls Core in the browser; Desktop Static inspection receives already-decoded data through a narrow native capability. Local mode uses Repo Session's browser-safe HTTP wire contract and an authenticated HTTP client; it does not import a Node runtime or access local storage systems directly. |
-| [`apps/desktop`](../../apps/desktop/src-tauri/src/lib.rs)           | Runs the single-instance Tauri shell around a dedicated build of the shared Web source. It owns the one native window, bundled-content boundary, navigation policy, external opening, external repository selection, and the one sidecar-backed Repo Session runtime.                                                                                                                         |
-| [`apps/desktop-sidecar`](../../apps/desktop-sidecar/src/main.ts)    | Provides the private versioned JSONL process Adapter for Repo Session lifecycle commands, the confirmed migration exception through History's public Interface, and stateless Core save inspection. Desktop Rust spawns its fixed development entry through Node and communicates over its stdin/stdout protocol.                                                                             |
+| Module                                                              | Current responsibility and dependency boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`packages/core`](../../packages/core/src/index.ts)                 | Decodes and parses saves, supplies builtin Mapping Data, creates Semantic Snapshots, and diffs them into Semantic Events. It is browser-safe and has no DOM, Git, SQLite, filesystem-watching, or HTTP responsibility.                                                                                                                                                                                                                                                                            |
+| [`packages/history`](../../packages/history/src/index.ts)           | Owns one Save History Repository, Git and SQLite adapters, observation and restore workflows, query/diff/search behavior, repository locks, and watcher leases. It depends on Core for semantic interpretation.                                                                                                                                                                                                                                                                                   |
+| [`packages/repo-session`](../../packages/repo-session/src/index.ts) | Owns the long-running repository reader process, mandatory loopback HTTP Adapter, independently controlled watcher scheduling, executable HTTP contract, and browser-safe wire contract. It calls only public History workflows.                                                                                                                                                                                                                                                                  |
+| [`apps/cli`](../../apps/cli/src/main.ts)                            | Parses commands and renders terminal or JSON output. Save inspection calls Core; repository, history, and restore commands call History, while `watch start` starts a Repo Session. It does not own persistence rules.                                                                                                                                                                                                                                                                            |
+| [`apps/web`](../../apps/web/src/main.tsx)                           | Runs one Solid frontend in Static Web Mode or Local History Web Mode. Browser Static mode calls Core in the browser; Desktop Static inspection receives already-decoded data through a narrow native capability. Local mode uses Repo Session's browser-safe HTTP wire contract and an authenticated HTTP client; it does not import a Node runtime or access local storage systems directly.                                                                                                     |
+| [`apps/desktop`](../../apps/desktop/src-tauri/src/lib.rs)           | Runs the single-instance Tauri shell around a dedicated build of the shared Web source. It owns the one native window, bundled-content boundary, navigation policy, external opening, external repository selection, and the one sidecar-backed Repo Session runtime.                                                                                                                                                                                                                             |
+| [`apps/desktop-sidecar`](../../apps/desktop-sidecar/src/main.ts)    | Provides the private versioned JSONL process Adapter for Repo Session lifecycle commands, managed initialization and Watched Save comparison through History's public Interface, the confirmed migration exception through that same Interface, and stateless Core save inspection. Desktop Rust spawns its fixed development entry through Node and communicates over its stdin/stdout protocol. See the [Desktop Sidecar Process Protocol Reference](../reference/desktop-sidecar-protocol.md). |
 
 The package split follows
 [ADR-0011](../adr/0011-workspace-package-architecture.md). Exact callable
@@ -100,6 +100,19 @@ listener lifecycle, while frontend serving remains separate. See
 [ADR-0018](../adr/0018-secure-versioned-local-http-adapter.md), and the
 [Local HTTP API Reference](../reference/local-http-api.md).
 
+### Managed initialization
+
+Desktop validates and decodes an Encoded Save before claiming a managed child.
+While no Repo Session exists yet, the sidecar uses the public History
+`compareWatchedSave` workflow for duplicate detection and the public
+`initSaveHistory` and `observeSave` workflows for repository creation and the
+first Raw Save Observation. It then opens the Repo Session and starts its
+watcher through the normal lifecycle commands. These direct History calls are
+the explicit managed-initialization exception to the usual sidecar-to-Repo
+Session path; they do not expose Git, SQLite, or configuration internals.
+Their JSONL commands and result/event shapes are defined by the [Desktop
+Sidecar Process Protocol Reference](../reference/desktop-sidecar-protocol.md).
+
 ## Cross-Module Guardrails
 
 - Core remains free of DOM, Git, SQLite, filesystem watching, and HTTP concerns.
@@ -119,11 +132,17 @@ listener lifecycle, while frontend serving remains separate. See
   Core Interface. History data remains on authenticated loopback HTTP; the
   Adapter does not bypass either public Interface or open History state for
   static inspection.
-- Confirmed migration is the explicit exception: incompatible Managed
-  Repositories cannot open Repo Session HTTP, so the sidecar calls History's
-  public migration Interface directly for the prepare/commit workflow. History
-  still owns migration mechanics and locks; the sidecar does not become a
-  generic History adapter.
+- Managed initialization is an explicit direct-History exception: the sidecar
+  invokes public `compareWatchedSave`, `initSaveHistory`, and `observeSave`
+  workflows for duplicate detection, repository creation, and the baseline
+  before it opens a Repo Session. The `repository.initialize` and
+  `repository.compareWatchedSave` protocol commands remain the only Desktop
+  boundary for those calls.
+- Confirmed migration is another explicit direct-History exception: incompatible
+  Managed Repositories cannot open Repo Session HTTP, so the sidecar calls
+  History's public migration Interface directly for the prepare/commit
+  workflow. History still owns migration mechanics and locks; the sidecar does
+  not become a generic History adapter.
 - Raw capture and semantic display are independent: display filters neither
   suppress Git observations nor delete Semantic Events from SQLite.
 - Only an active Repo Session watcher is singleton for a repository. Multiple

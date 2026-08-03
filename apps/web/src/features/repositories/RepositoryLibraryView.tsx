@@ -44,9 +44,13 @@ export function RepositoryLibraryView() {
   const [migrationOutcome, setMigrationOutcome] =
     createSignal<MigrationOutcome>();
   const [migrating, setMigrating] = createSignal(false);
+  const [initializing, setInitializing] = createSignal(false);
+  const [existingInitialization, setExistingInitialization] =
+    createSignal<string>();
   const repositorySwitchingDisabled = () =>
     migrating()
     || migration() !== undefined
+    || initializing()
     || localHistory.workflowState().kind === "transitioning";
   const invalidatedWorkflow = () => {
     const state = localHistory.workflowState();
@@ -288,6 +292,98 @@ export function RepositoryLibraryView() {
     });
   };
 
+  const initializeManagedRepository = async () => {
+    if (
+      runtimeCapabilities.kind !== "desktop"
+      || runtimeCapabilities.initializeManagedRepository === undefined
+      || initializing()
+      || repositorySwitchingDisabled()
+    ) {
+      return;
+    }
+    setInitializing(true);
+    setError(undefined);
+    setExistingInitialization(undefined);
+    try {
+      const result = await localHistory.initializeManagedRepository();
+      switch (result.kind) {
+        case "initialized": {
+          localHistory.disconnect();
+          saveStore.clear();
+          if (await localHistory.connect()) {
+            navigate("/progress");
+          }
+          break;
+        }
+
+        case "existingRepository": {
+          setExistingInitialization(result.name);
+          break;
+        }
+
+        case "failed": {
+          setError(
+            result.residualPath === undefined
+              ? result.message
+              : `${result.message} Residual candidate: ${result.residualPath}`,
+          );
+          break;
+        }
+
+        case "blockedByMutation": {
+          setError(
+            "Wait for the active Desktop mutation to finish before initializing a repository.",
+          );
+          break;
+        }
+
+        case "busy": {
+          setError(
+            "Desktop Local History is already changing sessions. Try again when it finishes.",
+          );
+          break;
+        }
+
+        case "cancelled": {
+          break;
+        }
+      }
+    } catch (error_) {
+      setError(
+        error_ instanceof Error
+          ? error_.message
+          : "Could not initialize the managed repository.",
+      );
+    } finally {
+      setInitializing(false);
+    }
+  };
+
+  const openExistingInitialization = async () => {
+    const name = existingInitialization();
+    if (name === undefined) {
+      return;
+    }
+    setOpening(`managed:${name}`);
+    try {
+      const result = await localHistory.openLibraryEntry({
+        lifecycle: "managed",
+        name,
+      });
+      if (result.kind !== "opened") {
+        setError(formatOpenResult(result));
+        return;
+      }
+      localHistory.disconnect();
+      saveStore.clear();
+      if (await localHistory.connect()) {
+        navigate("/progress");
+      }
+    } finally {
+      setOpening(undefined);
+    }
+  };
+
   onMount(() => {
     refresh().catch(() => undefined);
   });
@@ -310,6 +406,19 @@ export function RepositoryLibraryView() {
       </button>
       <button
         class={buttonStyles["primary"]}
+        id="initialize-managed-repository"
+        type="button"
+        disabled={initializing() || repositorySwitchingDisabled()}
+        onClick={() => {
+          initializeManagedRepository().catch(() => {
+            setError("Could not initialize the managed repository.");
+          });
+        }}
+      >
+        {initializing() ? "Initializing…" : "Initialize and watch save…"}
+      </button>
+      <button
+        class={buttonStyles["primary"]}
         type="button"
         disabled={loading()}
         onClick={() => {
@@ -319,6 +428,27 @@ export function RepositoryLibraryView() {
         {loading() ? "Refreshing…" : "Refresh"}
       </button>
       <Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
+      <Show when={existingInitialization()}>
+        {(name) => (
+          <div role="status">
+            <p>A managed repository already tracks this Watched Save.</p>
+            <button
+              class={buttonStyles["secondary"]}
+              type="button"
+              disabled={
+                opening() !== undefined || repositorySwitchingDisabled()
+              }
+              onClick={() => {
+                openExistingInitialization().catch(() => {
+                  setError("Could not open the existing managed repository.");
+                });
+              }}
+            >
+              Open {name()}
+            </button>
+          </div>
+        )}
+      </Show>
       <Show when={migration()}>
         {(pending) => (
           <div role="status">

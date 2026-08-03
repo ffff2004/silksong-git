@@ -10,6 +10,7 @@ import {
   readFile,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,6 +20,7 @@ import test from "node:test";
 
 import {
   acquireSaveHistoryWatcher,
+  compareWatchedSave,
   diffCommits,
   getSaveState,
   initSaveHistory,
@@ -343,6 +345,50 @@ test("inspectSaveHistoryRepository classifies durable compatibility separately f
   assert.equal(newerInspection.status, "newerIncompatible");
   assert.equal(newerInspection.requiredAction, "useNewerApp");
   assert.deepEqual(newerInspection.capabilities, []);
+});
+
+test("compareWatchedSave compares current and legacy-compatible configs without exposing config paths", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const linkedSavePath = path.join(
+    repo.tempDirectory,
+    "linked-watched-save.dat",
+  );
+  await symlink(repo.watchedSavePath, linkedSavePath);
+
+  assert.equal(
+    await compareWatchedSave({
+      repoPath: repo.repoPath,
+      savePath: linkedSavePath,
+    }),
+    true,
+  );
+
+  await setRepositoryFormatVersion(repo, undefined);
+  assert.equal(
+    await compareWatchedSave({
+      repoPath: repo.repoPath,
+      savePath: repo.watchedSavePath,
+    }),
+    true,
+  );
+
+  await setRepositoryFormatVersion(repo, 0);
+  assert.equal(
+    await compareWatchedSave({
+      repoPath: repo.repoPath,
+      savePath: repo.watchedSavePath,
+    }),
+    true,
+  );
+
+  await writeFile(repo.configPath, '{"repositoryFormatVersion": 999}\n');
+  await assert.rejects(
+    compareWatchedSave({
+      repoPath: repo.repoPath,
+      savePath: repo.watchedSavePath,
+    }),
+    /not compatible with Watched Save comparison/v,
+  );
 });
 
 test("migrateSaveHistoryRepository requires confirmation, a fresh inspection, and creates a recoverable backup", async (t) => {

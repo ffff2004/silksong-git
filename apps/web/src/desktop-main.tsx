@@ -5,6 +5,7 @@ import { render } from "solid-js/web";
 import { App } from "./app/App.tsx";
 import { createDesktopRuntimeCapabilities } from "./runtime-capabilities/desktop.ts";
 import type {
+  ManagedInitializationResult,
   OpenExternalRepositoryResult,
   PickStaticEncodedSaveResult,
   RepoSessionConnection,
@@ -27,6 +28,10 @@ const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
   openExternalRepository: async () =>
     await invoke<OpenExternalRepositoryResult>(
       "desktop_open_external_repository",
+    ),
+  initializeManagedRepository: async () =>
+    await invoke<ManagedInitializationResult>(
+      "desktop_initialize_managed_repository",
     ),
   pickStaticEncodedSave: async () =>
     await invoke<PickStaticEncodedSaveResult>(

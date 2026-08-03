@@ -102,6 +102,11 @@ export interface InspectSaveHistoryRepositoryInput {
   readonly gitIntegrityPolicy?: GitIntegrityPolicy;
 }
 
+export interface CompareWatchedSaveInput {
+  readonly repoPath: string;
+  readonly savePath: string;
+}
+
 export type GitIntegrityPolicy = "strict" | "advisory";
 
 export interface MigrateSaveHistoryRepositoryInput {

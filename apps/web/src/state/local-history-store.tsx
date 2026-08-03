@@ -11,6 +11,7 @@ import {
   createLocalHistoryClient,
 } from "../features/local-history/local-history-client.ts";
 import type {
+  ManagedInitializationResult,
   OpenExternalRepositoryResult,
   RepositoryLibrary,
   RepositoryLifecycle,
@@ -61,6 +62,7 @@ interface LocalHistoryStore {
   readonly disconnect: () => void;
   readonly isSupported: boolean;
   readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
+  readonly initializeManagedRepository: () => Promise<ManagedInitializationResult>;
   readonly openLibraryEntry: (input: {
     readonly lifecycle: Exclude<RepositoryLifecycle, "external">;
     readonly name: string;
@@ -209,6 +211,23 @@ export function LocalHistoryProvider(props: {
       setWorkflowState({ kind: "transitioning" });
       try {
         return await props.runtimeCapabilities.openExternalRepository();
+      } finally {
+        setWorkflowState({ kind: "active" });
+      }
+    },
+    async initializeManagedRepository() {
+      if (
+        props.runtimeCapabilities.kind !== "desktop"
+        || props.runtimeCapabilities.initializeManagedRepository === undefined
+      ) {
+        throw new Error(
+          "Managed repository initialization is unavailable in this Desktop version.",
+        );
+      }
+      ensureWorkflowActive(workflowState());
+      setWorkflowState({ kind: "transitioning" });
+      try {
+        return await props.runtimeCapabilities.initializeManagedRepository();
       } finally {
         setWorkflowState({ kind: "active" });
       }
