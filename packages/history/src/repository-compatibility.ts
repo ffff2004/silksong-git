@@ -11,6 +11,7 @@ import {
   realpath,
   rename,
   rm,
+  rmdir,
   stat,
   symlink,
   writeFile,
@@ -38,6 +39,8 @@ import {
 import { getRepositoryLayout } from "./layout.ts";
 import { isSemanticReadModelCurrent } from "./read-model.ts";
 import type {
+  ArchiveManagedRepositoryInput,
+  ArchiveManagedRepositoryResult,
   ArchiveSnapshot,
   CompareWatchedSaveInput,
   GitIntegrityPolicy,
@@ -54,7 +57,10 @@ import type {
   SaveHistoryRepositoryRequiredAction,
   SaveHistoryRepositoryStatus,
 } from "./types.ts";
-import { acquireWatchLock } from "./watch-lock.ts";
+import {
+  acquireRepositoryWatchExclusion,
+  acquireWatchLock,
+} from "./watch-lock.ts";
 import {
   acquireHistoryWriteLease,
   withHistoryWriteLock,
@@ -99,6 +105,225 @@ export async function inspectSaveHistoryRepository(
     input.gitIntegrityPolicy ?? "strict",
   );
   return inspected.inspection;
+}
+
+/**
+ * Atomically moves one direct App-managed child into the App archive root. Repository format is
+ * deliberately irrelevant: placement is Desktop policy, while History owns exclusion from its
+ * writers and watchers for the duration of the filesystem move.
+ */
+export async function archiveManagedRepository(
+  input: ArchiveManagedRepositoryInput,
+): Promise<ArchiveManagedRepositoryResult> {
+  const placement = await validateArchiveMovePlacement(input);
+  if (placement === undefined) {
+    return { status: "failed", reason: "invalidPlacement" };
+  }
+
+  return await archiveAtValidatedPlacement(input, placement).catch(
+    archiveMoveFailure,
+  );
+}
+
+async function archiveAtValidatedPlacement(
+  input: ArchiveManagedRepositoryInput,
+  placement: {
+    readonly archivesRoot: string;
+    readonly sourcePath: string;
+  },
+): Promise<ArchiveManagedRepositoryResult> {
+  const leases = await acquireArchiveMoveLeases(placement.sourcePath);
+  let destinationPath: string | undefined;
+
+  try {
+    destinationPath = await withPublicationLock(
+      placement.archivesRoot,
+      async () => {
+        const candidate = await claimArchiveMovePath(
+          placement.archivesRoot,
+          input.archiveName,
+        );
+        return await renameToClaimedArchivePath(
+          placement.sourcePath,
+          candidate,
+        );
+      },
+    );
+
+    return {
+      status: "archived",
+      repoPath: destinationPath,
+      name: path.basename(destinationPath),
+    };
+  } finally {
+    await releaseArchiveMoveLeases(leases, destinationPath);
+  }
+}
+
+interface ArchiveMoveLeases {
+  readonly watcher?: Awaited<
+    ReturnType<typeof acquireRepositoryWatchExclusion>
+  >;
+  readonly writer?: Awaited<ReturnType<typeof acquireHistoryWriteLease>>;
+}
+
+async function acquireArchiveMoveLeases(
+  sourcePath: string,
+): Promise<ArchiveMoveLeases> {
+  const controlDirectory = path.join(sourcePath, ".silksong-git");
+  if (!(await isRealDirectory(controlDirectory))) {
+    return {};
+  }
+  const writer = await acquireHistoryWriteLease(sourcePath);
+  try {
+    const watcher = await acquireRepositoryWatchExclusion({
+      repoPath: sourcePath,
+    });
+    return { watcher, writer };
+  } catch (error) {
+    await writer.release();
+    throw error;
+  }
+}
+
+async function releaseArchiveMoveLeases(
+  leases: ArchiveMoveLeases,
+  destinationPath: string | undefined,
+) {
+  await Promise.allSettled([
+    leases.watcher?.release(),
+    leases.writer?.release(),
+  ]);
+  if (destinationPath === undefined) {
+    return;
+  }
+  const layout = getRepositoryLayout(destinationPath);
+  await Promise.allSettled([
+    rm(layout.watchLockPath, { force: true }),
+    rm(layout.writeLockPath, { force: true }),
+  ]);
+}
+
+function archiveMoveFailure(error: unknown): ArchiveManagedRepositoryResult {
+  if (error instanceof SaveHistoryWatcherAlreadyAcquiredError) {
+    return { status: "failed", reason: "watcherAlreadyAcquired" };
+  }
+  if (error instanceof SaveHistoryRepositoryBusyError) {
+    return { status: "failed", reason: "repositoryBusy" };
+  }
+  return {
+    status: "failed",
+    reason: "moveFailed",
+    message: "The repository directory could not be moved atomically.",
+  };
+}
+
+async function validateArchiveMovePlacement(
+  input: ArchiveManagedRepositoryInput,
+): Promise<
+  | {
+      readonly managedRoot: string;
+      readonly archivesRoot: string;
+      readonly sourcePath: string;
+    }
+  | undefined
+> {
+  if (
+    input.archiveName === ""
+    || input.archiveName === "."
+    || input.archiveName === ".."
+    || path.basename(input.archiveName) !== input.archiveName
+  ) {
+    return undefined;
+  }
+  let resolved:
+    | readonly [
+        managedRoot: string,
+        archivesRoot: string,
+        sourceMetadata: Awaited<ReturnType<typeof lstat>>,
+      ]
+    | undefined;
+  try {
+    resolved = await Promise.all([
+      realpath(input.managedRoot),
+      realpath(input.archivesRoot),
+      lstat(input.sourcePath),
+    ]);
+  } catch {
+    return undefined;
+  }
+  return await validateResolvedArchivePlacement(input, resolved);
+}
+
+async function validateResolvedArchivePlacement(
+  input: ArchiveManagedRepositoryInput,
+  resolved: readonly [
+    managedRoot: string,
+    archivesRoot: string,
+    sourceMetadata: Awaited<ReturnType<typeof lstat>>,
+  ],
+) {
+  const [managedRoot, archivesRoot, sourceMetadata] = resolved;
+  if (!sourceMetadata.isDirectory() || sourceMetadata.isSymbolicLink()) {
+    return undefined;
+  }
+  const sourcePath = await realpath(input.sourcePath);
+  if (
+    path.dirname(sourcePath) !== managedRoot
+    || path.dirname(input.sourcePath) !== managedRoot
+    || managedRoot === archivesRoot
+  ) {
+    return undefined;
+  }
+  return { managedRoot, archivesRoot, sourcePath };
+}
+
+async function isRealDirectory(directoryPath: string): Promise<boolean> {
+  const metadata = await lstat(directoryPath).catch((error: unknown) => {
+    if (isMissingPathError(error)) {
+      return undefined;
+    }
+    throw error;
+  });
+  return metadata?.isDirectory() === true && !metadata.isSymbolicLink();
+}
+
+async function claimArchiveMovePath(
+  archivesRoot: string,
+  archiveName: string,
+): Promise<string> {
+  for (let suffix = 1; suffix <= 10_000; suffix++) {
+    const name = suffix === 1 ? archiveName : `${archiveName}-${suffix}`;
+    const candidate = path.join(archivesRoot, name);
+    const claimed = await mkdir(candidate).then(
+      () => true,
+      (error: unknown) => {
+        if (isExistingPathError(error)) {
+          return false;
+        }
+        throw error;
+      },
+    );
+    if (claimed) {
+      return candidate;
+    }
+  }
+  throw new Error("Could not find an unused archive move path.");
+}
+
+async function renameToClaimedArchivePath(
+  sourcePath: string,
+  claimedPath: string,
+): Promise<string> {
+  return await rename(sourcePath, claimedPath).then(
+    () => claimedPath,
+    async (error: unknown) => {
+      // Remove only our still-empty claim. If anything populated it, preserve that data and the
+      // original source while reporting the failed move.
+      await rmdir(claimedPath).catch(() => undefined);
+      throw error;
+    },
+  );
 }
 
 /**

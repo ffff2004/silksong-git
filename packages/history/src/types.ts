@@ -126,6 +126,33 @@ export interface ArchiveSnapshot {
   readonly gitIntegrityWarning?: string;
 }
 
+export interface ArchiveManagedRepositoryInput {
+  /**
+   * Canonical App-owned roots; History validates placement but does not persist lifecycle state.
+   */
+  readonly managedRoot: string;
+  readonly archivesRoot: string;
+  readonly sourcePath: string;
+  /** App-owned collision base name, without a path separator. */
+  readonly archiveName: string;
+}
+
+export type ArchiveManagedRepositoryResult =
+  | {
+      readonly status: "archived";
+      readonly repoPath: string;
+      readonly name: string;
+    }
+  | {
+      readonly status: "failed";
+      readonly reason:
+        | "invalidPlacement"
+        | "repositoryBusy"
+        | "watcherAlreadyAcquired"
+        | "moveFailed";
+      readonly message?: string;
+    };
+
 export type MigrationCleanupFailure = "leaseReleaseFailed";
 
 export interface PreparedSaveHistoryMigration {

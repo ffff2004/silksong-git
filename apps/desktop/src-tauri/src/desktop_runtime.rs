@@ -24,14 +24,35 @@ use crate::managed_initialization::{
 };
 use crate::save_location::{SaveLocationPlatform, SaveLocationSystem, initial_directory};
 
-const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 6;
+const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 7;
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
 const BUNDLED_SIDECAR_NAME: &str = "silksong-git-desktop-sidecar";
 
 /// The high-level Desktop session and lifecycle owner.
-#[derive(Default)]
 pub struct DesktopWorkflow {
     state: Mutex<DesktopWorkflowState>,
+    archive_clock: Box<dyn ArchiveClock>,
+}
+
+trait ArchiveClock: Send + Sync {
+    fn now(&self) -> chrono::DateTime<chrono::FixedOffset>;
+}
+
+struct SystemArchiveClock;
+
+impl ArchiveClock for SystemArchiveClock {
+    fn now(&self) -> chrono::DateTime<chrono::FixedOffset> {
+        Local::now().fixed_offset()
+    }
+}
+
+impl Default for DesktopWorkflow {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(DesktopWorkflowState::default()),
+            archive_clock: Box::new(SystemArchiveClock),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,7 +157,28 @@ pub struct RepositoryMigrationInput {
     pub name: String,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveRepositoryInput {
+    pub lifecycle: RepositoryLifecycle,
+    pub name: String,
+}
+
 #[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ArchiveRepositoryResult {
+    Archived {
+        name: String,
+    },
+    Failed {
+        reason: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+    Busy,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoSessionConnection {
     pub endpoint: String,
@@ -906,7 +948,14 @@ impl DesktopWorkflow {
         &self,
         app: &AppHandle<R>,
     ) -> Result<RepositoryLibrary, DesktopRuntimeError> {
-        let launch = SidecarLaunch::for_app(app)?;
+        self.library_with_launch(app, SidecarLaunch::for_app(app)?)
+    }
+
+    fn library_with_launch<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        launch: SidecarLaunch,
+    ) -> Result<RepositoryLibrary, DesktopRuntimeError> {
         match scan_repository_library(app, launch, self.current_session_details()?) {
             Ok(library) => {
                 if let Ok(mut state) = self.state.lock() {
@@ -976,10 +1025,10 @@ impl DesktopWorkflow {
         let path = resolve_library_child(app, RepositoryLifecycle::Managed, &input.name)?;
         let repo_path = repository_path_for_protocol(&path)?;
         let snapshot_root = managed_root(app, RepositoryLifecycle::Archived)?;
-        let snapshot_name = format!(
-            "{}--pre-migration-{}",
-            input.name,
-            Local::now().format("%Y-%m-%dT%H-%M-%S%.3f%z"),
+        let snapshot_name = archive_placement_name(
+            &input.name,
+            ArchivePlacementPurpose::PreMigration,
+            Local::now().fixed_offset(),
         );
         let snapshot_path = snapshot_root.join(snapshot_name);
         let snapshot_path = repository_path_for_protocol(&snapshot_path)?;
@@ -1076,6 +1125,141 @@ impl DesktopWorkflow {
                 self.finish_mutation();
                 Ok(other)
             }
+        }
+    }
+
+    fn archive_repository<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        input: ArchiveRepositoryInput,
+    ) -> Result<ArchiveRepositoryResult, DesktopRuntimeError> {
+        self.archive_repository_with_launch(
+            app,
+            input,
+            SidecarLaunch::for_app(app)?,
+            self.archive_clock.now(),
+        )
+    }
+
+    fn archive_repository_with_launch<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        input: ArchiveRepositoryInput,
+        launch: SidecarLaunch,
+        archived_at: chrono::DateTime<chrono::FixedOffset>,
+    ) -> Result<ArchiveRepositoryResult, DesktopRuntimeError> {
+        if input.lifecycle != RepositoryLifecycle::Managed {
+            return Err(DesktopRuntimeError::InvalidDirectory);
+        }
+        let source_path = resolve_library_child(app, RepositoryLifecycle::Managed, &input.name)?;
+        let repositories_root =
+            existing_managed_root(&managed_root(app, RepositoryLifecycle::Managed)?)?
+                .ok_or(DesktopRuntimeError::InvalidDirectory)?;
+        let archives_root =
+            ensure_managed_root(&managed_root(app, RepositoryLifecycle::Archived)?)?;
+        self.archive_repository_at(
+            source_path,
+            repositories_root,
+            archives_root,
+            input.name,
+            launch,
+            archived_at,
+        )
+    }
+
+    fn archive_repository_at(
+        &self,
+        source_path: PathBuf,
+        managed_root: PathBuf,
+        archives_root: PathBuf,
+        source_name: String,
+        launch: SidecarLaunch,
+        archived_at: chrono::DateTime<chrono::FixedOffset>,
+    ) -> Result<ArchiveRepositoryResult, DesktopRuntimeError> {
+        let source_path = canonicalize_repository_path(&source_path)?;
+        if source_path.parent() != Some(managed_root.as_path()) {
+            return Err(DesktopRuntimeError::InvalidDirectory);
+        }
+        let source_protocol_path = repository_path_for_protocol(&source_path)?;
+        let managed_protocol_path = repository_path_for_protocol(&managed_root)?;
+        let archives_protocol_path = repository_path_for_protocol(&archives_root)?;
+        let archive_name =
+            archive_placement_name(&source_name, ArchivePlacementPurpose::User, archived_at);
+
+        let (mut source_session, source_was_current) = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            if state.transitioning || state.pending_migration.is_some() {
+                return Ok(ArchiveRepositoryResult::Busy);
+            }
+            let source_is_current = state.current_session.as_ref().is_some_and(|session| {
+                session.lifecycle == RepositoryLifecycle::Managed
+                    && session.repo_path == source_protocol_path
+            });
+            state.transitioning = true;
+            (
+                if source_is_current {
+                    state.current_session.take()
+                } else {
+                    None
+                },
+                source_is_current,
+            )
+        };
+
+        if let Some(session) = source_session.as_mut() {
+            if session.watching {
+                if send_watcher_command(session, "watcher.stop").is_err() {
+                    self.finish_archive_transition(source_session, source_was_current);
+                    return Ok(ArchiveRepositoryResult::Failed {
+                        reason: "sessionShutdownFailed".into(),
+                        message: Some("The App-owned watcher could not be stopped safely.".into()),
+                    });
+                }
+                session.watching = false;
+            }
+            if session.sidecar.shutdown().is_err() {
+                self.finish_archive_transition(source_session, source_was_current);
+                return Ok(ArchiveRepositoryResult::Failed {
+                    reason: "sessionShutdownFailed".into(),
+                    message: Some("The Repo Session could not be closed safely.".into()),
+                });
+            }
+        }
+
+        let mut candidate = match SidecarSupervisor::spawn(launch) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                self.finish_archive_transition(None, source_was_current);
+                return Err(error);
+            }
+        };
+        let response = candidate.command(json!({
+            "type": "repository.archive",
+            "repoPath": source_protocol_path,
+            "managedRoot": managed_protocol_path,
+            "archivesRoot": archives_protocol_path,
+            "archiveName": archive_name,
+        }));
+        let result = response
+            .map_err(DesktopRuntimeError::from)
+            .and_then(|response| parse_archive_repository_result(&response));
+        let shutdown = candidate.shutdown();
+        self.finish_archive_transition(None, source_was_current);
+        match (result, shutdown) {
+            (Ok(result), _) => Ok(result),
+            (Err(error), _) => Err(error),
+        }
+    }
+
+    fn finish_archive_transition(&self, session: Option<ManagedSession>, source_was_current: bool) {
+        if let Ok(mut state) = self.state.lock() {
+            if source_was_current {
+                state.current_session = session;
+            }
+            state.transitioning = false;
         }
     }
 
@@ -1434,16 +1618,16 @@ fn inspect_selected_static_encoded_save_with_adapters(
 }
 
 #[tauri::command]
-pub fn desktop_get_repository_library(
-    app: AppHandle,
+pub fn desktop_get_repository_library<R: Runtime>(
+    app: AppHandle<R>,
     workflow: State<'_, DesktopWorkflow>,
 ) -> Result<RepositoryLibrary, String> {
     workflow.library(&app).map_err(|error| error.user_message())
 }
 
 #[tauri::command]
-pub fn desktop_open_library_entry(
-    app: AppHandle,
+pub fn desktop_open_library_entry<R: Runtime>(
+    app: AppHandle<R>,
     workflow: State<'_, DesktopWorkflow>,
     input: OpenLibraryEntryInput,
 ) -> Result<OpenExternalRepositoryResult, String> {
@@ -1468,6 +1652,19 @@ pub fn desktop_prepare_repository_migration(
 }
 
 #[tauri::command]
+pub fn desktop_archive_repository<R: Runtime>(
+    app: AppHandle<R>,
+    workflow: State<'_, DesktopWorkflow>,
+    input: ArchiveRepositoryInput,
+) -> Result<ArchiveRepositoryResult, String> {
+    let result = workflow
+        .archive_repository(&app, input)
+        .map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
+}
+
+#[tauri::command]
 pub fn desktop_commit_repository_migration(
     app: AppHandle,
     workflow: State<'_, DesktopWorkflow>,
@@ -1480,8 +1677,8 @@ pub fn desktop_commit_repository_migration(
 }
 
 #[tauri::command]
-pub fn desktop_close_repository(
-    app: AppHandle,
+pub fn desktop_close_repository<R: Runtime>(
+    app: AppHandle<R>,
     workflow: State<'_, DesktopWorkflow>,
 ) -> Result<(), String> {
     let result = workflow.close().map_err(|error| error.user_message());
@@ -1510,8 +1707,8 @@ pub fn desktop_get_repo_session_connection(
 }
 
 #[tauri::command]
-pub fn desktop_start_watching(
-    app: AppHandle,
+pub fn desktop_start_watching<R: Runtime>(
+    app: AppHandle<R>,
     runtime: State<'_, DesktopWorkflow>,
 ) -> Result<(), String> {
     let result = runtime
@@ -1522,8 +1719,8 @@ pub fn desktop_start_watching(
 }
 
 #[tauri::command]
-pub fn desktop_stop_watching(
-    app: AppHandle,
+pub fn desktop_stop_watching<R: Runtime>(
+    app: AppHandle<R>,
     runtime: State<'_, DesktopWorkflow>,
 ) -> Result<(), String> {
     let result = runtime
@@ -1764,8 +1961,6 @@ fn scan_repository_library<R: Runtime>(
                 && required_action == "confirmMigration";
             let can_rebuild_managed =
                 is_managed_rebuild_candidate(lifecycle, &status, &required_action);
-            let can_browse_archived = lifecycle == RepositoryLifecycle::Archived
-                && is_read_only_archive_status(&status, &required_action);
             let record = RepositoryLibraryEntry {
                 name,
                 lifecycle,
@@ -1774,16 +1969,10 @@ fn scan_repository_library<R: Runtime>(
                 current: is_current,
                 watching: is_current && current.as_ref().is_some_and(|(_, _, watching)| *watching),
             };
-            if status == "ready"
-                || can_migrate_managed
-                || can_rebuild_managed
-                || can_browse_archived
-            {
-                match lifecycle {
-                    RepositoryLifecycle::Managed => library.managed.push(record),
-                    RepositoryLifecycle::Archived => library.archived.push(record),
-                    RepositoryLifecycle::External => unreachable!(),
-                }
+            if lifecycle == RepositoryLifecycle::Archived && candidate.is_some() {
+                library.archived.push(record);
+            } else if status == "ready" || can_migrate_managed || can_rebuild_managed {
+                library.managed.push(record);
             } else {
                 library.attention.push(record);
             }
@@ -1862,6 +2051,29 @@ fn repository_path_for_protocol(path: &Path) -> Result<String, DesktopRuntimeErr
     path.to_str()
         .map(str::to_owned)
         .ok_or(DesktopRuntimeError::UnsupportedDirectoryName)
+}
+
+#[derive(Clone, Copy)]
+enum ArchivePlacementPurpose {
+    User,
+    PreMigration,
+}
+
+fn archive_placement_name(
+    managed_entry_name: &str,
+    purpose: ArchivePlacementPurpose,
+    timestamp: chrono::DateTime<chrono::FixedOffset>,
+) -> String {
+    let purpose = match purpose {
+        ArchivePlacementPurpose::User => "user",
+        ArchivePlacementPurpose::PreMigration => "pre-migration",
+    };
+    format!(
+        "{}--{}-{}",
+        managed_entry_name,
+        purpose,
+        timestamp.format("%Y-%m-%dT%H-%M-%S%.3f%z"),
+    )
 }
 
 fn advisory_repository_inspection_command(repo_path: &str) -> Value {
@@ -2243,6 +2455,44 @@ fn parse_repository_migration_preparation(
         }),
         _ => Err(DesktopRuntimeError::Protocol(
             "The Desktop sidecar returned an unknown migration preparation status.".into(),
+        )),
+    }
+}
+
+fn parse_archive_repository_result(
+    response: &Value,
+) -> Result<ArchiveRepositoryResult, DesktopRuntimeError> {
+    let archive = response.pointer("/result/archive").ok_or_else(|| {
+        DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid archive result.".into(),
+        )
+    })?;
+    match archive.get("status").and_then(Value::as_str) {
+        Some("archived") => {
+            let name = archive
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .ok_or_else(|| {
+                    DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid archive name.".into(),
+                    )
+                })?;
+            Ok(ArchiveRepositoryResult::Archived { name: name.into() })
+        }
+        Some("failed") => Ok(ArchiveRepositoryResult::Failed {
+            reason: archive
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("moveFailed")
+                .into(),
+            message: archive
+                .get("message")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        }),
+        _ => Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an unknown archive result.".into(),
         )),
     }
 }
@@ -2733,27 +2983,49 @@ mod tests {
     use std::{
         cell::RefCell,
         fs,
+        io::{Read, Write},
+        net::{Shutdown, TcpStream},
         path::{Path, PathBuf},
+        process::Command,
         sync::atomic::{AtomicUsize, Ordering},
         thread,
         time::Duration,
     };
 
     use chrono::{FixedOffset, TimeZone, Timelike};
+    use serde::de::DeserializeOwned;
+    use serde_json::{Value, json};
+    use tauri::{
+        App, Manager, WebviewWindow,
+        ipc::{CallbackFn, InvokeBody},
+        test::{
+            INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder, mock_context, noop_assets,
+        },
+        webview::InvokeRequest,
+    };
 
     use super::{
-        DEVELOPMENT_SIDECAR_ENTRY, DesktopRuntime, DesktopRuntimeError,
-        ManagedInitializationResult, OpenExternalRepositoryResult, PendingRepositoryMigration,
-        PickStaticEncodedSaveResult, RepositoryLifecycle, RepositoryOpenIntent,
-        SaveLocationPlatform, SaveLocationSystem, SidecarLaunch, SidecarSupervisor,
-        StaticSaveFileSystem, StaticSaveInspection, StaticSaveInspector, StaticSavePicker,
-        advisory_repository_inspection_command, canonicalize_repository_path,
+        ArchivePlacementPurpose, ArchiveRepositoryResult, DEVELOPMENT_SIDECAR_ENTRY,
+        DesktopRuntime, DesktopRuntimeError, ManagedInitializationResult,
+        OpenExternalRepositoryResult, PendingRepositoryMigration, PickStaticEncodedSaveResult,
+        RepositoryLifecycle, RepositoryOpenIntent, SaveLocationPlatform, SaveLocationSystem,
+        SidecarLaunch, SidecarSupervisor, StaticSaveFileSystem, StaticSaveInspection,
+        StaticSaveInspector, StaticSavePicker, advisory_repository_inspection_command,
+        archive_placement_name, canonicalize_repository_path, development_sidecar_launch,
         inspect_static_encoded_save_with_adapters, managed_repository_name,
         menu_static_save_result, natural_name_cmp, repository_open_inspection_command,
-        sidecar_launch_for_resource_directory,
+        sidecar_launch_for_resource_directory, workspace_root,
     };
 
     static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+
+    struct FixedArchiveClock(chrono::DateTime<chrono::FixedOffset>);
+
+    impl super::ArchiveClock for FixedArchiveClock {
+        fn now(&self) -> chrono::DateTime<chrono::FixedOffset> {
+            self.0
+        }
+    }
 
     struct FakeSaveLocationSystem;
 
@@ -3945,6 +4217,435 @@ mod tests {
     }
 
     #[test]
+    fn desktop_archive_moves_an_uninspectable_direct_child_with_user_naming_policy() {
+        let temp = TestDirectory::new();
+        let managed_root = temp.path().join("repositories");
+        let archives_root = temp.path().join("archives");
+        let source = managed_root.join("opaque-repository");
+        fs::create_dir_all(&source).expect("create opaque managed child");
+        fs::create_dir(&archives_root).expect("create archives root");
+        fs::write(source.join("keep"), b"opaque").expect("write opaque content");
+        let script = temp.path().join("archive-sidecar.mjs");
+        fs::write(
+            &script,
+            r#"
+import fs from "node:fs";
+import path from "node:path";
+const write = (message) => process.stdout.write(JSON.stringify(message) + "\n");
+write({ protocolVersion: 7, kind: "event", event: { type: "process.ready" } });
+let buffer = "";
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  for (;;) {
+    const newline = buffer.indexOf("\n");
+    if (newline < 0) return;
+    const request = JSON.parse(buffer.slice(0, newline));
+    buffer = buffer.slice(newline + 1);
+    if (request.command.type === "repository.archive") {
+      const destination = path.join(request.command.archivesRoot, request.command.archiveName);
+      fs.renameSync(request.command.repoPath, destination);
+      write({ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true,
+        result: { type: "repository.archiveResult", archive: { status: "archived", repoPath: destination, name: request.command.archiveName } } });
+    } else if (request.command.type === "process.shutdown") {
+      write({ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true,
+        result: { type: "process.shutdownComplete" } });
+      process.exit(0);
+    }
+
+  }
+});
+"#,
+        )
+        .expect("write archive fixture");
+        let timestamp = test_initialization_time();
+        let expected_name = archive_placement_name(
+            "opaque-repository",
+            ArchivePlacementPurpose::User,
+            timestamp,
+        );
+
+        let result = DesktopRuntime::default().archive_repository_at(
+            fs::canonicalize(&source).expect("canonical source"),
+            fs::canonicalize(&managed_root).expect("canonical managed root"),
+            fs::canonicalize(&archives_root).expect("canonical archives root"),
+            "opaque-repository".into(),
+            SidecarLaunch::Development {
+                entry: script,
+                node: PathBuf::from("node"),
+            },
+            timestamp,
+        );
+
+        assert!(matches!(
+            result,
+            Ok(ArchiveRepositoryResult::Archived { name }) if name == expected_name
+        ));
+        assert!(!source.exists());
+        assert_eq!(
+            fs::read(archives_root.join(expected_name).join("keep"))
+                .expect("read archived content"),
+            b"opaque"
+        );
+        assert_eq!(
+            archive_placement_name(
+                "opaque-repository",
+                ArchivePlacementPurpose::PreMigration,
+                timestamp,
+            ),
+            format!(
+                "opaque-repository--pre-migration-{}",
+                timestamp.format("%Y-%m-%dT%H-%M-%S%.3f%z")
+            )
+        );
+    }
+
+    #[test]
+    fn real_desktop_archive_stops_its_session_and_opens_an_exact_read_only_archive() {
+        let desktop = TestDesktopApp::new();
+        let save_path = desktop.root().join("slot.dat");
+        let fixture = workspace_root()
+            .expect("workspace root")
+            .join("packages/core/src/decode/fixtures/minimal-valid-save.dat");
+        fs::copy(&fixture, &save_path).expect("copy Encoded Save fixture");
+        let managed_root = desktop.root().join("repositories");
+        let archives_root = desktop.root().join("archives");
+        let timestamp = test_initialization_time();
+        let source_name = managed_repository_name(&save_path, timestamp);
+        let workflow = desktop.app.state::<super::DesktopWorkflow>();
+        let launch = real_sidecar_launch();
+
+        assert!(matches!(
+            workflow.initialize_managed_repository_with_launch(
+                save_path.clone(),
+                managed_root.clone(),
+                launch.clone(),
+                timestamp,
+            ),
+            Ok(ManagedInitializationResult::Initialized)
+        ));
+        assert!(
+            workflow
+                .close_requires_confirmation()
+                .expect("initialized watcher is active")
+        );
+
+        fs::create_dir_all(&archives_root).expect("create archives root");
+        let archive_base =
+            archive_placement_name(&source_name, ArchivePlacementPurpose::User, timestamp);
+        fs::create_dir(archives_root.join(&archive_base)).expect("create name collision");
+
+        let result: Value = desktop
+            .invoke(
+                "desktop_archive_repository",
+                json!({ "input": { "lifecycle": "managed", "name": source_name } }),
+            )
+            .expect("public Desktop archive should succeed");
+        let archived_name = result
+            .get("name")
+            .and_then(Value::as_str)
+            .expect("archived result name")
+            .to_owned();
+        assert_eq!(result.get("kind").and_then(Value::as_str), Some("archived"));
+        assert_eq!(archived_name, format!("{archive_base}-2"));
+        assert!(!managed_root.join(&source_name).exists());
+        assert!(archives_root.join(&archived_name).is_dir());
+        assert!(
+            desktop
+                .invoke::<super::RepoSessionConnection>(
+                    "desktop_get_repo_session_connection",
+                    json!({}),
+                )
+                .is_err()
+        );
+
+        let opened: Value = desktop
+            .invoke(
+                "desktop_open_library_entry",
+                json!({
+                    "input": {
+                        "lifecycle": "archived",
+                        "name": archived_name,
+                        "intent": "open",
+                    },
+                }),
+            )
+            .expect("public Desktop archive open should succeed");
+        assert_eq!(opened.get("kind").and_then(Value::as_str), Some("opened"));
+        let connection: super::RepoSessionConnection = desktop
+            .invoke("desktop_get_repo_session_connection", json!({}))
+            .expect("public Desktop connection should be available");
+        assert_eq!(connection.access, "readOnly");
+        assert!(
+            desktop
+                .invoke::<Value>("desktop_start_watching", json!({}))
+                .is_err()
+        );
+        assert_eq!(
+            node_http_request(&connection, "GET", "/api/v1/export?commit=HEAD~0", None),
+            (200, fs::read(&fixture).expect("read Encoded Save fixture"))
+        );
+        let (checkpoint_status, _) =
+            node_http_request(&connection, "POST", "/api/v1/checkpoints", Some("{}"));
+        assert_eq!(checkpoint_status, 403);
+        let (observations_status, observations) =
+            node_http_request(&connection, "GET", "/api/v1/observations", None);
+        assert_eq!(observations_status, 200);
+        let observations: Value =
+            serde_json::from_slice(&observations).expect("parse observation response");
+        assert_eq!(
+            observations
+                .get("entries")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(1),
+            "stopping for archive must not create a final observation",
+        );
+        desktop
+            .invoke::<Value>("desktop_close_repository", json!({}))
+            .expect("public Desktop close should stop archived reader");
+    }
+
+    #[test]
+    fn public_desktop_archive_drains_an_admitted_checkpoint_before_moving() {
+        let desktop = TestDesktopApp::new();
+        let save_path = desktop.root().join("slot.dat");
+        let fixture = workspace_root()
+            .expect("workspace root")
+            .join("packages/core/src/decode/fixtures/minimal-valid-save.dat");
+        fs::copy(&fixture, &save_path).expect("copy Encoded Save fixture");
+        let managed_root = desktop.root().join("repositories");
+        let timestamp = test_initialization_time();
+        let source_name = managed_repository_name(&save_path, timestamp);
+        let workflow = desktop.app.state::<super::DesktopWorkflow>();
+        assert!(matches!(
+            workflow.initialize_managed_repository_with_launch(
+                save_path,
+                managed_root.clone(),
+                real_sidecar_launch(),
+                timestamp,
+            ),
+            Ok(ManagedInitializationResult::Initialized)
+        ));
+        let connection: super::RepoSessionConnection = desktop
+            .invoke("desktop_get_repo_session_connection", json!({}))
+            .expect("public Desktop connection should be available");
+
+        let checkpoint_body = r#"{"allowUnchanged":true}"#;
+        let (mut checkpoint, mut checkpoint_response) =
+            begin_admitted_checkpoint(&connection, checkpoint_body);
+        let archive_webview = desktop.webview.clone();
+        let archive_name = source_name.clone();
+        let archive = thread::spawn(move || {
+            invoke_public_desktop_command::<Value>(
+                &archive_webview,
+                "desktop_archive_repository",
+                json!({
+                    "input": { "lifecycle": "managed", "name": archive_name },
+                }),
+            )
+        });
+
+        let admission_deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !http_admission_is_closed(&connection) {
+            assert!(
+                std::time::Instant::now() < admission_deadline,
+                "archive should close Repo Session HTTP admission"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            managed_root.join(&source_name).is_dir(),
+            "the source must remain until admitted work drains and the session closes"
+        );
+
+        checkpoint
+            .write_all(checkpoint_body.as_bytes())
+            .expect("finish admitted checkpoint body");
+        checkpoint
+            .shutdown(Shutdown::Write)
+            .expect("finish checkpoint request");
+        checkpoint
+            .read_to_end(&mut checkpoint_response)
+            .expect("read admitted checkpoint response");
+
+        let archived = archive
+            .join()
+            .expect("public archive command thread")
+            .expect("public archive command result");
+        let archived_name = archived
+            .get("name")
+            .and_then(Value::as_str)
+            .expect("archived result name")
+            .to_owned();
+        assert!(!managed_root.join(&source_name).exists());
+        assert!(
+            desktop
+                .root()
+                .join("archives")
+                .join(&archived_name)
+                .is_dir()
+        );
+
+        let library: Value = desktop
+            .invoke("desktop_get_repository_library", json!({}))
+            .expect("public library refresh after archive");
+        assert!(
+            library
+                .get("archived")
+                .and_then(Value::as_array)
+                .is_some_and(|entries| entries.iter().any(|entry| {
+                    entry.get("name").and_then(Value::as_str) == Some(archived_name.as_str())
+                }))
+        );
+        let opened: Value = desktop
+            .invoke(
+                "desktop_open_library_entry",
+                json!({
+                    "input": {
+                        "lifecycle": "archived",
+                        "name": archived_name,
+                        "intent": "open",
+                    },
+                }),
+            )
+            .expect("public archived reader open");
+        assert_eq!(opened.get("kind").and_then(Value::as_str), Some("opened"));
+        let archived_connection: super::RepoSessionConnection = desktop
+            .invoke("desktop_get_repo_session_connection", json!({}))
+            .expect("public archived connection");
+        let (status, observations) =
+            node_http_request(&archived_connection, "GET", "/api/v1/observations", None);
+        assert_eq!(status, 200);
+        let observations: Value =
+            serde_json::from_slice(&observations).expect("parse observations");
+        let entries = observations
+            .get("entries")
+            .and_then(Value::as_array)
+            .expect("observation entries");
+        assert_eq!(entries.len(), 2, "archive must not add a final observation");
+        assert_eq!(
+            entries[0]
+                .pointer("/observation/trigger")
+                .and_then(Value::as_str),
+            Some("manualCheckpoint"),
+            "the already-admitted checkpoint must complete before the move"
+        );
+        desktop
+            .invoke::<Value>("desktop_close_repository", json!({}))
+            .expect("public Desktop close should stop archived reader");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_desktop_archive_rejects_unsafe_sources_and_keeps_failed_moves_in_place() {
+        use std::os::unix::fs::symlink;
+
+        let desktop = TestDesktopApp::new();
+        let managed_root = desktop.root().join("repositories");
+        let archives_root = desktop.root().join("archives");
+        fs::create_dir_all(&managed_root).expect("create managed root");
+        fs::create_dir(&archives_root).expect("create archives root");
+        let source_name = "x".repeat(240);
+        let source = managed_root.join(&source_name);
+        fs::create_dir(&source).expect("create long-name managed child");
+        fs::write(source.join("keep"), b"unchanged").expect("write source marker");
+        symlink(&source, managed_root.join("linked")).expect("create managed symlink");
+        for name in ["linked".to_owned(), "../outside".to_owned()] {
+            assert!(
+                desktop
+                    .invoke::<Value>(
+                        "desktop_archive_repository",
+                        json!({ "input": { "lifecycle": "managed", "name": name } }),
+                    )
+                    .is_err()
+            );
+        }
+
+        let failed: Value = desktop
+            .invoke(
+                "desktop_archive_repository",
+                json!({ "input": { "lifecycle": "managed", "name": source_name } }),
+            )
+            .expect("move failure is a structured public Desktop result");
+        assert_eq!(failed.get("kind").and_then(Value::as_str), Some("failed"));
+        assert_eq!(
+            failed.get("reason").and_then(Value::as_str),
+            Some("moveFailed")
+        );
+        assert_eq!(
+            fs::read(source.join("keep")).expect("failed source remains"),
+            b"unchanged"
+        );
+        assert_eq!(
+            fs::read_dir(&archives_root)
+                .expect("read archives root")
+                .count(),
+            0
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_public_library_scan_classifies_only_archive_child_directories_as_archived() {
+        use std::os::unix::fs::symlink;
+
+        let desktop = TestDesktopApp::new();
+        let managed_root = desktop.root().join("repositories");
+        let archives_root = desktop.root().join("archives");
+        let opaque = managed_root.join("opaque");
+        fs::create_dir_all(&opaque).expect("create opaque managed child");
+        fs::create_dir(&archives_root).expect("create archives root");
+        fs::write(opaque.join("keep"), b"opaque").expect("write opaque marker");
+        let result: Value = desktop
+            .invoke(
+                "desktop_archive_repository",
+                json!({ "input": { "lifecycle": "managed", "name": "opaque" } }),
+            )
+            .expect("public Desktop uninspectable archive move should succeed");
+        let archived_name = result
+            .get("name")
+            .and_then(Value::as_str)
+            .expect("archived result name")
+            .to_owned();
+        fs::write(archives_root.join("not-a-directory"), b"opaque")
+            .expect("write regular archive child");
+        symlink(
+            archives_root.join(&archived_name),
+            archives_root.join("linked-directory"),
+        )
+        .expect("create archive symlink child");
+
+        let library: Value = desktop
+            .invoke("desktop_get_repository_library", json!({}))
+            .expect("public Desktop library scan should succeed");
+        let archived = library
+            .get("archived")
+            .and_then(Value::as_array)
+            .expect("archived entries");
+        assert_eq!(archived.len(), 1);
+        assert_eq!(
+            archived[0].get("name").and_then(Value::as_str),
+            Some(archived_name.as_str())
+        );
+        assert_eq!(
+            archived[0].get("status").and_then(Value::as_str),
+            Some("invalid")
+        );
+
+        let attention = library
+            .get("attention")
+            .and_then(Value::as_array)
+            .expect("attention entries");
+        assert_eq!(attention.len(), 2);
+        for name in ["linked-directory", "not-a-directory"] {
+            assert!(attention.iter().any(|entry| {
+                entry.get("name").and_then(Value::as_str) == Some(name)
+                    && entry.get("status").and_then(Value::as_str) == Some("invalid")
+            }));
+        }
+    }
+
+    #[test]
     fn failed_candidate_open_preserves_the_current_session() {
         let temp = TestDirectory::new();
         let first_repository = temp.path().join("first-repository");
@@ -4518,13 +5219,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 6, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 7, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 6, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 7, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 
-write({{ protocolVersion: 6, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 7, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -4624,13 +5325,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 6, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 7, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 6, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 7, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 function mutation(status) {{
-  write({{ protocolVersion: 6, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
+  write({{ protocolVersion: 7, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
 }}
 function inspection() {{
   const ready = repositoryStatus === "ready";
@@ -4641,7 +5342,7 @@ function inspection() {{
   }};
 }}
 
-write({{ protocolVersion: 6, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 7, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -4731,7 +5432,7 @@ if (process.argv.includes(repository)) {{
   process.exitCode = 91;
   process.exit();
 }}
-process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -4750,14 +5451,14 @@ process.stdin.on("data", (chunk) => {{
       result = {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
     }} else if (request.command.type === "process.shutdown") {{
       result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }} else {{
       result = {{ type: request.command.type === "watcher.start" ? "watcher.started" : "watcher.stopped" }};
     }}
-    process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+    process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
     if (request.command.type === "session.open" && {status:?} === "mutation") {{
-      process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
     }}
   }}
 }});
@@ -4770,7 +5471,7 @@ process.stdin.on("data", (chunk) => {{
         format!(
             r#"
 const repository = {repository};
-process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -4782,7 +5483,7 @@ process.stdin.on("data", (chunk) => {{
     ? {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }}
     : {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
   if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) throw new Error("wrong repository");
-  process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
   if (request.command.type === "session.open") process.exit(1);
 }});
 "#
@@ -4797,7 +5498,7 @@ process.stdin.on("data", (chunk) => {{
 import fs from "node:fs";
 const repository = {repository};
 const marker = {marker};
-process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -4809,12 +5510,12 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "repository.inspect") {{
       if (request.command.repoPath !== repository) throw new Error("repository path was not sent over stdin");
       const result = {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       continue;
     }}
     if (request.command.type === "session.open") {{
       const error = {{
-        protocolVersion: 6,
+        protocolVersion: 7,
         kind: "response",
         requestId: request.requestId,
         ok: false,
@@ -4829,7 +5530,7 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "process.shutdown") {{
       fs.writeFileSync(marker, "shutdown");
       const result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 6, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }}
     throw new Error("unexpected candidate command");
@@ -4837,6 +5538,203 @@ process.stdin.on("data", (chunk) => {{
 }});
 "#
         )
+    }
+
+    fn real_sidecar_launch() -> SidecarLaunch {
+        development_sidecar_launch(workspace_root().expect("workspace root"))
+            .expect("built Desktop sidecar")
+    }
+
+    fn node_http_request(
+        connection: &super::RepoSessionConnection,
+        method: &str,
+        path: &str,
+        body: Option<&str>,
+    ) -> (u16, Vec<u8>) {
+        let output = Command::new(if cfg!(windows) { "node.exe" } else { "node" })
+            .arg("--input-type=module")
+            .arg("--eval")
+            .arg(
+                r#"
+const [endpoint, token, method, path, body] = process.argv.slice(1);
+const response = await fetch(`${endpoint}${path}`, {
+  method,
+  headers: {
+    Authorization: `Bearer ${token}`,
+    ...(body === "" ? {} : { "Content-Type": "application/json" }),
+  },
+  ...(body === "" ? {} : { body }),
+});
+process.stdout.write(`${response.status}\n`);
+process.stdout.write(Buffer.from(await response.arrayBuffer()));
+"#,
+            )
+            .args([
+                &connection.endpoint,
+                &connection.token,
+                method,
+                path,
+                body.unwrap_or(""),
+            ])
+            .output()
+            .expect("run Node HTTP client");
+        assert!(
+            output.status.success(),
+            "Node HTTP client failed: {}",
+            String::from_utf8_lossy(&output.stderr),
+        );
+        let newline = output
+            .stdout
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .expect("HTTP status separator");
+        let status = std::str::from_utf8(&output.stdout[..newline])
+            .expect("UTF-8 HTTP status")
+            .parse()
+            .expect("numeric HTTP status");
+        (status, output.stdout[(newline + 1)..].to_vec())
+    }
+
+    fn begin_admitted_checkpoint(
+        connection: &super::RepoSessionConnection,
+        body: &str,
+    ) -> (TcpStream, Vec<u8>) {
+        let address = connection
+            .endpoint
+            .strip_prefix("http://")
+            .expect("loopback HTTP endpoint");
+        let mut socket = TcpStream::connect(address).expect("connect admitted checkpoint");
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("set checkpoint read timeout");
+        write!(
+            socket,
+            "POST /api/v1/checkpoints HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\nExpect: 100-continue\r\n\r\n",
+            connection.token,
+            body.len(),
+        )
+        .expect("send admitted checkpoint headers");
+
+        let mut response = Vec::new();
+        while !String::from_utf8_lossy(&response).contains("100 Continue") {
+            let mut chunk = [0_u8; 1024];
+            let read = socket.read(&mut chunk).expect("read checkpoint admission");
+            assert!(read > 0, "checkpoint closed before admission");
+            response.extend_from_slice(&chunk[..read]);
+        }
+        (socket, response)
+    }
+
+    fn http_admission_is_closed(connection: &super::RepoSessionConnection) -> bool {
+        let address = connection
+            .endpoint
+            .strip_prefix("http://")
+            .expect("loopback HTTP endpoint");
+        let Ok(mut socket) = TcpStream::connect(address) else {
+            return true;
+        };
+        let _ = socket.set_read_timeout(Some(Duration::from_millis(100)));
+        if write!(
+            socket,
+            "GET /api/v1/watcher HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n",
+            connection.token,
+        )
+        .is_err()
+        {
+            return true;
+        }
+        let _ = socket.shutdown(Shutdown::Write);
+        let mut response = String::new();
+        match socket.read_to_string(&mut response) {
+            Ok(_) => response.contains(" 503 ") || response.is_empty(),
+            Err(error) => !matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ),
+        }
+    }
+
+    struct TestDesktopApp {
+        app: App<MockRuntime>,
+        webview: WebviewWindow<MockRuntime>,
+        root: PathBuf,
+    }
+
+    impl TestDesktopApp {
+        fn new() -> Self {
+            let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let mut context = mock_context(noop_assets());
+            context.config_mut().identifier = format!(
+                "io.github.ffff2004.silksong-git-test-{}-{sequence}",
+                std::process::id()
+            );
+            let app = mock_builder()
+                .manage(super::DesktopWorkflow {
+                    state: Default::default(),
+                    archive_clock: Box::new(FixedArchiveClock(test_initialization_time())),
+                })
+                .invoke_handler(tauri::generate_handler![
+                    super::desktop_get_repo_session_connection,
+                    super::desktop_get_repository_library,
+                    super::desktop_open_library_entry,
+                    super::desktop_archive_repository,
+                    super::desktop_close_repository,
+                    super::desktop_start_watching,
+                    super::desktop_stop_watching,
+                ])
+                .build(context)
+                .expect("build mock Desktop App");
+            let menu = crate::install_repository_menu(&app).expect("install test repository menu");
+            app.manage(menu);
+            let webview = tauri::WebviewWindowBuilder::new(
+                &app,
+                "main",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .build()
+            .expect("build mock Desktop WebView");
+            let root = app
+                .path()
+                .app_local_data_dir()
+                .expect("resolve mock App Local Data");
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(&root).expect("create mock App Local Data");
+            Self { app, webview, root }
+        }
+
+        fn root(&self) -> &Path {
+            &self.root
+        }
+
+        fn invoke<T: DeserializeOwned>(&self, command: &str, body: Value) -> Result<T, Value> {
+            invoke_public_desktop_command(&self.webview, command, body)
+        }
+    }
+
+    fn invoke_public_desktop_command<T: DeserializeOwned>(
+        webview: &WebviewWindow<MockRuntime>,
+        command: &str,
+        body: Value,
+    ) -> Result<T, Value> {
+        get_ipc_response(
+            webview,
+            InvokeRequest {
+                cmd: command.into(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: "tauri://localhost".parse().expect("valid test IPC URL"),
+                body: InvokeBody::Json(body),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.into(),
+            },
+        )
+        .map(|body| body.deserialize().expect("deserialize IPC response"))
+    }
+
+    impl Drop for TestDesktopApp {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
     }
 
     struct TestDirectory {

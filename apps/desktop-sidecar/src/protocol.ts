@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const desktopSidecarProtocolVersion = 6 as const;
+export const desktopSidecarProtocolVersion = 7 as const;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -10,6 +10,7 @@ export const desktopSidecarErrorCodes = [
   "invalid_repo_path",
   "repository_inspect_failed",
   "repository_initialize_failed",
+  "repository_archive_failed",
   "repository_watched_save_compare_failed",
   "repository_migrate_failed",
   "repository_migration_not_prepared",
@@ -69,6 +70,16 @@ export const repositoryCompareWatchedSaveCommandSchema = z
     type: z.literal("repository.compareWatchedSave"),
     repoPath: z.string().min(1).max(4096),
     savePath: z.string().min(1).max(4096),
+  })
+  .strict();
+
+export const repositoryArchiveCommandSchema = z
+  .object({
+    type: z.literal("repository.archive"),
+    managedRoot: z.string().min(1).max(4096),
+    archivesRoot: z.string().min(1).max(4096),
+    repoPath: z.string().min(1).max(4096),
+    archiveName: z.string().min(1).max(512),
   })
   .strict();
 
@@ -185,6 +196,28 @@ const repositoryInitializationResultSchema = z.discriminatedUnion("status", [
 const repositoryWatchedSaveComparisonSchema = z
   .object({ same: z.boolean() })
   .strict();
+
+const repositoryArchiveResultSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("archived"),
+      repoPath: z.string().min(1).max(4096),
+      name: z.string().min(1).max(512),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      reason: z.enum([
+        "invalidPlacement",
+        "repositoryBusy",
+        "watcherAlreadyAcquired",
+        "moveFailed",
+      ]),
+      message: z.string().optional(),
+    })
+    .strict(),
+]);
 
 const migrationSourceStateSchema = z.enum(["unchanged", "migrated", "unknown"]);
 const migrationCleanupFailureSchema = z.literal("leaseReleaseFailed");
@@ -314,6 +347,12 @@ const successResultSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("repository.watchedSaveCompared"),
       same: repositoryWatchedSaveComparisonSchema.shape.same,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("repository.archiveResult"),
+      archive: repositoryArchiveResultSchema,
     })
     .strict(),
   z
@@ -471,7 +510,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 6;
+    readonly protocolVersion: 7;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },

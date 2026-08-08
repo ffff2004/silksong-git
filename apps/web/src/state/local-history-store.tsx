@@ -11,6 +11,7 @@ import {
   createLocalHistoryClient,
 } from "../features/local-history/local-history-client.ts";
 import type {
+  ArchiveRepositoryResult,
   ManagedInitializationResult,
   OpenExternalRepositoryResult,
   RepositoryLibrary,
@@ -57,6 +58,10 @@ export type DesktopWorkflowState =
     };
 
 interface LocalHistoryStore {
+  readonly archiveRepository: (input: {
+    readonly lifecycle: "managed";
+    readonly name: string;
+  }) => Promise<ArchiveRepositoryResult>;
   readonly closeRepository: () => Promise<void>;
   readonly connect: () => Promise<boolean>;
   readonly connection: () => LocalHistoryConnection;
@@ -119,6 +124,23 @@ export function LocalHistoryProvider(props: {
   };
 
   const store: LocalHistoryStore = {
+    async archiveRepository(input) {
+      if (
+        props.runtimeCapabilities.kind !== "desktop"
+        || props.runtimeCapabilities.archiveRepository === undefined
+      ) {
+        throw new Error(
+          "Repository archiving is unavailable in this Desktop version.",
+        );
+      }
+      ensureWorkflowActive(workflowState());
+      setWorkflowState({ kind: "transitioning" });
+      try {
+        return await props.runtimeCapabilities.archiveRepository(input);
+      } finally {
+        setWorkflowState({ kind: "active" });
+      }
+    },
     async closeRepository() {
       if (props.runtimeCapabilities.kind !== "desktop") {
         throw new Error(

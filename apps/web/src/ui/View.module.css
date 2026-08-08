@@ -13,3 +13,10 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+
+.archiveHighlight {
+  padding: 6px;
+  background: rgb(197 106 45 / 14%);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--accent);
+}

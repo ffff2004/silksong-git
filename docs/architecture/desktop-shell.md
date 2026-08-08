@@ -73,7 +73,8 @@ permission.
 
 The global Tauri object is disabled. The unique `main` capability allows only
 narrow application intent commands: inspect one local Encoded Save, prepare
-and commit one confirmed managed-repository migration, open an external
+and commit one confirmed managed-repository migration, archive one confirmed
+direct managed child, open an external
 repository, explicitly reopen an invalidated in-memory selection, obtain the
 current Repo Session connection, and start or stop watching for that current
 session. It grants no
@@ -118,10 +119,21 @@ serialization, watcher exclusion, snapshot verification, and source writes.
 Once either operation produces a compatible repository, it is opened through the
 normal authenticated Repo Session HTTP lifecycle.
 
+Standalone archive is a third narrow direct-History exception because it also
+accepts an uninspectable Managed Repository child. Desktop validates canonical
+direct-child containment and rejects symlinks, enters its session transition,
+stops its own watcher without a final observation, drains and closes its Repo
+Session, then sends opaque canonical roots, source, and an App-generated name
+through `repository.archive`. History holds writer and watcher exclusion
+continuously through the atomic rename; external watcher ownership causes a
+safe refusal.
+
 The Desktop runtime owns `DesktopWorkflow`: landing entry, refresh, opening a
-library entry, and closing the current session. It scans only direct child
-directories beneath each fixed root, uses a short-lived sidecar to call public
-History inspection serially for every candidate, and uses History's narrow
+library entry, and closing the current session. It enumerates only direct
+children beneath each fixed root. Direct child directories under `archives/`
+remain Archived Repository candidates even when inspection fails; regular files
+and symlinks remain in Need attention. It uses a short-lived sidecar to call public
+History inspection serially for every directory candidate and uses History's narrow
 Watched Save comparison workflow when checking managed initialization
 duplicates. It treats directory names as presentation-only natural-sort keys.
 Invalid and incompatible children remain visible in the library's Need attention
@@ -147,13 +159,22 @@ newer-incompatible candidates remain in the attention presentation and cannot
 enter the managed migration workflow. Compatible legacy and migration-required
 entries beneath `archives/` remain Archived Repository candidates for read-only
 browsing. Desktop generates the archive base name from the managed
-entry name, migration reason, and local timestamp, then passes the resulting
+entry name, placement purpose, and local timestamp, then passes the resulting
 opaque path to History through the sidecar. The final confirmation starts a
 tracked Desktop mutation. Preparation must complete before the UI reports the
 actual published snapshot path and advisory Git warning; only then may the UI
 request commit. The pending operation blocks repository switching and normal
 exit, has no ordinary cancellation or retry, and preserves a published archive
 if migration fails.
+
+The shared private naming policy keeps durable migration snapshots at
+`<managed-entry-name>--pre-migration-<local timestamp>` and standalone user
+moves at `<managed-entry-name>--user-<local timestamp>`. A standalone move is
+successful even when the resulting archive cannot be inspected; the library
+then presents `Archived · Unavailable` without an Open action. It refreshes
+after every result and, on success, disconnects a moved current session,
+expands Archived repositories, highlights the moved entry, and reports the
+existing success Toast.
 
 Opening is ordered deliberately: Rust waits for a native directory selection,
 canonicalizes it, starts a candidate sidecar, and sends `repository.inspect`.

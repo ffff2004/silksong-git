@@ -929,6 +929,94 @@ describe("Solid Web app routing", () => {
     ).toBeDefined();
   });
 
+  it("archives managed and attention entries, refreshes, expands, highlights, and reports success", async () => {
+    const archiveRepository = vi.fn(async () => ({
+      kind: "archived" as const,
+      name: "needs-help--user-2026-08-08",
+    }));
+    const getRepositoryLibrary = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...desktopTestRepositoryLibrary,
+        archived: [],
+        attention: [
+          {
+            current: false,
+            lifecycle: "managed" as const,
+            name: "needs-help",
+            requiredAction: "chooseAnotherDirectory",
+            status: "invalid",
+            watching: false,
+          },
+          {
+            current: false,
+            lifecycle: "archived" as const,
+            name: "old-unavailable",
+            requiredAction: "chooseAnotherDirectory",
+            status: "invalid",
+            watching: false,
+          },
+        ],
+      })
+      .mockResolvedValue({
+        ...desktopTestRepositoryLibrary,
+        archived: [
+          {
+            current: false,
+            lifecycle: "archived" as const,
+            name: "needs-help--user-2026-08-08",
+            requiredAction: "chooseAnotherDirectory",
+            status: "invalid",
+            watching: false,
+          },
+        ],
+        attention: [],
+      });
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      getRepositoryLibrary,
+      archiveRepository,
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+
+    globalThis.location.hash = "#/repositories";
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    const actions = await screen.findAllByRole("button", {
+      name: "Archive repository",
+    });
+    expect(actions).toHaveLength(2);
+    const archiveAttention = actions[1];
+    if (archiveAttention === undefined) {
+      throw new Error("Expected the Need attention archive action.");
+    }
+    fireEvent.click(archiveAttention);
+
+    await screen.findByText("Archived needs-help successfully!");
+    expect(confirm).toHaveBeenCalledWith(
+      "Archive needs-help? This stops App-owned watching, closes its Repo Session, and moves the repository into the App-managed archive.",
+    );
+    expect(archiveRepository).toHaveBeenCalledWith({
+      lifecycle: "managed",
+      name: "needs-help",
+    });
+    expect(getRepositoryLibrary).toHaveBeenCalledTimes(2);
+    const archivedName = await screen.findByText("needs-help--user-2026-08-08");
+    expect(archivedName.parentElement?.dataset["archiveHighlight"]).toBe(
+      "true",
+    );
+    expect(screen.getByText(/Archived · Unavailable/)).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Show archived repositories" }),
+    ).toBeNull();
+  });
+
   it("reports both migration states and removes the dead retry after final confirmation", async () => {
     const archivePath = "/archives/test-repository--pre-migration-2026-08-03";
     const commitRepositoryMigration = vi.fn(async () => ({

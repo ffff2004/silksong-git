@@ -129,6 +129,15 @@ export type ManagedInitializationResult =
   | { readonly kind: "blockedByMutation" }
   | { readonly kind: "busy" };
 
+export type ArchiveRepositoryResult =
+  | { readonly kind: "archived"; readonly name: string }
+  | { readonly kind: "busy" }
+  | {
+      readonly kind: "failed";
+      readonly reason: string;
+      readonly message?: string;
+    };
+
 export type RuntimeCapabilities =
   | { readonly kind: "browser" }
   | {
@@ -138,6 +147,10 @@ export type RuntimeCapabilities =
       readonly kind: "desktop";
       readonly closeRepository?: () => Promise<void>;
       readonly getRepositoryLibrary?: () => Promise<RepositoryLibrary>;
+      readonly archiveRepository?: (input: {
+        readonly lifecycle: "managed";
+        readonly name: string;
+      }) => Promise<ArchiveRepositoryResult>;
       readonly prepareRepositoryMigration?: (input: {
         readonly lifecycle: "managed";
         readonly name: string;

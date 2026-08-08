@@ -8,7 +8,7 @@
     "format": "cargo fmt --manifest-path src-tauri/Cargo.toml",
     "lint": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
     "smoke:webkit": "tsx scripts/smoke-webkit.ts",
-    "test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test": "pnpm --filter @silksong-git/desktop-sidecar build && cargo test --manifest-path src-tauri/Cargo.toml",
     "verify:web-assets": "tsx scripts/verify-web-assets.ts"
   },
   "devDependencies": {

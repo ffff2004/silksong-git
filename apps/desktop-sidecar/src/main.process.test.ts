@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import {
   copyFile,
+  mkdir,
   mkdtemp,
   readFile,
   rm,
@@ -320,7 +321,7 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
     },
   });
 
-  sidecar.send(command("future-version", { type: "watcher.start" }, 7));
+  sidecar.send(command("future-version", { type: "watcher.start" }, 8));
   assert.deepEqual(await sidecar.readMessage(), {
     protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
@@ -786,6 +787,50 @@ test("compares Watched Saves through legacy and migration-compatible configs", a
 
     await shutDown(sidecar);
   }
+});
+
+test("archives an uninspectable managed child through the narrow sidecar command", async (t) => {
+  const tempDirectory = await mkdtemp(
+    path.join(tmpdir(), "silksong-sidecar-archive-test-"),
+  );
+  t.after(async () => {
+    await rm(tempDirectory, { recursive: true, force: true });
+  });
+  const managedRoot = path.join(tempDirectory, "repositories");
+  const archivesRoot = path.join(tempDirectory, "archives");
+  const repoPath = path.join(managedRoot, "opaque");
+  await mkdir(repoPath, { recursive: true });
+  await mkdir(archivesRoot);
+  await writeFile(path.join(repoPath, "keep"), "opaque");
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  sidecar.send(
+    command("archive", {
+      type: "repository.archive",
+      repoPath,
+      managedRoot,
+      archivesRoot,
+      archiveName: "opaque--user-now",
+    }),
+  );
+  const response = parseSuccessfulResponse(
+    await readResponse(sidecar, "archive"),
+  );
+  assert.deepEqual(response.result, {
+    type: "repository.archiveResult",
+    archive: {
+      status: "archived",
+      repoPath: path.join(archivesRoot, "opaque--user-now"),
+      name: "opaque--user-now",
+    },
+  });
+  await assert.rejects(stat(repoPath));
+  assert.equal(
+    await readFile(path.join(archivesRoot, "opaque--user-now", "keep"), "utf8"),
+    "opaque",
+  );
+  await shutDown(sidecar);
 });
 
 test("holds the Desktop migration operation between verified snapshot publication and commit", async (t) => {

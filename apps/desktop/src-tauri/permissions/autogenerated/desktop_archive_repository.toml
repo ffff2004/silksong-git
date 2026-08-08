@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-archive-repository"
+description = "Enables the desktop_archive_repository command without any pre-configured scope."
+commands.allow = ["desktop_archive_repository"]
+
+[[permission]]
+identifier = "deny-desktop-archive-repository"
+description = "Denies the desktop_archive_repository command without any pre-configured scope."
+commands.deny = ["desktop_archive_repository"]

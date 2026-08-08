@@ -40,6 +40,8 @@ export function RepositoryLibraryView() {
   const [library, setLibrary] = createSignal<RepositoryLibrary>();
   const [loading, setLoading] = createSignal(true);
   const [opening, setOpening] = createSignal<string>();
+  const [archiving, setArchiving] = createSignal<string>();
+  const [archivedHighlight, setArchivedHighlight] = createSignal<string>();
   const [rebuild, setRebuild] = createSignal<RebuildState>();
   const [error, setError] = createSignal<string>();
   const [showArchives, setShowArchives] = createSignal(false);
@@ -56,6 +58,7 @@ export function RepositoryLibraryView() {
     createSignal<string>();
   const repositorySwitchingDisabled = () =>
     opening() !== undefined
+    || archiving() !== undefined
     || rebuild() !== undefined
     || migrating()
     || migration() !== undefined
@@ -249,6 +252,54 @@ export function RepositoryLibraryView() {
       );
     } finally {
       setMigrating(false);
+    }
+  };
+
+  const archiveRepository = async (entry: RepositoryLibraryEntry) => {
+    if (entry.lifecycle !== "managed" || repositorySwitchingDisabled()) {
+      return;
+    }
+    if (
+      // eslint-disable-next-line no-alert
+      !globalThis.confirm(
+        `Archive ${entry.name}? This stops App-owned watching, closes its Repo Session, and moves the repository into the App-managed archive.`,
+      )
+    ) {
+      return;
+    }
+
+    const key = `${entry.lifecycle}:${entry.name}`;
+    setArchiving(key);
+    setError(undefined);
+    setArchivedHighlight(undefined);
+    try {
+      const result = await localHistory.archiveRepository({
+        lifecycle: "managed",
+        name: entry.name,
+      });
+      if (result.kind === "archived") {
+        if (entry.current) {
+          localHistory.disconnect();
+          saveStore.clear();
+        }
+        setShowArchives(true);
+        setArchivedHighlight(result.name);
+        toastStore.showToast(`Archived ${entry.name} successfully!`);
+        await refresh();
+      } else {
+        const message = formatArchiveResult(result);
+        await refresh();
+        setError(message);
+      }
+    } catch (error_) {
+      const message =
+        error_ instanceof Error
+          ? error_.message
+          : "Could not archive repository.";
+      await refresh();
+      setError(message);
+    } finally {
+      setArchiving(undefined);
     }
   };
 
@@ -615,6 +666,7 @@ export function RepositoryLibraryView() {
           <RepositoryRow
             entry={entry()}
             onOpen={open}
+            onArchive={archiveRepository}
             opening={opening()}
             rebuild={rebuild()}
             switchingDisabled={repositorySwitchingDisabled()}
@@ -625,6 +677,7 @@ export function RepositoryLibraryView() {
       <RepositoryRows
         entries={library()?.managed ?? []}
         onOpen={open}
+        onArchive={archiveRepository}
         onMigrate={prepareMigration}
         opening={opening()}
         rebuild={rebuild()}
@@ -648,6 +701,7 @@ export function RepositoryLibraryView() {
         <RepositoryRows
           entries={library()?.archived ?? []}
           onOpen={open}
+          highlightedName={archivedHighlight()}
           opening={opening()}
           rebuild={rebuild()}
           switchingDisabled={repositorySwitchingDisabled()}
@@ -655,13 +709,15 @@ export function RepositoryLibraryView() {
       </Show>
       <Show when={(library()?.attention.length ?? 0) > 0}>
         <h3>Need attention</h3>
-        <For each={library()?.attention ?? []}>
-          {(entry) => (
-            <p>
-              {entry.name}: {entry.status} — {entry.requiredAction}
-            </p>
-          )}
-        </For>
+        <RepositoryRows
+          entries={library()?.attention ?? []}
+          onOpen={open}
+          onArchive={archiveRepository}
+          opening={opening()}
+          rebuild={rebuild()}
+          migrating={migrating()}
+          switchingDisabled={repositorySwitchingDisabled()}
+        />
       </Show>
     </section>
   );
@@ -681,6 +737,30 @@ function formatMigrationSourceState(
 
     case "unknown": {
       return "the source state is unknown and must be checked before further work.";
+    }
+  }
+}
+
+function formatArchiveResult(
+  result: Exclude<
+    Awaited<
+      ReturnType<ReturnType<typeof useLocalHistoryStore>["archiveRepository"]>
+    >,
+    { readonly kind: "archived" }
+  >,
+): string {
+  switch (result.kind) {
+    case "busy": {
+      return "Desktop Local History is already changing sessions. Try again when it finishes.";
+    }
+
+    case "failed": {
+      if (result.reason === "watcherAlreadyAcquired") {
+        return "Another process owns this repository watcher. Stop it before archiving.";
+      }
+      return (
+        result.message ?? `Could not archive repository (${result.reason}).`
+      );
     }
   }
 }
@@ -776,6 +856,8 @@ function RepositoryRows(props: {
     intent: RepositoryOpenIntent,
   ) => Promise<void>;
   readonly onMigrate?: (entry: RepositoryLibraryEntry) => Promise<void>;
+  readonly onArchive?: (entry: RepositoryLibraryEntry) => Promise<void>;
+  readonly highlightedName?: string;
   readonly opening?: string;
   readonly rebuild?: RebuildState;
   readonly migrating?: boolean;
@@ -789,6 +871,8 @@ function RepositoryRows(props: {
             entry={entry}
             onOpen={props.onOpen}
             onMigrate={props.onMigrate}
+            onArchive={props.onArchive}
+            highlighted={props.highlightedName === entry.name}
             opening={props.opening}
             rebuild={props.rebuild}
             migrating={props.migrating}
@@ -807,6 +891,8 @@ function RepositoryRow(props: {
     intent: RepositoryOpenIntent,
   ) => Promise<void>;
   readonly onMigrate?: (entry: RepositoryLibraryEntry) => Promise<void>;
+  readonly onArchive?: (entry: RepositoryLibraryEntry) => Promise<void>;
+  readonly highlighted?: boolean;
   readonly opening?: string;
   readonly rebuild?: RebuildState;
   readonly migrating?: boolean;
@@ -815,7 +901,11 @@ function RepositoryRow(props: {
   const key = () => `${props.entry.lifecycle}:${props.entry.name}`;
   const lifecycleLabel = () => {
     if (props.entry.lifecycle === "archived") {
-      return "Archived · Read-only";
+      return props.entry.status === "ready"
+        || props.entry.status === "legacyConfig"
+        || props.entry.status === "migrationRequired"
+        ? "Archived · Read-only"
+        : "Archived · Unavailable";
     }
     if (props.entry.lifecycle === "external") {
       return "External";
@@ -907,10 +997,33 @@ function RepositoryRow(props: {
     );
   };
   return (
-    <div>
+    <div
+      class={
+        props.highlighted === true ? viewStyles["archiveHighlight"] : undefined
+      }
+      data-archive-highlight={props.highlighted === true ? "true" : undefined}
+    >
       <strong>{props.entry.name}</strong> · {lifecycleLabel()} ·{" "}
       {props.entry.status === "ready" ? "Ready" : props.entry.status} ·{" "}
       {action()}
+      <Show
+        when={
+          props.entry.lifecycle === "managed" && props.onArchive !== undefined
+        }
+      >
+        <button
+          class={buttonStyles["secondary"]}
+          type="button"
+          title="Archive repository"
+          aria-label="Archive repository"
+          disabled={props.switchingDisabled === true}
+          onClick={() => {
+            props.onArchive?.(props.entry).catch(() => undefined);
+          }}
+        >
+          <i class="fa-solid fa-box-archive" aria-hidden="true" />
+        </button>
+      </Show>
     </div>
   );
 }

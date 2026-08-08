@@ -21,7 +21,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 6,
+  "protocolVersion": 7,
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +36,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 6,
+  "protocolVersion": 7,
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,7 +49,7 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 6 accepts these commands:
+Version 7 accepts these commands:
 
 - `repository.inspect` with one absolute `repoPath` and an optional
   `gitIntegrityPolicy` of `strict` (default) or `advisory`;
@@ -62,6 +62,8 @@ Version 6 accepts these commands:
   Watched Save identity matches the candidate for current or legacy-compatible
   Project Config. An unavailable or incompatible config is a comparison
   failure, not a false match;
+- `repository.archive` with absolute canonical `managedRoot`, `archivesRoot`,
+  and managed `repoPath` values plus one App-generated `archiveName`;
 - `repository.migrate` with one absolute `repoPath`, a prior opaque inspection
   ID, and the literal migration confirmation;
 - `repository.migration.prepare` with one absolute source `repoPath`, a prior
@@ -85,6 +87,13 @@ read-only browsing and the Desktop migration preflight are the only advisory
 callers; they use structural Git classification so a snapshot or read-only
 session can proceed while the published snapshot reports any Git integrity
 warning.
+`repository.archive` is the narrow standalone move adapter. It opens no Repo
+Session and performs no repository inspection. History validates direct-child
+placement and symlink safety, excludes public History writers and watchers
+where the repository control directory exists, and atomically renames the
+existing directory to a collision-safe archive child. It never observes the
+Watched Save, checkpoints, copies a snapshot, edits Project Config, or
+initializes a replacement.
 `repository.migrate` returns History's safe migration result, including an
 explicit stale-inspection or confirmation rejection when applicable. Migration
 results also report `sourceState` (`unchanged`, `migrated`, or `unknown`) and
@@ -125,7 +134,7 @@ compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 6,
+  "protocolVersion": 7,
   "kind": "response",
   "requestId": "open-1",
   "ok": true,

@@ -5,6 +5,7 @@ import { render } from "solid-js/web";
 import { App } from "./app/App.tsx";
 import { createDesktopRuntimeCapabilities } from "./runtime-capabilities/desktop.ts";
 import type {
+  ArchiveRepositoryResult,
   ManagedInitializationResult,
   OpenExternalRepositoryResult,
   PickStaticEncodedSaveResult,
@@ -49,6 +50,10 @@ const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
   },
   getRepositoryLibrary: async () =>
     await invoke<RepositoryLibrary>("desktop_get_repository_library"),
+  archiveRepository: async (input) =>
+    await invoke<ArchiveRepositoryResult>("desktop_archive_repository", {
+      input,
+    }),
   prepareRepositoryMigration: async (input) =>
     await invoke<RepositoryMigrationPreparationResult>(
       "desktop_prepare_repository_migration",

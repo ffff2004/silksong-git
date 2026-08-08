@@ -13,6 +13,7 @@ import type {
   SaveHistoryRepositoryInspection,
 } from "@silksong-git/history";
 import {
+  archiveManagedRepository,
   compareWatchedSave,
   initSaveHistory,
   inspectSaveHistoryRepository,
@@ -37,6 +38,7 @@ import {
   desktopSidecarProtocolVersion,
   incomingCommandEnvelopeSchema,
   processShutdownCommandSchema,
+  repositoryArchiveCommandSchema,
   repositoryCompareWatchedSaveCommandSchema,
   repositoryInitializeCommandSchema,
   repositoryInspectCommandSchema,
@@ -203,6 +205,16 @@ export async function runDesktopSidecarProcess(
       case "repository.compareWatchedSave": {
         return {
           response: await compareRepositoryWatchedSave(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
+      case "repository.archive": {
+        return {
+          response: await archiveRepository(
             envelope.requestId,
             envelope.command,
           ),
@@ -592,6 +604,59 @@ export async function runDesktopSidecarProcess(
         requestId,
         "repository_migrate_failed",
         "The Save History Repository could not be migrated.",
+      );
+    }
+  }
+
+  async function archiveRepository(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult = repositoryArchiveCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.archive command is invalid.",
+      );
+    }
+    const { managedRoot, archivesRoot, repoPath, archiveName } =
+      commandResult.data;
+    if (
+      !path.isAbsolute(repoPath)
+      || !path.isAbsolute(managedRoot)
+      || !path.isAbsolute(archivesRoot)
+    ) {
+      return createFailureResponse(
+        requestId,
+        "invalid_repo_path",
+        "The repository archive paths must be absolute.",
+      );
+    }
+    if (session !== undefined || preparedMigration !== undefined) {
+      return createFailureResponse(
+        requestId,
+        "repository_archive_failed",
+        "The sidecar must not own a session or migration while archiving.",
+      );
+    }
+
+    try {
+      return createSuccessResponse(requestId, {
+        type: "repository.archiveResult",
+        archive: await archiveManagedRepository({
+          managedRoot,
+          archivesRoot,
+          sourcePath: repoPath,
+          archiveName,
+        }),
+      });
+    } catch {
+      writeDiagnostic("Repository archive move failed.");
+      return createFailureResponse(
+        requestId,
+        "repository_archive_failed",
+        "The repository could not be archived.",
       );
     }
   }

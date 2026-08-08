@@ -20,6 +20,7 @@ import test from "node:test";
 
 import {
   acquireSaveHistoryWatcher,
+  archiveManagedRepository,
   compareWatchedSave,
   diffCommits,
   getSaveState,
@@ -486,6 +487,120 @@ test("Desktop migration preparation publishes a collision-safe verified snapshot
   assert.equal(second.status, "prepared");
   assert.equal(second.operation.snapshot.repoPath, `${snapshotBase}-1`);
   await second.operation.commit();
+});
+
+test("archiveManagedRepository atomically moves an inspectable repository without changing config", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const observed = await observeSave({ repoPath: repo.repoPath });
+  assert.equal(observed.status, "committed");
+  const managedRoot = repo.tempDirectory;
+  const archivesRoot = path.join(repo.tempDirectory, "archives");
+  await mkdir(archivesRoot);
+  const configBefore = await readFile(repo.configPath);
+
+  const result = await archiveManagedRepository({
+    managedRoot,
+    archivesRoot,
+    sourcePath: repo.repoPath,
+    archiveName: "history-repo--user-now",
+  });
+
+  assert.equal(result.status, "archived");
+  assert.equal(result.name, "history-repo--user-now");
+  await assert.rejects(stat(repo.repoPath));
+  assert.deepEqual(
+    await readFile(path.join(result.repoPath, ".silksong-git", "config.json")),
+    configBefore,
+  );
+  const exported = await readEncodedSave({
+    repoPath: result.repoPath,
+    access: "readOnly",
+    commitRef: observed.observation.commit.ref,
+  });
+  assert.deepEqual(exported.encodedBytes, await readFile(repo.watchedSavePath));
+});
+
+test("archiveManagedRepository accepts unavailable children and avoids collisions", async (t) => {
+  const root = await createTempDirectory(t);
+  const sourcePath = path.join(root, "broken");
+  const archivesRoot = path.join(root, "archives");
+  await mkdir(sourcePath);
+  await mkdir(archivesRoot);
+  await mkdir(path.join(archivesRoot, "broken--user-now"));
+  await writeFile(path.join(sourcePath, "opaque"), "unchanged");
+
+  const result = await archiveManagedRepository({
+    managedRoot: root,
+    archivesRoot,
+    sourcePath,
+    archiveName: "broken--user-now",
+  });
+
+  assert.equal(result.status, "archived");
+  assert.equal(result.name, "broken--user-now-2");
+  assert.equal(
+    await readFile(path.join(result.repoPath, "opaque"), "utf8"),
+    "unchanged",
+  );
+});
+
+test("archiveManagedRepository rejects symlinks, escapes, and active watcher ownership", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const archivesRoot = path.join(repo.tempDirectory, "archives");
+  await mkdir(archivesRoot);
+  const linked = path.join(repo.tempDirectory, "linked");
+  await symlink(repo.repoPath, linked, "dir");
+
+  assert.deepEqual(
+    await archiveManagedRepository({
+      managedRoot: repo.tempDirectory,
+      archivesRoot,
+      sourcePath: linked,
+      archiveName: "linked--user-now",
+    }),
+    { status: "failed", reason: "invalidPlacement" },
+  );
+  assert.deepEqual(
+    await archiveManagedRepository({
+      managedRoot: archivesRoot,
+      archivesRoot,
+      sourcePath: repo.repoPath,
+      archiveName: "escaped--user-now",
+    }),
+    { status: "failed", reason: "invalidPlacement" },
+  );
+
+  const watcher = await acquireSaveHistoryWatcher({ repoPath: repo.repoPath });
+  const blocked = await archiveManagedRepository({
+    managedRoot: repo.tempDirectory,
+    archivesRoot,
+    sourcePath: repo.repoPath,
+    archiveName: "history-repo--user-now",
+  });
+  assert.deepEqual(blocked, {
+    status: "failed",
+    reason: "watcherAlreadyAcquired",
+  });
+  await watcher.release();
+  await assert.doesNotReject(stat(repo.repoPath));
+});
+
+test("archiveManagedRepository reports an atomic move failure with the source intact", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const archivesRoot = path.join(repo.tempDirectory, "archives");
+  await mkdir(archivesRoot);
+
+  const result = await archiveManagedRepository({
+    managedRoot: repo.tempDirectory,
+    archivesRoot,
+    sourcePath: repo.repoPath,
+    archiveName: "x".repeat(300),
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reason, "moveFailed");
+  await assert.doesNotReject(stat(repo.repoPath));
+  assert.deepEqual(await readdir(archivesRoot), []);
 });
 
 test("Git integrity warnings do not block a verified archive or migration", async (t) => {

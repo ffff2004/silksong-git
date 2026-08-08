@@ -67,6 +67,15 @@ retained even when migration later fails. Lease-release failure is reported as
 a separate lifecycle warning without replacing those source and snapshot
 states. The one-phase CLI migration remains unchanged.
 
+History also exposes the narrow standalone Desktop archive move. It does not
+inspect repository compatibility or assign archive lifecycle. Given canonical
+App-owned roots, one direct non-symlink child, and an opaque App-generated name,
+History holds its write and watcher exclusions where applicable and atomically
+renames the directory to an unused direct archive child. Existing watcher
+ownership is refused, and failures before rename leave the source unchanged.
+This move never reads the Watched Save, creates an observation, copies an
+Archive Snapshot, edits Project Config, or initializes a replacement.
+
 Semantic Read Model schema metadata is intentionally separate from the durable
 repository format. Missing, stale, corrupt, or newer SQLite state in an
 otherwise compatible repository yields `rebuildRequired`, not

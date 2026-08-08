@@ -1,4 +1,5 @@
 import type {
+  ArchiveRepositoryResult,
   ManagedInitializationResult,
   OpenExternalRepositoryResult,
   PickStaticEncodedSaveResult,
@@ -23,6 +24,10 @@ export function createDesktopRuntimeCapabilities(input: {
   ) => Promise<() => void>;
   readonly closeRepository?: () => Promise<void>;
   readonly getRepositoryLibrary?: () => Promise<RepositoryLibrary>;
+  readonly archiveRepository?: (input: {
+    readonly lifecycle: "managed";
+    readonly name: string;
+  }) => Promise<ArchiveRepositoryResult>;
   readonly prepareRepositoryMigration?: (input: {
     readonly lifecycle: "managed";
     readonly name: string;
@@ -41,6 +46,7 @@ export function createDesktopRuntimeCapabilities(input: {
     getRepoSessionConnection: input.getRepoSessionConnection,
     closeRepository: input.closeRepository,
     getRepositoryLibrary: input.getRepositoryLibrary,
+    archiveRepository: input.archiveRepository,
     prepareRepositoryMigration: input.prepareRepositoryMigration,
     commitRepositoryMigration: input.commitRepositoryMigration,
     kind: "desktop",

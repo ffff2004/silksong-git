@@ -10,6 +10,11 @@ interface AcquireWatchLockInput {
   readonly now: Date;
 }
 
+interface AcquireRepositoryWatchExclusionInput {
+  readonly repoPath: string;
+  readonly now?: Date;
+}
+
 interface WatchLock {
   readonly lockPath: string;
   release: () => Promise<void>;
@@ -32,6 +37,17 @@ export async function acquireWatchLock(
 
     throw error;
   }
+}
+
+/** Internal repository-wide watcher exclusion for workflows that deliberately accept no config. */
+export async function acquireRepositoryWatchExclusion(
+  input: AcquireRepositoryWatchExclusionInput,
+): Promise<WatchLock> {
+  return await acquireWatchLock({
+    repoPath: input.repoPath,
+    watchedSavePath: "desktop-archive-move",
+    now: input.now ?? new Date(),
+  });
 }
 
 async function createWatchLockFile(

@@ -28,6 +28,7 @@ export {
   searchSemanticEvents,
 } from "./history-interface.ts";
 export {
+  archiveManagedRepository,
   compareWatchedSave,
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
@@ -55,6 +56,8 @@ export {
 export { restoreEncodedSave } from "./restore.ts";
 export type {
   AcquireSaveHistoryWatcherInput,
+  ArchiveManagedRepositoryInput,
+  ArchiveManagedRepositoryResult,
   ArchiveSnapshot,
   CompareWatchedSaveInput,
   DiffCommitsInput,
