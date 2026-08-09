@@ -4,6 +4,7 @@ fn main() {
             "desktop_get_repo_session_connection",
             "desktop_open_external_repository",
             "desktop_initialize_managed_repository",
+            "desktop_archive_and_reinitialize_managed_repository",
             "desktop_pick_static_encoded_save",
             "desktop_reopen_repository",
             "desktop_start_watching",

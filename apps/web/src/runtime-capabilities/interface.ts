@@ -138,6 +138,27 @@ export type ArchiveRepositoryResult =
       readonly message?: string;
     };
 
+export type ManagedRepositoryReplacementResult =
+  | { readonly kind: "cancelled" }
+  | {
+      readonly archivePath: string;
+      readonly cleanupWarning?: "leaseReleaseFailed";
+      readonly kind: "succeeded";
+      readonly managedPath: string;
+    }
+  | {
+      readonly archivePath?: string;
+      readonly kind: "failed";
+      readonly managedPath?: string;
+      readonly message: string;
+      readonly phase: string;
+      readonly reason: string;
+      readonly replacementResidualPath?: string;
+      readonly rollback: string;
+    }
+  | { readonly kind: "blockedByMutation" }
+  | { readonly kind: "busy" };
+
 export type RuntimeCapabilities =
   | { readonly kind: "browser" }
   | {
@@ -163,6 +184,7 @@ export type RuntimeCapabilities =
       }) => Promise<OpenExternalRepositoryResult>;
       readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
       readonly initializeManagedRepository?: () => Promise<ManagedInitializationResult>;
+      readonly archiveAndReinitializeManagedRepository?: () => Promise<ManagedRepositoryReplacementResult>;
       /** Opens the native Encoded Save picker without exposing filesystem authority. */
       readonly pickStaticEncodedSave: () => Promise<PickStaticEncodedSaveResult>;
       /** Receives the outcome of the native File menu's equivalent picker action. */

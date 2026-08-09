@@ -7,6 +7,7 @@ use std::{
     process::{Child, ChildStderr, ChildStdin, Command, Stdio},
     sync::{
         Mutex,
+        atomic::{AtomicU64, Ordering},
         mpsc::{self, Receiver, TryRecvError},
     },
     thread,
@@ -24,14 +25,26 @@ use crate::managed_initialization::{
 };
 use crate::save_location::{SaveLocationPlatform, SaveLocationSystem, initial_directory};
 
-const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 7;
+const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 8;
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
 const BUNDLED_SIDECAR_NAME: &str = "silksong-git-desktop-sidecar";
+const REPLACEMENT_CONFIRMATION: &str = "archive-and-reinitialize-managed-repository";
+const REPOSITORY_WATCHED_SAVE_COMPARE_FAILED: &str = "repository_watched_save_compare_failed";
+static REPLACEMENT_OPERATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// The high-level Desktop session and lifecycle owner.
 pub struct DesktopWorkflow {
     state: Mutex<DesktopWorkflowState>,
     archive_clock: Box<dyn ArchiveClock>,
+    #[cfg(test)]
+    replacement_test_input: Mutex<Option<TestReplacementInput>>,
+}
+
+#[cfg(test)]
+struct TestReplacementInput {
+    selected_path: PathBuf,
+    launch: SidecarLaunch,
+    initialized_at: chrono::DateTime<chrono::FixedOffset>,
 }
 
 trait ArchiveClock: Send + Sync {
@@ -51,6 +64,8 @@ impl Default for DesktopWorkflow {
         Self {
             state: Mutex::new(DesktopWorkflowState::default()),
             archive_clock: Box::new(SystemArchiveClock),
+            #[cfg(test)]
+            replacement_test_input: Mutex::new(None),
         }
     }
 }
@@ -164,6 +179,12 @@ pub struct ArchiveRepositoryInput {
     pub name: String,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedRepositoryReplacementInput {
+    pub confirmation: String,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ArchiveRepositoryResult {
@@ -175,6 +196,38 @@ pub enum ArchiveRepositoryResult {
         #[serde(skip_serializing_if = "Option::is_none")]
         message: Option<String>,
     },
+    Busy,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ManagedRepositoryReplacementResult {
+    Cancelled,
+    Succeeded {
+        #[serde(rename = "managedPath")]
+        managed_path: String,
+        #[serde(rename = "archivePath")]
+        archive_path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "cleanupWarning")]
+        cleanup_warning: Option<String>,
+    },
+    Failed {
+        phase: String,
+        reason: String,
+        message: String,
+        rollback: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "managedPath")]
+        managed_path: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "archivePath")]
+        archive_path: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "replacementResidualPath")]
+        replacement_residual_path: Option<String>,
+    },
+    BlockedByMutation,
     Busy,
 }
 
@@ -686,6 +739,623 @@ impl DesktopWorkflow {
 
         self.finish_transition(Some(new_session));
         Ok(ManagedInitializationResult::Initialized)
+    }
+
+    pub(crate) fn archive_and_reinitialize_managed_repository<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        input: ManagedRepositoryReplacementInput,
+    ) -> Result<ManagedRepositoryReplacementResult, DesktopRuntimeError> {
+        #[cfg(test)]
+        if let Some(test_input) = self
+            .replacement_test_input
+            .lock()
+            .map_err(|_| DesktopRuntimeError::Unavailable)?
+            .take()
+        {
+            return self.archive_and_reinitialize_managed_repository_at(
+                test_input.selected_path,
+                managed_root(app, RepositoryLifecycle::Managed)?,
+                managed_root(app, RepositoryLifecycle::Archived)?,
+                test_input.launch,
+                test_input.initialized_at,
+                input.confirmation,
+            );
+        }
+
+        let Some(selected) = app
+            .dialog()
+            .file()
+            .set_title("Archive and reinitialize managed Silksong save history")
+            .add_filter("Silksong save", &["dat"])
+            .set_directory(initial_directory(
+                current_save_location_platform(),
+                &EnvironmentSaveLocationSystem,
+            ))
+            .blocking_pick_file()
+        else {
+            return Ok(ManagedRepositoryReplacementResult::Cancelled);
+        };
+        let selected_path = selected
+            .into_path()
+            .map_err(|_| DesktopRuntimeError::InvalidSaveFile)?;
+        self.archive_and_reinitialize_managed_repository_at(
+            selected_path,
+            managed_root(app, RepositoryLifecycle::Managed)?,
+            managed_root(app, RepositoryLifecycle::Archived)?,
+            SidecarLaunch::for_app(app)?,
+            self.archive_clock.now(),
+            input.confirmation,
+        )
+    }
+
+    #[cfg(test)]
+    fn configure_replacement_command(
+        &self,
+        selected_path: PathBuf,
+        launch: SidecarLaunch,
+        initialized_at: chrono::DateTime<chrono::FixedOffset>,
+    ) {
+        self.replacement_test_input
+            .lock()
+            .expect("replacement test input lock")
+            .replace(TestReplacementInput {
+                selected_path,
+                launch,
+                initialized_at,
+            });
+    }
+
+    fn archive_and_reinitialize_managed_repository_at(
+        &self,
+        selected_path: PathBuf,
+        managed_root: PathBuf,
+        archives_root: PathBuf,
+        launch: SidecarLaunch,
+        initialized_at: chrono::DateTime<chrono::FixedOffset>,
+        confirmation: String,
+    ) -> Result<ManagedRepositoryReplacementResult, DesktopRuntimeError> {
+        if confirmation != REPLACEMENT_CONFIRMATION {
+            return Ok(ManagedRepositoryReplacementResult::Failed {
+                phase: "confirmation".into(),
+                reason: "confirmationRequired".into(),
+                message: "Confirm archive-and-reinitialize before replacing this repository."
+                    .into(),
+                rollback: "notAttempted".into(),
+                managed_path: None,
+                archive_path: None,
+                replacement_residual_path: None,
+            });
+        }
+
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            if state.transitioning || state.pending_migration.is_some() {
+                return Ok(ManagedRepositoryReplacementResult::Busy);
+            }
+            if state.current_session.as_mut().is_some_and(|session| {
+                session.sidecar.poll().is_ok()
+                    && (session.sidecar.mutation_active()
+                        || (session.lifecycle == RepositoryLifecycle::External && session.watching))
+            }) {
+                return Ok(ManagedRepositoryReplacementResult::BlockedByMutation);
+            }
+            state.transitioning = true;
+        }
+
+        let selected_path = match canonicalize_readable_regular_file(&selected_path) {
+            Ok(path) => path,
+            Err(DesktopRuntimeError::InvalidSaveFile) => {
+                self.finish_transition_preserving_session();
+                return Ok(replacement_failure(
+                    "preflight",
+                    "invalidSave",
+                    "Select an existing readable Encoded Save file.",
+                    "notAttempted",
+                    None,
+                    None,
+                    None,
+                ));
+            }
+            Err(error) => {
+                self.finish_transition_preserving_session();
+                return Err(error);
+            }
+        };
+        let mut candidate = match SidecarSupervisor::spawn(launch) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                self.finish_transition_preserving_session();
+                return Err(error);
+            }
+        };
+        let selected_protocol_path = match repository_path_for_protocol(&selected_path) {
+            Ok(path) => path,
+            Err(error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(error);
+            }
+        };
+
+        let preflight = match candidate.command(json!({
+            "type": "save.inspect",
+            "savePath": selected_protocol_path,
+        })) {
+            Ok(response) => match parse_save_inspection(&response) {
+                Ok(inspection) => inspection,
+                Err(error) => {
+                    self.finish_failed_candidate(candidate);
+                    return Err(error);
+                }
+            },
+            Err(error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(error.into());
+            }
+        };
+        if !matches!(preflight, StaticSaveInspection::Loaded(_)) {
+            self.finish_failed_candidate(candidate);
+            return Ok(replacement_failure(
+                "preflight",
+                "invalidSave",
+                "The selected file could not be decoded as an Encoded Save.",
+                "notAttempted",
+                None,
+                None,
+                None,
+            ));
+        }
+
+        let managed_root = match existing_managed_root(&managed_root) {
+            Ok(Some(root)) => root,
+            Ok(None) => {
+                self.finish_failed_candidate(candidate);
+                return Ok(replacement_failure(
+                    "source",
+                    "sourceNotFound",
+                    "No managed repository is configured for the selected save.",
+                    "notAttempted",
+                    None,
+                    None,
+                    None,
+                ));
+            }
+            Err(error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(error);
+            }
+        };
+        let source = match find_replacement_source(&managed_root, &selected_path, &mut candidate) {
+            Ok(source) => source,
+            Err(error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(error);
+            }
+        };
+        let source = match source {
+            ReplacementSourceDiscovery::Found(source) => source,
+            ReplacementSourceDiscovery::NotFound => {
+                self.finish_failed_candidate(candidate);
+                return Ok(replacement_failure(
+                    "source",
+                    "differentWatchedSave",
+                    "No managed repository watches the selected save.",
+                    "notAttempted",
+                    None,
+                    None,
+                    None,
+                ));
+            }
+        };
+        let archives_root = match ensure_managed_root(&archives_root) {
+            Ok(root) => root,
+            Err(error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(error);
+            }
+        };
+        let replacement_root = match ensure_managed_root(&managed_root) {
+            Ok(root) => root,
+            Err(error) => {
+                self.finish_failed_candidate(candidate);
+                return Err(error);
+            }
+        };
+        let replacement_name = managed_repository_name(&selected_path, initialized_at);
+        let claimed = match claim_managed_repository_directory(&replacement_root, &replacement_name)
+        {
+            Ok(claimed) => claimed,
+            Err(_) => {
+                self.finish_failed_candidate(candidate);
+                return Ok(replacement_failure(
+                    "directoryClaim",
+                    "claimFailed",
+                    "The replacement repository directory could not be claimed safely.",
+                    "notAttempted",
+                    Some(source.path.to_string_lossy().into_owned()),
+                    None,
+                    None,
+                ));
+            }
+        };
+
+        let mut previous = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| DesktopRuntimeError::Unavailable)?;
+            state.current_session.take()
+        };
+        if let Some(session) = previous.as_mut() {
+            if session.watching {
+                if send_watcher_command(session, "watcher.stop").is_err() {
+                    let replacement_residual_path =
+                        cleanup_replacement_claim(&replacement_root, &claimed);
+                    let candidate_cleanup_error =
+                        candidate.shutdown().err().map(|error| error.user_message());
+                    let message = replacement_cleanup_message(
+                        "The current App-owned watcher could not be stopped safely.",
+                        replacement_residual_path.as_deref(),
+                        candidate_cleanup_error.as_deref(),
+                    );
+                    self.finish_transition(previous);
+                    return Ok(replacement_failure(
+                        "session",
+                        "sessionShutdownFailed",
+                        &message,
+                        "notAttempted",
+                        Some(source.path.to_string_lossy().into_owned()),
+                        None,
+                        replacement_residual_path,
+                    ));
+                }
+                session.watching = false;
+            }
+            if session.sidecar.shutdown().is_err() {
+                let replacement_residual_path =
+                    cleanup_replacement_claim(&replacement_root, &claimed);
+                let candidate_cleanup_error =
+                    candidate.shutdown().err().map(|error| error.user_message());
+                let message = replacement_cleanup_message(
+                    "The current Repo Session could not be closed safely.",
+                    replacement_residual_path.as_deref(),
+                    candidate_cleanup_error.as_deref(),
+                );
+                self.finish_transition(previous);
+                return Ok(replacement_failure(
+                    "session",
+                    "sessionShutdownFailed",
+                    &message,
+                    "notAttempted",
+                    Some(source.path.to_string_lossy().into_owned()),
+                    None,
+                    replacement_residual_path,
+                ));
+            }
+        }
+
+        let source_protocol_path = match repository_path_for_protocol(&source.path) {
+            Ok(path) => path,
+            Err(error) => {
+                let residual = cleanup_replacement_claim(&replacement_root, &claimed);
+                let _ = candidate.shutdown();
+                self.finish_transition(None);
+                return Ok(replacement_failure(
+                    "archive",
+                    "invalidPath",
+                    &error.user_message(),
+                    "notAttempted",
+                    Some(source.path.to_string_lossy().into_owned()),
+                    None,
+                    residual,
+                ));
+            }
+        };
+        let managed_protocol_path = match repository_path_for_protocol(&replacement_root) {
+            Ok(path) => path,
+            Err(error) => {
+                let residual = cleanup_replacement_claim(&replacement_root, &claimed);
+                let _ = candidate.shutdown();
+                self.finish_transition(None);
+                return Ok(replacement_failure(
+                    "archive",
+                    "invalidPath",
+                    &error.user_message(),
+                    "notAttempted",
+                    Some(source.path.to_string_lossy().into_owned()),
+                    None,
+                    residual,
+                ));
+            }
+        };
+        let archives_protocol_path = match repository_path_for_protocol(&archives_root) {
+            Ok(path) => path,
+            Err(error) => {
+                let residual = cleanup_replacement_claim(&replacement_root, &claimed);
+                let _ = candidate.shutdown();
+                self.finish_transition(None);
+                return Ok(replacement_failure(
+                    "archive",
+                    "invalidPath",
+                    &error.user_message(),
+                    "notAttempted",
+                    Some(source.path.to_string_lossy().into_owned()),
+                    None,
+                    residual,
+                ));
+            }
+        };
+        let replacement_protocol_path = match repository_path_for_protocol(&claimed.path) {
+            Ok(path) => path,
+            Err(error) => {
+                let residual = cleanup_replacement_claim(&replacement_root, &claimed);
+                let _ = candidate.shutdown();
+                self.finish_transition(None);
+                return Ok(replacement_failure(
+                    "directoryClaim",
+                    "invalidPath",
+                    &error.user_message(),
+                    "notAttempted",
+                    Some(source.path.to_string_lossy().into_owned()),
+                    None,
+                    residual,
+                ));
+            }
+        };
+        let archive_name = archive_placement_name(
+            &source.name,
+            ArchivePlacementPurpose::Reinitialize,
+            initialized_at,
+        );
+        let operation_id = format!(
+            "desktop-replacement-{}-{}",
+            initialized_at.timestamp_millis(),
+            REPLACEMENT_OPERATION_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+        );
+        let prepared = match candidate.command(json!({
+            "type": "repository.replacement.prepare",
+            "operationId": operation_id,
+            "managedRoot": managed_protocol_path,
+            "archivesRoot": archives_protocol_path,
+            "sourcePath": source_protocol_path,
+            "watchedSavePath": selected_protocol_path,
+            "archiveName": archive_name,
+            "confirmation": confirmation,
+        })) {
+            Ok(response) => parse_repository_replacement_preparation(&response),
+            Err(error) => Err(error.into()),
+        };
+        let prepared = match prepared {
+            Ok(ReplacementPreparation::Prepared { archive_path }) => archive_path,
+            Ok(ReplacementPreparation::Rejected { reason, message }) => {
+                let residual = cleanup_replacement_claim(&replacement_root, &claimed);
+                let _ = candidate.shutdown();
+                self.finish_transition(None);
+                return Ok(replacement_failure(
+                    "archive",
+                    &reason,
+                    &message,
+                    "notAttempted",
+                    Some(source.path.to_string_lossy().into_owned()),
+                    None,
+                    residual,
+                ));
+            }
+            Ok(ReplacementPreparation::Failed { reason, message }) => {
+                let residual = cleanup_replacement_claim(&replacement_root, &claimed);
+                let _ = candidate.shutdown();
+                self.finish_transition(None);
+                return Ok(replacement_failure(
+                    "archive",
+                    &reason,
+                    &message,
+                    "notAttempted",
+                    Some(source.path.to_string_lossy().into_owned()),
+                    None,
+                    residual,
+                ));
+            }
+            Err(error) => {
+                let residual = cleanup_replacement_claim(&replacement_root, &claimed);
+                let _ = candidate.shutdown();
+                self.finish_transition(None);
+                return Ok(replacement_failure(
+                    "archive",
+                    "sidecarUnavailable",
+                    &error.user_message(),
+                    "notAttempted",
+                    Some(source.path.to_string_lossy().into_owned()),
+                    None,
+                    residual,
+                ));
+            }
+        };
+        let managed_path = source.path.to_string_lossy().into_owned();
+        let archive_path = if Path::new(&prepared).is_absolute() {
+            prepared
+        } else {
+            let result = rollback_replacement_after_failure(
+                &mut candidate,
+                &operation_id,
+                &replacement_root,
+                &claimed,
+                false,
+                &managed_path,
+                Some(prepared.clone()),
+                "archive",
+                "invalidArchivePath",
+                "The sidecar returned an invalid archive path.",
+            );
+            self.finish_transition(None);
+            return Ok(result);
+        };
+
+        let initialization = candidate.command(json!({
+            "type": "repository.initialize",
+            "repoPath": replacement_protocol_path,
+            "watchedSavePath": selected_protocol_path,
+        }));
+        match initialization {
+            Ok(response) => match parse_managed_initialization_result(&response) {
+                Ok(ManagedInitializationOutcome::Initialized) => {}
+                Ok(ManagedInitializationOutcome::Failed { phase, reason }) => {
+                    let result = rollback_replacement_after_failure(
+                        &mut candidate,
+                        &operation_id,
+                        &replacement_root,
+                        &claimed,
+                        false,
+                        &managed_path,
+                        Some(archive_path.clone()),
+                        &phase,
+                        "replacementInitializationFailed",
+                        &reason,
+                    );
+                    self.finish_transition(None);
+                    return Ok(result);
+                }
+                Err(error) => {
+                    let result = rollback_replacement_after_failure(
+                        &mut candidate,
+                        &operation_id,
+                        &replacement_root,
+                        &claimed,
+                        false,
+                        &managed_path,
+                        Some(archive_path.clone()),
+                        "repository",
+                        "replacementInitializationFailed",
+                        &error.user_message(),
+                    );
+                    self.finish_transition(None);
+                    return Ok(result);
+                }
+            },
+            Err(_error) => {
+                let result = rollback_replacement_after_failure(
+                    &mut candidate,
+                    &operation_id,
+                    &replacement_root,
+                    &claimed,
+                    false,
+                    &managed_path,
+                    Some(archive_path.clone()),
+                    "repository",
+                    "replacementInitializationFailed",
+                    "The replacement repository could not be initialized.",
+                );
+                self.finish_transition(None);
+                return Ok(result);
+            }
+        }
+
+        let opened = match candidate.command(json!({
+            "type": "session.open",
+            "repoPath": replacement_protocol_path,
+            "access": "readWrite",
+        })) {
+            Ok(response) => response,
+            Err(_error) => {
+                let result = rollback_replacement_after_failure(
+                    &mut candidate,
+                    &operation_id,
+                    &replacement_root,
+                    &claimed,
+                    false,
+                    &managed_path,
+                    Some(archive_path.clone()),
+                    "session",
+                    "sessionOpenFailed",
+                    "The replacement Repo Session could not be opened.",
+                );
+                self.finish_transition(None);
+                return Ok(result);
+            }
+        };
+        let connection = match parse_connection(&opened) {
+            Ok(connection) => connection,
+            Err(error) => {
+                let result = rollback_replacement_after_failure(
+                    &mut candidate,
+                    &operation_id,
+                    &replacement_root,
+                    &claimed,
+                    true,
+                    &managed_path,
+                    Some(archive_path.clone()),
+                    "session",
+                    "sessionOpenFailed",
+                    &error.user_message(),
+                );
+                self.finish_transition(None);
+                return Ok(result);
+            }
+        };
+        let mut new_session = ManagedSession {
+            connection,
+            repo_path: replacement_protocol_path.clone(),
+            sidecar: candidate,
+            watching: false,
+            lifecycle: RepositoryLifecycle::Managed,
+        };
+        if send_watcher_command(&mut new_session, "watcher.start").is_err() {
+            let mut candidate = new_session.sidecar;
+            let result = rollback_replacement_after_failure(
+                &mut candidate,
+                &operation_id,
+                &replacement_root,
+                &claimed,
+                true,
+                &managed_path,
+                Some(archive_path.clone()),
+                "watcher",
+                "watcherStartFailed",
+                "The replacement watcher could not be started.",
+            );
+            self.finish_transition(None);
+            return Ok(result);
+        }
+        new_session.watching = true;
+
+        let resolved = new_session.sidecar.command(json!({
+            "type": "repository.replacement.resolve",
+            "operationId": operation_id,
+            "decision": "commit",
+        }));
+        let resolution = match resolved {
+            Ok(response) => parse_repository_replacement_resolution(&response),
+            Err(error) => Err(error.into()),
+        };
+        match resolution {
+            Ok(ReplacementResolution::Committed { cleanup_warning }) => {
+                self.finish_transition(Some(new_session));
+                Ok(ManagedRepositoryReplacementResult::Succeeded {
+                    managed_path,
+                    archive_path,
+                    cleanup_warning,
+                })
+            }
+            Ok(_) | Err(_) => {
+                let mut candidate = new_session.sidecar;
+                let result = rollback_replacement_after_failure(
+                    &mut candidate,
+                    &operation_id,
+                    &replacement_root,
+                    &claimed,
+                    true,
+                    &managed_path,
+                    Some(archive_path),
+                    "commit",
+                    "commitFailed",
+                    "The replacement could not be committed safely.",
+                );
+                self.finish_transition(None);
+                Ok(result)
+            }
+        }
     }
 
     #[cfg(test)]
@@ -1499,6 +2169,19 @@ pub async fn desktop_initialize_managed_repository(
     result
 }
 
+#[tauri::command]
+pub async fn desktop_archive_and_reinitialize_managed_repository<R: Runtime>(
+    app: AppHandle<R>,
+    workflow: State<'_, DesktopWorkflow>,
+    input: ManagedRepositoryReplacementInput,
+) -> Result<ManagedRepositoryReplacementResult, String> {
+    let result = workflow
+        .archive_and_reinitialize_managed_repository(&app, input)
+        .map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
+}
+
 /// Opens one native file picker for an Encoded Save. The WebView receives only
 /// a decoded JSON value after both Rust and the Core-owning sidecar validate it.
 #[tauri::command]
@@ -2057,6 +2740,7 @@ fn repository_path_for_protocol(path: &Path) -> Result<String, DesktopRuntimeErr
 enum ArchivePlacementPurpose {
     User,
     PreMigration,
+    Reinitialize,
 }
 
 fn archive_placement_name(
@@ -2067,6 +2751,7 @@ fn archive_placement_name(
     let purpose = match purpose {
         ArchivePlacementPurpose::User => "user",
         ArchivePlacementPurpose::PreMigration => "pre-migration",
+        ArchivePlacementPurpose::Reinitialize => "reinitialize",
     };
     format!(
         "{}--{}-{}",
@@ -2367,6 +3052,209 @@ fn find_duplicate_managed_repository(
     Ok(None)
 }
 
+struct ReplacementSource {
+    path: PathBuf,
+    name: String,
+}
+
+enum ReplacementSourceDiscovery {
+    Found(ReplacementSource),
+    NotFound,
+}
+
+fn find_replacement_source(
+    root: &Path,
+    selected_save_path: &Path,
+    inspector: &mut SidecarSupervisor,
+) -> Result<ReplacementSourceDiscovery, DesktopRuntimeError> {
+    let selected_save_path = repository_path_for_protocol(selected_save_path)?;
+    let mut entries = fs::read_dir(root)
+        .map_err(|_| DesktopRuntimeError::Unavailable)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| DesktopRuntimeError::Unavailable)?;
+    entries.sort_by_key(|entry| entry.file_name());
+
+    for entry in entries {
+        let file_type = entry
+            .file_type()
+            .map_err(|_| DesktopRuntimeError::Unavailable)?;
+        if !file_type.is_dir() || file_type.is_symlink() {
+            continue;
+        }
+
+        let candidate =
+            fs::canonicalize(entry.path()).map_err(|_| DesktopRuntimeError::InvalidDirectory)?;
+        if candidate.parent() != Some(root) {
+            continue;
+        }
+        let candidate_path = repository_path_for_protocol(&candidate)?;
+        let inspection = inspector
+            .command(strict_repository_inspection_command(&candidate_path))
+            .map_err(DesktopRuntimeError::from)
+            .and_then(|response| parse_repository_inspection_details(&response))?;
+        if !matches!(
+            inspection.status.as_str(),
+            "ready" | "legacyConfig" | "migrationRequired"
+        ) {
+            continue;
+        }
+        let same = match inspector.command(repository_watched_save_comparison_command(
+            &candidate_path,
+            &selected_save_path,
+        )) {
+            Ok(response) => parse_repository_watched_save_comparison(&response)?,
+            Err(SidecarError::Rejected { code, .. })
+                if code == REPOSITORY_WATCHED_SAVE_COMPARE_FAILED =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if !same {
+            continue;
+        }
+        return Ok(ReplacementSourceDiscovery::Found(ReplacementSource {
+            path: candidate,
+            name: entry.file_name().to_string_lossy().into_owned(),
+        }));
+    }
+
+    Ok(ReplacementSourceDiscovery::NotFound)
+}
+
+fn replacement_cleanup_message(
+    message: &str,
+    replacement_residual_path: Option<&str>,
+    candidate_cleanup_error: Option<&str>,
+) -> String {
+    let mut details = Vec::new();
+    if let Some(path) = replacement_residual_path {
+        details.push(format!("Replacement residual: {path}."));
+    }
+    if let Some(error) = candidate_cleanup_error {
+        details.push(format!("Candidate cleanup also failed: {error}"));
+    }
+    if details.is_empty() {
+        message.into()
+    } else {
+        format!("{message} {}", details.join(" "))
+    }
+}
+
+fn cleanup_replacement_claim(root: &Path, claimed: &ManagedDirectoryClaim) -> Option<String> {
+    remove_claimed_directory(root, claimed)
+        .err()
+        .and_then(|error| {
+            error
+                .residual_path
+                .or_else(|| Some(claimed.path.clone()))
+                .map(|path| path.to_string_lossy().into_owned())
+        })
+}
+
+fn replacement_failure(
+    phase: &str,
+    reason: &str,
+    message: &str,
+    rollback: &str,
+    managed_path: Option<String>,
+    archive_path: Option<String>,
+    replacement_residual_path: Option<String>,
+) -> ManagedRepositoryReplacementResult {
+    ManagedRepositoryReplacementResult::Failed {
+        phase: phase.into(),
+        reason: reason.into(),
+        message: message.into(),
+        rollback: rollback.into(),
+        managed_path,
+        archive_path,
+        replacement_residual_path,
+    }
+}
+
+// This private cleanup adapter keeps the failure report fields next to the exact cleanup actions;
+// collapsing them into a generic transaction object would widen the Desktop/History boundary.
+#[allow(clippy::too_many_arguments)]
+fn rollback_replacement_after_failure(
+    candidate: &mut SidecarSupervisor,
+    operation_id: &str,
+    replacement_root: &Path,
+    claimed: &ManagedDirectoryClaim,
+    candidate_has_session: bool,
+    managed_path: &str,
+    archive_path: Option<String>,
+    phase: &str,
+    reason: &str,
+    message: &str,
+) -> ManagedRepositoryReplacementResult {
+    let mut replacement_residual_path = None;
+    if !candidate_has_session {
+        replacement_residual_path = cleanup_replacement_claim(replacement_root, claimed);
+    }
+
+    let rollback = candidate
+        .command(json!({
+            "type": "repository.replacement.resolve",
+            "operationId": operation_id,
+            "decision": "rollback",
+        }))
+        .map_err(DesktopRuntimeError::from)
+        .and_then(|response| parse_repository_replacement_resolution(&response));
+
+    if candidate_has_session {
+        replacement_residual_path = cleanup_replacement_claim(replacement_root, claimed);
+    }
+    let shutdown_ok = candidate.shutdown().is_ok();
+
+    match rollback {
+        Ok(ReplacementResolution::RolledBack { cleanup_warning }) if shutdown_ok => {
+            let message = if cleanup_warning.is_some() {
+                format!("{message} History released its replacement lease with a warning.")
+            } else {
+                message.into()
+            };
+            replacement_failure(
+                phase,
+                reason,
+                &message,
+                "completed",
+                Some(managed_path.into()),
+                archive_path,
+                replacement_residual_path,
+            )
+        }
+        Ok(ReplacementResolution::RolledBack { .. }) => replacement_failure(
+            phase,
+            reason,
+            &format!("{message} The replacement sidecar could not shut down cleanly."),
+            "completed",
+            Some(managed_path.into()),
+            archive_path,
+            replacement_residual_path,
+        ),
+        Ok(ReplacementResolution::RollbackFailed {
+            message: rollback_message,
+        }) => replacement_failure(
+            phase,
+            "rollbackFailed",
+            &format!("{message} {}", rollback_message.unwrap_or_default()),
+            "failed",
+            Some(managed_path.into()),
+            archive_path,
+            replacement_residual_path,
+        ),
+        Ok(ReplacementResolution::Committed { .. }) | Err(_) => replacement_failure(
+            phase,
+            "rollbackFailed",
+            &format!("{message} The archived repository could not be restored safely."),
+            "failed",
+            Some(managed_path.into()),
+            archive_path,
+            replacement_residual_path,
+        ),
+    }
+}
+
 fn is_read_only_archive_status(status: &str, required_action: &str) -> bool {
     required_action == "confirmMigration" && matches!(status, "legacyConfig" | "migrationRequired")
 }
@@ -2494,6 +3382,125 @@ fn parse_archive_repository_result(
         _ => Err(DesktopRuntimeError::Protocol(
             "The Desktop sidecar returned an unknown archive result.".into(),
         )),
+    }
+}
+
+enum ReplacementPreparation {
+    Prepared { archive_path: String },
+    Rejected { reason: String, message: String },
+    Failed { reason: String, message: String },
+}
+
+fn parse_repository_replacement_preparation(
+    response: &Value,
+) -> Result<ReplacementPreparation, DesktopRuntimeError> {
+    let preparation = response.pointer("/result/preparation").ok_or_else(|| {
+        DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid replacement preparation.".into(),
+        )
+    })?;
+    match preparation.get("status").and_then(Value::as_str) {
+        Some("prepared") => {
+            let archive_path = preparation
+                .get("archivePath")
+                .and_then(Value::as_str)
+                .filter(|path| !path.is_empty())
+                .ok_or_else(|| {
+                    DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid replacement archive path.".into(),
+                    )
+                })?;
+            let _source_status = preparation
+                .get("sourceStatus")
+                .and_then(Value::as_str)
+                .filter(|status| matches!(*status, "ready" | "legacyConfig" | "migrationRequired"))
+                .ok_or_else(|| {
+                    DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid replacement source status.".into(),
+                    )
+                })?;
+            Ok(ReplacementPreparation::Prepared {
+                archive_path: archive_path.into(),
+            })
+        }
+        Some("rejected") => {
+            let reason = preparation
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("sourceNotEligible");
+            Ok(ReplacementPreparation::Rejected {
+                reason: reason.into(),
+                message: replacement_reason_message(reason),
+            })
+        }
+        Some("failed") => {
+            let reason = preparation
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("moveFailed");
+            Ok(ReplacementPreparation::Failed {
+                reason: reason.into(),
+                message: preparation
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| replacement_reason_message(reason)),
+            })
+        }
+        _ => Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an unknown replacement preparation status.".into(),
+        )),
+    }
+}
+
+enum ReplacementResolution {
+    Committed { cleanup_warning: Option<String> },
+    RolledBack { cleanup_warning: Option<String> },
+    RollbackFailed { message: Option<String> },
+}
+
+fn parse_repository_replacement_resolution(
+    response: &Value,
+) -> Result<ReplacementResolution, DesktopRuntimeError> {
+    let resolution = response.pointer("/result/resolution").ok_or_else(|| {
+        DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid replacement resolution.".into(),
+        )
+    })?;
+    let warning = resolution
+        .get("cleanupWarning")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    match resolution.get("status").and_then(Value::as_str) {
+        Some("committed") => Ok(ReplacementResolution::Committed {
+            cleanup_warning: warning,
+        }),
+        Some("rolledBack") => Ok(ReplacementResolution::RolledBack {
+            cleanup_warning: warning,
+        }),
+        Some("rollbackFailed") => Ok(ReplacementResolution::RollbackFailed {
+            message: resolution
+                .get("message")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        }),
+        _ => Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an unknown replacement resolution status.".into(),
+        )),
+    }
+}
+
+fn replacement_reason_message(reason: &str) -> String {
+    match reason {
+        "confirmationRequired" => {
+            "Confirm archive-and-reinitialize before replacing this repository.".into()
+        }
+        "invalidPlacement" => "The managed repository is not in an App-owned directory.".into(),
+        "sourceNotEligible" => "The managed repository is not eligible for replacement.".into(),
+        "differentWatchedSave" => "The managed repository watches a different save.".into(),
+        "repositoryBusy" => "The managed repository is busy with another write.".into(),
+        "watcherAlreadyAcquired" => "Another watcher is already using this repository.".into(),
+        _ => "The managed repository could not be replaced safely.".into(),
     }
 }
 
@@ -2987,7 +3994,10 @@ mod tests {
         net::{Shutdown, TcpStream},
         path::{Path, PathBuf},
         process::Command,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
         thread,
         time::Duration,
     };
@@ -3008,10 +4018,11 @@ mod tests {
         ArchivePlacementPurpose, ArchiveRepositoryResult, DEVELOPMENT_SIDECAR_ENTRY,
         DesktopRuntime, DesktopRuntimeError, ManagedInitializationResult,
         OpenExternalRepositoryResult, PendingRepositoryMigration, PickStaticEncodedSaveResult,
-        RepositoryLifecycle, RepositoryOpenIntent, SaveLocationPlatform, SaveLocationSystem,
-        SidecarLaunch, SidecarSupervisor, StaticSaveFileSystem, StaticSaveInspection,
-        StaticSaveInspector, StaticSavePicker, advisory_repository_inspection_command,
-        archive_placement_name, canonicalize_repository_path, development_sidecar_launch,
+        REPLACEMENT_CONFIRMATION, RepositoryLifecycle, RepositoryOpenIntent, SaveLocationPlatform,
+        SaveLocationSystem, SidecarLaunch, SidecarSupervisor, StaticSaveFileSystem,
+        StaticSaveInspection, StaticSaveInspector, StaticSavePicker,
+        advisory_repository_inspection_command, archive_placement_name,
+        canonicalize_repository_path, development_sidecar_launch,
         inspect_static_encoded_save_with_adapters, managed_repository_name,
         menu_static_save_result, natural_name_cmp, repository_open_inspection_command,
         sidecar_launch_for_resource_directory, workspace_root,
@@ -4232,7 +5243,7 @@ mod tests {
 import fs from "node:fs";
 import path from "node:path";
 const write = (message) => process.stdout.write(JSON.stringify(message) + "\n");
-write({ protocolVersion: 7, kind: "event", event: { type: "process.ready" } });
+write({ protocolVersion: 8, kind: "event", event: { type: "process.ready" } });
 let buffer = "";
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
@@ -4244,10 +5255,10 @@ process.stdin.on("data", (chunk) => {
     if (request.command.type === "repository.archive") {
       const destination = path.join(request.command.archivesRoot, request.command.archiveName);
       fs.renameSync(request.command.repoPath, destination);
-      write({ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true,
+      write({ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true,
         result: { type: "repository.archiveResult", archive: { status: "archived", repoPath: destination, name: request.command.archiveName } } });
     } else if (request.command.type === "process.shutdown") {
-      write({ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true,
+      write({ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true,
         result: { type: "process.shutdownComplete" } });
       process.exit(0);
     }
@@ -4403,6 +5414,327 @@ process.stdin.on("data", (chunk) => {
         desktop
             .invoke::<Value>("desktop_close_repository", json!({}))
             .expect("public Desktop close should stop archived reader");
+    }
+
+    #[test]
+    fn real_desktop_archive_and_reinitialize_commits_only_after_new_session_and_watcher_start() {
+        let desktop = TestDesktopApp::new();
+        let save_path = desktop.root().join("slot.dat");
+        let fixture = workspace_root()
+            .expect("workspace root")
+            .join("packages/core/src/decode/fixtures/minimal-valid-save.dat");
+        fs::copy(&fixture, &save_path).expect("copy Encoded Save fixture");
+        let managed_root = desktop.root().join("repositories");
+        let archives_root = desktop.root().join("archives");
+        let timestamp = test_initialization_time();
+        let source_name = managed_repository_name(&save_path, timestamp);
+        let workflow = desktop.app.state::<super::DesktopWorkflow>();
+        let launch = real_sidecar_launch();
+
+        assert!(matches!(
+            workflow.initialize_managed_repository_with_launch(
+                save_path.clone(),
+                managed_root.clone(),
+                launch.clone(),
+                timestamp,
+            ),
+            Ok(ManagedInitializationResult::Initialized)
+        ));
+        assert!(
+            workflow
+                .close_requires_confirmation()
+                .expect("old watcher is active")
+        );
+
+        workflow.configure_replacement_command(save_path, launch, timestamp);
+        let result: Value = desktop
+            .invoke(
+                "desktop_archive_and_reinitialize_managed_repository",
+                json!({ "input": { "confirmation": REPLACEMENT_CONFIRMATION } }),
+            )
+            .expect("public Desktop replacement should return a structured result");
+        assert_eq!(
+            result.get("kind").and_then(Value::as_str),
+            Some("succeeded")
+        );
+        let managed_path = result
+            .get("managedPath")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("replacement result: {result:?}"))
+            .to_owned();
+        let archive_path = result
+            .get("archivePath")
+            .and_then(Value::as_str)
+            .expect("replacement archive path")
+            .to_owned();
+        assert_eq!(
+            managed_path,
+            managed_root
+                .join(&source_name)
+                .to_string_lossy()
+                .into_owned()
+        );
+        assert!(archive_path.starts_with(archives_root.to_string_lossy().as_ref()));
+        assert!(result.get("cleanupWarning").is_none());
+        assert!(!managed_root.join(&source_name).exists());
+        assert!(
+            archives_root
+                .join(archive_placement_name(
+                    &source_name,
+                    ArchivePlacementPurpose::Reinitialize,
+                    timestamp,
+                ))
+                .is_dir()
+        );
+        assert!(
+            workflow
+                .close_requires_confirmation()
+                .expect("replacement watcher is active")
+        );
+        desktop
+            .invoke::<Value>("desktop_close_repository", json!({}))
+            .expect("public Desktop close should stop replacement session");
+    }
+
+    #[test]
+    fn public_desktop_replacement_refuses_a_different_watched_save_identity() {
+        let desktop = TestDesktopApp::new();
+        let first_save = desktop.root().join("first-slot.dat");
+        let selected_save = desktop.root().join("selected-slot.dat");
+        let fixture = workspace_root()
+            .expect("workspace root")
+            .join("packages/core/src/decode/fixtures/minimal-valid-save.dat");
+        fs::copy(&fixture, &first_save).expect("copy first Encoded Save fixture");
+        fs::copy(&fixture, &selected_save).expect("copy selected Encoded Save fixture");
+        let managed_root = desktop.root().join("repositories");
+        let timestamp = test_initialization_time();
+        let source_name = managed_repository_name(&first_save, timestamp);
+        let workflow = desktop.app.state::<super::DesktopWorkflow>();
+        assert!(matches!(
+            workflow.initialize_managed_repository_with_launch(
+                first_save,
+                managed_root.clone(),
+                real_sidecar_launch(),
+                timestamp,
+            ),
+            Ok(ManagedInitializationResult::Initialized)
+        ));
+
+        workflow.configure_replacement_command(selected_save, real_sidecar_launch(), timestamp);
+        let result: Value = desktop
+            .invoke(
+                "desktop_archive_and_reinitialize_managed_repository",
+                json!({ "input": { "confirmation": REPLACEMENT_CONFIRMATION } }),
+            )
+            .expect("identity mismatch should be a structured result");
+        assert_eq!(result.get("kind").and_then(Value::as_str), Some("failed"));
+        assert_eq!(
+            result.get("reason").and_then(Value::as_str),
+            Some("differentWatchedSave")
+        );
+        assert_eq!(
+            result.get("rollback").and_then(Value::as_str),
+            Some("notAttempted")
+        );
+        assert!(managed_root.join(&source_name).is_dir());
+        assert!(!desktop.root().join("archives").exists());
+        desktop
+            .invoke::<Value>("desktop_close_repository", json!({}))
+            .expect("public Desktop close after identity mismatch");
+    }
+
+    #[test]
+    fn public_desktop_replacement_refuses_an_active_external_watcher() {
+        let desktop = TestDesktopApp::new();
+        let repository = desktop.root().join("external-repository");
+        let selected_save = desktop.root().join("selected-slot.dat");
+        let fixture = workspace_root()
+            .expect("workspace root")
+            .join("packages/core/src/decode/fixtures/minimal-valid-save.dat");
+        fs::create_dir(&repository).expect("create external repository");
+        fs::copy(&fixture, &selected_save).expect("copy selected Encoded Save fixture");
+        let timestamp = test_initialization_time();
+        let workflow = desktop.app.state::<super::DesktopWorkflow>();
+        assert!(matches!(
+            workflow.open_repository_path_with_launch(
+                repository,
+                replacement_fixture_launch(desktop.root(), "success", "success", false),
+            ),
+            Ok(OpenExternalRepositoryResult::Opened)
+        ));
+        desktop
+            .invoke::<Value>("desktop_start_watching", json!({}))
+            .expect("public external watcher start");
+        workflow.configure_replacement_command(
+            selected_save,
+            replacement_fixture_launch(desktop.root(), "success", "success", false),
+            timestamp,
+        );
+
+        let result: Value = desktop
+            .invoke(
+                "desktop_archive_and_reinitialize_managed_repository",
+                json!({ "input": { "confirmation": REPLACEMENT_CONFIRMATION } }),
+            )
+            .expect("active watcher refusal should be structured");
+        assert_eq!(
+            result.get("kind").and_then(Value::as_str),
+            Some("blockedByMutation")
+        );
+        desktop
+            .invoke::<Value>("desktop_stop_watching", json!({}))
+            .expect("public external watcher stop");
+        desktop
+            .invoke::<Value>("desktop_close_repository", json!({}))
+            .expect("public Desktop close after active-work refusal");
+    }
+
+    #[test]
+    fn public_desktop_replacement_reports_baseline_and_repository_failures_after_rollback() {
+        for initialization in ["baseline", "repository"] {
+            let desktop = TestDesktopApp::new();
+            let selected_save = desktop.root().join("selected-slot.dat");
+            let fixture = workspace_root()
+                .expect("workspace root")
+                .join("packages/core/src/decode/fixtures/minimal-valid-save.dat");
+            fs::copy(&fixture, &selected_save).expect("copy selected Encoded Save fixture");
+            let managed_root = desktop.root().join("repositories");
+            let source = managed_root.join("existing-managed-repository");
+            fs::create_dir_all(&source).expect("create managed source");
+            let timestamp = test_initialization_time();
+            let workflow = desktop.app.state::<super::DesktopWorkflow>();
+            workflow.configure_replacement_command(
+                selected_save,
+                replacement_fixture_launch(desktop.root(), initialization, "success", false),
+                timestamp,
+            );
+
+            let result: Value = desktop
+                .invoke(
+                    "desktop_archive_and_reinitialize_managed_repository",
+                    json!({ "input": { "confirmation": REPLACEMENT_CONFIRMATION } }),
+                )
+                .expect("replacement failure should be structured");
+            assert_eq!(result.get("kind").and_then(Value::as_str), Some("failed"));
+            assert_eq!(
+                result.get("phase").and_then(Value::as_str),
+                Some(initialization)
+            );
+            assert_eq!(
+                result.get("reason").and_then(Value::as_str),
+                Some("replacementInitializationFailed")
+            );
+            assert_eq!(
+                result.get("rollback").and_then(Value::as_str),
+                Some("completed")
+            );
+            assert!(result.get("managedPath").and_then(Value::as_str).is_some());
+            assert!(result.get("archivePath").and_then(Value::as_str).is_some());
+            assert!(result.get("replacementResidualPath").is_none());
+            assert!(source.is_dir());
+            assert_eq!(
+                fs::read_dir(&managed_root)
+                    .expect("read managed root")
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn public_desktop_replacement_reports_all_locations_when_rollback_fails() {
+        let desktop = TestDesktopApp::new();
+        let selected_save = desktop.root().join("selected-slot.dat");
+        let fixture = workspace_root()
+            .expect("workspace root")
+            .join("packages/core/src/decode/fixtures/minimal-valid-save.dat");
+        fs::copy(&fixture, &selected_save).expect("copy selected Encoded Save fixture");
+        let managed_root = desktop.root().join("repositories");
+        let source = managed_root.join("existing-managed-repository");
+        fs::create_dir_all(&source).expect("create managed source");
+        let timestamp = test_initialization_time();
+        let workflow = desktop.app.state::<super::DesktopWorkflow>();
+        workflow.configure_replacement_command(
+            selected_save,
+            replacement_fixture_launch(desktop.root(), "baseline", "failed", true),
+            timestamp,
+        );
+
+        let result: Value = desktop
+            .invoke(
+                "desktop_archive_and_reinitialize_managed_repository",
+                json!({ "input": { "confirmation": REPLACEMENT_CONFIRMATION } }),
+            )
+            .expect("rollback failure should be structured");
+        assert_eq!(result.get("kind").and_then(Value::as_str), Some("failed"));
+        assert_eq!(
+            result.get("reason").and_then(Value::as_str),
+            Some("rollbackFailed")
+        );
+        assert_eq!(
+            result.get("rollback").and_then(Value::as_str),
+            Some("failed")
+        );
+        let managed_path = result
+            .get("managedPath")
+            .and_then(Value::as_str)
+            .expect("rollback failure managed path");
+        let archive_path = result
+            .get("archivePath")
+            .and_then(Value::as_str)
+            .expect("rollback failure archive path");
+        let replacement_residual_path = result
+            .get("replacementResidualPath")
+            .and_then(Value::as_str)
+            .expect("rollback failure replacement residual path");
+        assert_eq!(managed_path, source.to_string_lossy());
+        assert!(Path::new(archive_path).is_dir());
+        assert!(Path::new(replacement_residual_path).is_dir());
+        assert!(!source.exists());
+    }
+
+    #[test]
+    fn public_desktop_replacement_skips_an_uncomparable_managed_child() {
+        let desktop = TestDesktopApp::new();
+        let selected_save = desktop.root().join("selected-slot.dat");
+        let fixture = workspace_root()
+            .expect("workspace root")
+            .join("packages/core/src/decode/fixtures/minimal-valid-save.dat");
+        fs::copy(&fixture, &selected_save).expect("copy selected Encoded Save fixture");
+        let managed_root = desktop.root().join("repositories");
+        fs::create_dir_all(managed_root.join("a-uncomparable")).expect("create malformed child");
+        fs::create_dir_all(managed_root.join("b-valid")).expect("create valid child");
+        let timestamp = test_initialization_time();
+        let workflow = desktop.app.state::<super::DesktopWorkflow>();
+        workflow.configure_replacement_command(
+            selected_save,
+            replacement_discovery_fixture_launch(desktop.root()),
+            timestamp,
+        );
+
+        let result: Value = desktop
+            .invoke(
+                "desktop_archive_and_reinitialize_managed_repository",
+                json!({ "input": { "confirmation": REPLACEMENT_CONFIRMATION } }),
+            )
+            .expect("public replacement should skip an uncomparable child");
+        assert_eq!(
+            result.get("kind").and_then(Value::as_str),
+            Some("succeeded")
+        );
+        assert_eq!(
+            result.get("managedPath").and_then(Value::as_str),
+            Some(managed_root.join("b-valid").to_string_lossy().as_ref(),)
+        );
+        assert!(
+            fs::read_to_string(desktop.root().join("uncomparable-comparison"))
+                .is_ok_and(|contents| contents == "seen")
+        );
+        assert!(managed_root.join("a-uncomparable").is_dir());
+        assert!(!managed_root.join("b-valid").exists());
+        desktop
+            .invoke::<Value>("desktop_close_repository", json!({}))
+            .expect("public Desktop close after source discovery");
     }
 
     #[test]
@@ -5219,13 +6551,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 7, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 8, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 7, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 8, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 
-write({{ protocolVersion: 7, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -5301,6 +6633,234 @@ process.stdin.on("data", (chunk) => {{
         )
     }
 
+    fn replacement_fixture_launch(
+        temp: &Path,
+        initialization: &str,
+        rollback: &str,
+        leave_residual: bool,
+    ) -> SidecarLaunch {
+        let script = temp.join(format!(
+            "replacement-sidecar-{}.mjs",
+            TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::write(
+            &script,
+            replacement_fixture_sidecar_source(initialization, rollback, leave_residual),
+        )
+        .expect("write replacement fixture");
+        SidecarLaunch::Development {
+            entry: script,
+            node: PathBuf::from("node"),
+        }
+    }
+
+    fn replacement_discovery_fixture_launch(temp: &Path) -> SidecarLaunch {
+        let script = temp.join(format!(
+            "replacement-discovery-sidecar-{}.mjs",
+            TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let comparison_marker =
+            serde_json::to_string(&temp.join("uncomparable-comparison").to_string_lossy())
+                .expect("serialize comparison marker path");
+        let source = r#"
+import fs from "node:fs";
+function write(message) {
+  process.stdout.write(JSON.stringify(message) + "\n");
+}
+function response(requestId, result) {
+  write({ protocolVersion: 8, kind: "response", requestId, ok: true, result });
+}
+function failure(requestId) {
+  write({ protocolVersion: 8, kind: "response", requestId, ok: false, error: { code: "repository_watched_save_compare_failed", message: "uncomparable Watched Save should be skipped" } });
+}
+function inspection() {
+  return { status: "ready", requiredAction: "open", capabilities: ["read", "write"] };
+}
+const comparisonMarker = __COMPARISON_MARKER__;
+let sourcePath;
+let archivePath;
+
+write({ protocolVersion: 8, kind: "event", event: { type: "process.ready" } });
+let buffer = "";
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  for (;;) {
+    const newline = buffer.indexOf("\n");
+    if (newline < 0) return;
+    const request = JSON.parse(buffer.slice(0, newline));
+    buffer = buffer.slice(newline + 1);
+    if (request.command.type === "save.inspect") {
+      response(request.requestId, { type: "save.inspected", decodedSave: { player: "Hornet" } });
+    } else if (request.command.type === "repository.inspect") {
+      response(request.requestId, { type: "repository.inspected", inspection: inspection() });
+    } else if (request.command.type === "repository.compareWatchedSave") {
+      if (request.command.repoPath.includes("a-uncomparable")) {
+        fs.writeFileSync(comparisonMarker, "seen");
+        failure(request.requestId);
+      } else {
+        response(request.requestId, { type: "repository.watchedSaveCompared", same: true });
+      }
+    } else if (request.command.type === "repository.replacement.prepare") {
+      sourcePath = request.command.sourcePath;
+      archivePath = request.command.archivesRoot + "/" + request.command.archiveName;
+      fs.mkdirSync(request.command.archivesRoot, { recursive: true });
+      fs.renameSync(sourcePath, archivePath);
+      response(request.requestId, { type: "repository.replacementPrepared", preparation: { status: "prepared", archivePath, sourceStatus: "ready" } });
+    } else if (request.command.type === "repository.initialize") {
+      response(request.requestId, { type: "repository.initializationResult", initialization: { status: "initialized" } });
+    } else if (request.command.type === "session.open") {
+      response(request.requestId, { type: "session.opened", access: request.command.access, connection: { endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" } });
+    } else if (request.command.type === "watcher.start") {
+      response(request.requestId, { type: "watcher.started" });
+    } else if (request.command.type === "repository.replacement.resolve") {
+      response(request.requestId, { type: "repository.replacementResolved", resolution: { status: "committed", managedPath: sourcePath, archivePath } });
+    } else if (request.command.type === "process.shutdown") {
+      response(request.requestId, { type: "process.shutdownComplete" });
+      process.exit(0);
+    }
+  }
+});
+"#
+        .replace("__COMPARISON_MARKER__", &comparison_marker);
+        fs::write(&script, source).expect("write discovery fixture");
+        SidecarLaunch::Development {
+            entry: script,
+            node: PathBuf::from("node"),
+        }
+    }
+
+    fn replacement_fixture_sidecar_source(
+        initialization: &str,
+        rollback: &str,
+        leave_residual: bool,
+    ) -> String {
+        format!(
+            r#"
+import fs from "node:fs";
+import path from "node:path";
+const initialization = {initialization:?};
+const rollback = {rollback:?};
+const leaveResidual = {leave_residual};
+let sourcePath;
+let archivePath;
+
+function write(message) {{
+  process.stdout.write(JSON.stringify(message) + "\n");
+}}
+function response(requestId, result) {{
+  write({{ protocolVersion: 8, kind: "response", requestId, ok: true, result }});
+}}
+function failure(requestId, code, message) {{
+  write({{ protocolVersion: 8, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+}}
+
+write({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }});
+let buffer = "";
+process.stdin.on("data", (chunk) => {{
+  buffer += chunk;
+  for (;;) {{
+    const newline = buffer.indexOf("\n");
+    if (newline < 0) return;
+    const request = JSON.parse(buffer.slice(0, newline));
+    buffer = buffer.slice(newline + 1);
+    const type = request.command.type;
+
+    if (type === "save.inspect") {{
+      response(request.requestId, {{ type: "save.inspected", decodedSave: {{ player: "Hornet" }} }});
+      continue;
+    }}
+    if (type === "repository.inspect") {{
+      response(request.requestId, {{
+        type: "repository.inspected",
+        inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read", "write"] }},
+      }});
+      continue;
+    }}
+    if (type === "repository.compareWatchedSave") {{
+      response(request.requestId, {{ type: "repository.watchedSaveCompared", same: true }});
+      continue;
+    }}
+    if (type === "repository.replacement.prepare") {{
+      sourcePath = request.command.sourcePath;
+      archivePath = path.join(request.command.archivesRoot, request.command.archiveName);
+      fs.mkdirSync(path.dirname(archivePath), {{ recursive: true }});
+      fs.renameSync(sourcePath, archivePath);
+      response(request.requestId, {{
+        type: "repository.replacementPrepared",
+        preparation: {{ status: "prepared", archivePath, sourceStatus: "ready" }},
+      }});
+      continue;
+    }}
+    if (type === "repository.initialize") {{
+      if (initialization !== "success") {{
+        if (leaveResidual) {{
+          const replacementPath = `${{request.command.repoPath}}.other`;
+          fs.mkdirSync(replacementPath);
+          fs.writeFileSync(path.join(replacementPath, "residual"), "keep");
+          fs.rmSync(request.command.repoPath, {{ recursive: true, force: true }});
+          fs.renameSync(replacementPath, request.command.repoPath);
+        }}
+        response(request.requestId, {{
+          type: "repository.initializationResult",
+          initialization: {{
+            status: "failed",
+            phase: initialization === "repository" ? "repository" : "baseline",
+            reason: initialization === "repository" ? "historyFailed" : "observationFailed",
+          }},
+        }});
+      }} else {{
+        response(request.requestId, {{ type: "repository.initializationResult", initialization: {{ status: "initialized" }} }});
+      }}
+      continue;
+    }}
+    if (type === "session.open") {{
+      response(request.requestId, {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }});
+      continue;
+    }}
+    if (type === "watcher.start") {{
+      response(request.requestId, {{ type: "watcher.started" }});
+      continue;
+    }}
+    if (type === "watcher.stop") {{
+      response(request.requestId, {{ type: "watcher.stopped" }});
+      continue;
+    }}
+    if (type === "repository.replacement.resolve") {{
+      if (request.command.decision === "rollback") {{
+        if (rollback === "failed") {{
+          response(request.requestId, {{
+            type: "repository.replacementResolved",
+            resolution: {{ status: "rollbackFailed", managedPath: sourcePath, archivePath, message: "fixture rollback failed" }},
+          }});
+        }} else {{
+          fs.renameSync(archivePath, sourcePath);
+          response(request.requestId, {{
+            type: "repository.replacementResolved",
+            resolution: {{ status: "rolledBack", managedPath: sourcePath, archivePath }},
+          }});
+        }}
+      }} else {{
+        response(request.requestId, {{
+          type: "repository.replacementResolved",
+          resolution: {{ status: "committed", managedPath: sourcePath, archivePath }},
+        }});
+      }}
+      continue;
+    }}
+    if (type === "process.shutdown") {{
+      response(request.requestId, {{ type: "process.shutdownComplete" }});
+      process.exit(0);
+    }}
+    failure(request.requestId, "unknown_command", `fixture command was unexpected: ${{type}}`);
+  }}
+}});
+"#,
+            initialization = initialization,
+            rollback = rollback,
+            leave_residual = leave_residual,
+        )
+    }
+
     fn rebuild_fixture_sidecar_source(
         repository: &str,
         rebuild: &str,
@@ -5325,13 +6885,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 7, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 8, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 7, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 8, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 function mutation(status) {{
-  write({{ protocolVersion: 7, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
+  write({{ protocolVersion: 8, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
 }}
 function inspection() {{
   const ready = repositoryStatus === "ready";
@@ -5342,7 +6902,7 @@ function inspection() {{
   }};
 }}
 
-write({{ protocolVersion: 7, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -5432,7 +6992,7 @@ if (process.argv.includes(repository)) {{
   process.exitCode = 91;
   process.exit();
 }}
-process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -5451,14 +7011,14 @@ process.stdin.on("data", (chunk) => {{
       result = {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
     }} else if (request.command.type === "process.shutdown") {{
       result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }} else {{
       result = {{ type: request.command.type === "watcher.start" ? "watcher.started" : "watcher.stopped" }};
     }}
-    process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+    process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
     if (request.command.type === "session.open" && {status:?} === "mutation") {{
-      process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
     }}
   }}
 }});
@@ -5471,7 +7031,7 @@ process.stdin.on("data", (chunk) => {{
         format!(
             r#"
 const repository = {repository};
-process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -5483,7 +7043,7 @@ process.stdin.on("data", (chunk) => {{
     ? {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }}
     : {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
   if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) throw new Error("wrong repository");
-  process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
   if (request.command.type === "session.open") process.exit(1);
 }});
 "#
@@ -5498,7 +7058,7 @@ process.stdin.on("data", (chunk) => {{
 import fs from "node:fs";
 const repository = {repository};
 const marker = {marker};
-process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -5510,12 +7070,12 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "repository.inspect") {{
       if (request.command.repoPath !== repository) throw new Error("repository path was not sent over stdin");
       const result = {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       continue;
     }}
     if (request.command.type === "session.open") {{
       const error = {{
-        protocolVersion: 7,
+        protocolVersion: 8,
         kind: "response",
         requestId: request.requestId,
         ok: false,
@@ -5530,7 +7090,7 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "process.shutdown") {{
       fs.writeFileSync(marker, "shutdown");
       const result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 7, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }}
     throw new Error("unexpected candidate command");
@@ -5672,12 +7232,14 @@ process.stdout.write(Buffer.from(await response.arrayBuffer()));
                 .manage(super::DesktopWorkflow {
                     state: Default::default(),
                     archive_clock: Box::new(FixedArchiveClock(test_initialization_time())),
+                    replacement_test_input: Mutex::new(None),
                 })
                 .invoke_handler(tauri::generate_handler![
                     super::desktop_get_repo_session_connection,
                     super::desktop_get_repository_library,
                     super::desktop_open_library_entry,
                     super::desktop_archive_repository,
+                    super::desktop_archive_and_reinitialize_managed_repository,
                     super::desktop_close_repository,
                     super::desktop_start_watching,
                     super::desktop_stop_watching,

@@ -54,6 +54,7 @@ export function RepositoryLibraryView() {
     createSignal<MigrationOutcome>();
   const [migrating, setMigrating] = createSignal(false);
   const [initializing, setInitializing] = createSignal(false);
+  const [replacing, setReplacing] = createSignal(false);
   const [existingInitialization, setExistingInitialization] =
     createSignal<string>();
   const repositorySwitchingDisabled = () =>
@@ -63,6 +64,7 @@ export function RepositoryLibraryView() {
     || migrating()
     || migration() !== undefined
     || initializing()
+    || replacing()
     || localHistory.workflowState().kind === "transitioning";
   const invalidatedWorkflow = () => {
     const state = localHistory.workflowState();
@@ -479,6 +481,91 @@ export function RepositoryLibraryView() {
     }
   };
 
+  const archiveAndReinitializeManagedRepository = async () => {
+    if (
+      replacing()
+      || repositorySwitchingDisabled()
+      || runtimeCapabilities.kind !== "desktop"
+      || runtimeCapabilities.archiveAndReinitializeManagedRepository
+        === undefined
+    ) {
+      return;
+    }
+    if (
+      // eslint-disable-next-line no-alert
+      !globalThis.confirm(
+        "Archive the current managed repository, then initialize the selected save as its replacement? The archive is retained for recovery.",
+      )
+    ) {
+      return;
+    }
+
+    setReplacing(true);
+    setError(undefined);
+    try {
+      const result =
+        await localHistory.archiveAndReinitializeManagedRepository();
+      if (result.kind === "succeeded") {
+        localHistory.disconnect();
+        saveStore.clear();
+        if (await localHistory.connect()) {
+          navigate("/progress");
+        }
+        await refresh();
+        if (result.cleanupWarning === undefined) {
+          toastStore.showToast("Managed repository replaced successfully!");
+        } else {
+          setError(
+            `Replacement completed, but lease cleanup needs attention. Archive: ${result.archivePath}`,
+          );
+        }
+        return;
+      }
+      if (result.kind === "cancelled") {
+        return;
+      }
+      if (result.kind === "failed") {
+        const locations = [
+          result.managedPath === undefined
+            ? undefined
+            : `Managed location: ${result.managedPath}.`,
+          result.archivePath === undefined
+            ? undefined
+            : `Archive location: ${result.archivePath}.`,
+          result.replacementResidualPath === undefined
+            ? undefined
+            : `Replacement residual: ${result.replacementResidualPath}.`,
+        ].filter((location): location is string => location !== undefined);
+        setError(
+          [
+            result.message,
+            `Rollback: ${result.rollback}.`,
+            ...locations,
+            result.rollback === "failed"
+              ? "Keep these locations intact while recovering the managed repository."
+              : undefined,
+          ]
+            .filter((part): part is string => part !== undefined)
+            .join(" "),
+        );
+        return;
+      }
+      setError(
+        result.kind === "blockedByMutation"
+          ? "Wait for active work or an external watcher to finish before replacing the repository."
+          : "Desktop Local History is already changing sessions. Try again when it finishes.",
+      );
+    } catch (error_) {
+      setError(
+        error_ instanceof Error
+          ? error_.message
+          : "Could not replace the managed repository.",
+      );
+    } finally {
+      setReplacing(false);
+    }
+  };
+
   const openExistingInitialization = async () => {
     const name = existingInitialization();
     if (name === undefined) {
@@ -552,6 +639,21 @@ export function RepositoryLibraryView() {
         }}
       >
         {initializing() ? "Initializing…" : "Initialize and watch save…"}
+      </button>
+      <button
+        class={buttonStyles["secondary"]}
+        id="archive-and-reinitialize-managed-repository"
+        type="button"
+        disabled={replacing() || repositorySwitchingDisabled()}
+        onClick={() => {
+          archiveAndReinitializeManagedRepository().catch(() => {
+            setError("Could not replace the managed repository.");
+          });
+        }}
+      >
+        {replacing()
+          ? "Replacing managed repository…"
+          : "Archive and reinitialize managed repository…"}
       </button>
       <button
         class={buttonStyles["primary"]}

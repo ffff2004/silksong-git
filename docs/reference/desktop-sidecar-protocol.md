@@ -21,7 +21,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 7,
+  "protocolVersion": 8,
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +36,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 7,
+  "protocolVersion": 8,
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,7 +49,7 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 7 accepts these commands:
+Version 8 accepts these commands:
 
 - `repository.inspect` with one absolute `repoPath` and an optional
   `gitIntegrityPolicy` of `strict` (default) or `advisory`;
@@ -64,6 +64,12 @@ Version 7 accepts these commands:
   failure, not a false match;
 - `repository.archive` with absolute canonical `managedRoot`, `archivesRoot`,
   and managed `repoPath` values plus one App-generated `archiveName`;
+- `repository.replacement.prepare` with an App-generated lifecycle
+  `operationId`, canonical roots, the managed source, selected Watched Save,
+  archive name, and the literal
+  `archive-and-reinitialize-managed-repository` confirmation;
+- `repository.replacement.resolve` with that lifecycle `operationId` and a
+  `commit` or `rollback` decision;
 - `repository.migrate` with one absolute `repoPath`, a prior opaque inspection
   ID, and the literal migration confirmation;
 - `repository.migration.prepare` with one absolute source `repoPath`, a prior
@@ -94,6 +100,16 @@ where the repository control directory exists, and atomically renames the
 existing directory to a collision-safe archive child. It never observes the
 Watched Save, checkpoints, copies a snapshot, edits Project Config, or
 initializes a replacement.
+`repository.replacement.prepare` is the narrow reversible replacement adapter.
+History revalidates the direct-child source, eligible compatibility status, and
+Watched Save identity while holding writer and watcher exclusions, then moves
+the source atomically to a collision-safe reinitialize archive and retains the
+leases. The sidecar holds one prepared operation in memory until
+`repository.replacement.resolve`; terminal resolve responses are replayed for
+duplicate requests without repeating a move. `commit` retains the archive and
+`rollback` moves it back. Abnormal sidecar exit releases leases without
+rollback, leaving directories for Desktop discovery. The replacement directory
+is never touched by History.
 `repository.migrate` returns History's safe migration result, including an
 explicit stale-inspection or confirmation rejection when applicable. Migration
 results also report `sourceState` (`unchanged`, `migrated`, or `unknown`) and
@@ -134,7 +150,7 @@ compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 7,
+  "protocolVersion": 8,
   "kind": "response",
   "requestId": "open-1",
   "ok": true,
@@ -169,8 +185,8 @@ The current event types are:
 - `session.failed`, without a raw error.
 
 `mutation.activity` projects only the mutation class (`manualCheckpoint`,
-`inPlaceRestore`, `repositoryMigration`, `managedInitialization`, or
-`repositoryRebuild`) and
+`inPlaceRestore`, `repositoryMigration`, `managedInitialization`,
+`managedReplacement`, or `repositoryRebuild`) and
 `started` or `finished`. It
 contains no request body, save path, commit reference, or result. Desktop uses
 it solely to reject a normal replacement or exit while the admitted mutation

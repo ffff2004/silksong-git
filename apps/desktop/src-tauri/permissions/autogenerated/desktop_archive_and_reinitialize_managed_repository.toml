@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-archive-and-reinitialize-managed-repository"
+description = "Enables the desktop_archive_and_reinitialize_managed_repository command without any pre-configured scope."
+commands.allow = ["desktop_archive_and_reinitialize_managed_repository"]
+
+[[permission]]
+identifier = "deny-desktop-archive-and-reinitialize-managed-repository"
+description = "Denies the desktop_archive_and_reinitialize_managed_repository command without any pre-configured scope."
+commands.deny = ["desktop_archive_and_reinitialize_managed_repository"]

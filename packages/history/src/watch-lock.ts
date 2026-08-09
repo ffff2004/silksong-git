@@ -18,6 +18,7 @@ interface AcquireRepositoryWatchExclusionInput {
 interface WatchLock {
   readonly lockPath: string;
   release: () => Promise<void>;
+  releaseAt: (repoPath: string) => Promise<void>;
 }
 
 export async function acquireWatchLock(
@@ -87,6 +88,14 @@ function createWatchLock(handle: FileHandle, lockPath: string): WatchLock {
 
       released = true;
       await releaseLock(handle, lockPath);
+    },
+    async releaseAt(repoPath: string) {
+      if (released) {
+        return;
+      }
+
+      released = true;
+      await releaseLock(handle, getRepositoryLayout(repoPath).watchLockPath);
     },
   };
 }

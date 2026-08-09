@@ -23,6 +23,8 @@ export async function withHistoryWriteLock<T>(
 
 export interface HistoryWriteLease {
   readonly release: () => Promise<void>;
+  /** Releases the same held lock after its repository directory has moved. */
+  readonly releaseAt: (repoPath: string) => Promise<void>;
 }
 
 /**
@@ -44,6 +46,14 @@ export async function acquireHistoryWriteLease(
 
       released = true;
       await releaseLock(lock, lockPath);
+    },
+    async releaseAt(movedRepoPath: string) {
+      if (released) {
+        return;
+      }
+
+      released = true;
+      await releaseLock(lock, getRepositoryLayout(movedRepoPath).writeLockPath);
     },
   };
 }

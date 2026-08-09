@@ -76,6 +76,17 @@ ownership is refused, and failures before rename leave the source unchanged.
 This move never reads the Watched Save, creates an observation, copies an
 Archive Snapshot, edits Project Config, or initializes a replacement.
 
+Explicit managed replacement uses the separate
+`prepareManagedRepositoryReplacement` Interface. It revalidates the canonical
+direct-child source, accepts only `ready`, `legacyConfig`, or
+`migrationRequired`, and compares the same Watched Save identity while holding
+writer and watcher exclusions. It atomically moves the source to a collision-safe
+`<old-name>--reinitialize-<local timestamp>` archive and returns a handle with
+only `resolve("commit" | "rollback")` plus a crash-only `release` finalizer.
+Leases release at the operation's current directory so moved lock files remain
+owned. History never claims, initializes, or deletes Desktop's replacement
+directory; post-success lease-release failure is a warning.
+
 Semantic Read Model schema metadata is intentionally separate from the durable
 repository format. Missing, stale, corrupt, or newer SQLite state in an
 otherwise compatible repository yields `rebuildRequired`, not

@@ -74,7 +74,8 @@ permission.
 The global Tauri object is disabled. The unique `main` capability allows only
 narrow application intent commands: inspect one local Encoded Save, prepare
 and commit one confirmed managed-repository migration, archive one confirmed
-direct managed child, open an external
+direct managed child, run one explicit archive-and-reinitialize managed-
+repository workflow, open an external
 repository, explicitly reopen an invalidated in-memory selection, obtain the
 current Repo Session connection, and start or stop watching for that current
 session. It grants no
@@ -128,6 +129,16 @@ through `repository.archive`. History holds writer and watcher exclusion
 continuously through the atomic rename; external watcher ownership causes a
 safe refusal.
 
+Archive-and-reinitialize is one Desktop Workflow. Desktop validates the selected
+save as a readable, decodable regular file, discovers the managed source by
+History Watched Save identity, claims the exact replacement child, transitions
+the current App-owned session and watcher, and asks the sidecar to prepare the
+reversible History archive transaction. It then runs initialization/baseline,
+session-open, and watcher-start in that claimed child. Success is reported only
+after all stages succeed and History commits. Known failures clean only the
+exact replacement claim and request rollback, reporting rollback status and any
+managed, archive, or replacement residual path; the old session is not restored.
+
 The Desktop runtime owns `DesktopWorkflow`: landing entry, refresh, opening a
 library entry, and closing the current session. It enumerates only direct
 children beneath each fixed root. Direct child directories under `archives/`
@@ -169,7 +180,8 @@ if migration fails.
 
 The shared private naming policy keeps durable migration snapshots at
 `<managed-entry-name>--pre-migration-<local timestamp>` and standalone user
-moves at `<managed-entry-name>--user-<local timestamp>`. A standalone move is
+moves at `<managed-entry-name>--user-<local timestamp>`; replacement archives
+use `<managed-entry-name>--reinitialize-<local timestamp>`. A standalone move is
 successful even when the resulting archive cannot be inspected; the library
 then presents `Archived · Unavailable` without an Open action. It refreshes
 after every result and, on success, disconnects a moved current session,

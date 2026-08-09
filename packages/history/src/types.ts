@@ -137,6 +137,78 @@ export interface ArchiveManagedRepositoryInput {
   readonly archiveName: string;
 }
 
+export interface PrepareManagedRepositoryReplacementInput {
+  /** Canonical App-owned roots. History validates direct-child placement. */
+  readonly managedRoot: string;
+  readonly archivesRoot: string;
+  /** The existing direct child to move; this is never the replacement directory. */
+  readonly sourcePath: string;
+  /** The save path selected by Desktop, revalidated under History's leases. */
+  readonly watchedSavePath: string;
+  /** App-owned collision-safe base name, without a path separator. */
+  readonly archiveName: string;
+  readonly confirmation: string;
+}
+
+export type ManagedRepositoryReplacementPreparationResult =
+  | {
+      readonly status: "prepared";
+      readonly operation: PreparedManagedRepositoryReplacement;
+      readonly sourceStatus: Extract<
+        SaveHistoryRepositoryStatus,
+        "ready" | "legacyConfig" | "migrationRequired"
+      >;
+    }
+  | {
+      readonly status: "rejected";
+      readonly reason:
+        | "confirmationRequired"
+        | "invalidPlacement"
+        | "sourceNotEligible"
+        | "differentWatchedSave";
+      readonly sourceStatus?: SaveHistoryRepositoryStatus;
+    }
+  | {
+      readonly status: "failed";
+      readonly reason:
+        | "repositoryBusy"
+        | "watcherAlreadyAcquired"
+        | "moveFailed";
+      readonly sourceStatus?: SaveHistoryRepositoryStatus;
+      readonly message?: string;
+    };
+
+export type ManagedRepositoryReplacementResolution =
+  | {
+      readonly status: "committed";
+      readonly managedPath: string;
+      readonly archivePath: string;
+      readonly cleanupWarning?: "leaseReleaseFailed";
+    }
+  | {
+      readonly status: "rolledBack";
+      readonly managedPath: string;
+      readonly archivePath: string;
+      readonly cleanupWarning?: "leaseReleaseFailed";
+    }
+  | {
+      readonly status: "rollbackFailed";
+      readonly managedPath: string;
+      readonly archivePath: string;
+      readonly cleanupWarning?: "leaseReleaseFailed";
+      readonly message?: string;
+    };
+
+export interface PreparedManagedRepositoryReplacement {
+  readonly archivePath: string;
+  /** Resolving is idempotent for the lifetime of this operation. */
+  readonly resolve: (
+    decision: "commit" | "rollback",
+  ) => Promise<ManagedRepositoryReplacementResolution>;
+  /** Crash-only cleanup: release leases at the current directory, never move it back. */
+  readonly release: () => Promise<"leaseReleaseFailed" | undefined>;
+}
+
 export type ArchiveManagedRepositoryResult =
   | {
       readonly status: "archived";

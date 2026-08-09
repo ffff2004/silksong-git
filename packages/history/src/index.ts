@@ -32,6 +32,7 @@ export {
   compareWatchedSave,
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
+  prepareManagedRepositoryReplacement,
   prepareSaveHistoryMigration,
 } from "./repository-compatibility.ts";
 export { acquireSaveHistoryWatcher } from "./save-history-watcher.ts";
@@ -71,6 +72,8 @@ export type {
   InitSaveHistoryInput,
   InitSaveHistoryResult,
   InspectSaveHistoryRepositoryInput,
+  ManagedRepositoryReplacementPreparationResult,
+  ManagedRepositoryReplacementResolution,
   MigrateSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryResult,
   MigrationCleanupFailure,
@@ -80,7 +83,9 @@ export type {
   ObserveSaveHistoryWatcherInput,
   ObserveSaveInput,
   ObserveSaveResult,
+  PreparedManagedRepositoryReplacement,
   PreparedSaveHistoryMigration,
+  PrepareManagedRepositoryReplacementInput,
   PrepareSaveHistoryMigrationInput,
   PrepareSaveHistoryMigrationResult,
   ProjectConfig,

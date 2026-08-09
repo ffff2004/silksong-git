@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const desktopSidecarProtocolVersion = 7 as const;
+export const desktopSidecarProtocolVersion = 8 as const;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -12,6 +12,9 @@ export const desktopSidecarErrorCodes = [
   "repository_initialize_failed",
   "repository_archive_failed",
   "repository_watched_save_compare_failed",
+  "repository_replacement_prepare_failed",
+  "repository_replacement_not_prepared",
+  "repository_replacement_resolve_failed",
   "repository_migrate_failed",
   "repository_migration_not_prepared",
   "repository_rebuild_failed",
@@ -80,6 +83,27 @@ export const repositoryArchiveCommandSchema = z
     archivesRoot: z.string().min(1).max(4096),
     repoPath: z.string().min(1).max(4096),
     archiveName: z.string().min(1).max(512),
+  })
+  .strict();
+
+export const repositoryReplacementPrepareCommandSchema = z
+  .object({
+    type: z.literal("repository.replacement.prepare"),
+    operationId: z.string().min(1).max(128),
+    managedRoot: z.string().min(1).max(4096),
+    archivesRoot: z.string().min(1).max(4096),
+    sourcePath: z.string().min(1).max(4096),
+    watchedSavePath: z.string().min(1).max(4096),
+    archiveName: z.string().min(1).max(512),
+    confirmation: z.literal("archive-and-reinitialize-managed-repository"),
+  })
+  .strict();
+
+export const repositoryReplacementResolveCommandSchema = z
+  .object({
+    type: z.literal("repository.replacement.resolve"),
+    operationId: z.string().min(1).max(128),
+    decision: z.enum(["commit", "rollback"]),
   })
   .strict();
 
@@ -196,6 +220,75 @@ const repositoryInitializationResultSchema = z.discriminatedUnion("status", [
 const repositoryWatchedSaveComparisonSchema = z
   .object({ same: z.boolean() })
   .strict();
+
+const replacementSourceStatusSchema = z.enum([
+  "ready",
+  "legacyConfig",
+  "migrationRequired",
+]);
+
+const replacementPreparationSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("prepared"),
+      operationId: z.string().min(1).max(128),
+      archivePath: z.string().min(1).max(4096),
+      sourceStatus: replacementSourceStatusSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("rejected"),
+      reason: z.enum([
+        "confirmationRequired",
+        "invalidPlacement",
+        "sourceNotEligible",
+        "differentWatchedSave",
+      ]),
+      sourceStatus: repositoryStatusSchema.shape.status.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      reason: z.enum([
+        "repositoryBusy",
+        "watcherAlreadyAcquired",
+        "moveFailed",
+      ]),
+      sourceStatus: repositoryStatusSchema.shape.status.optional(),
+      message: z.string().optional(),
+    })
+    .strict(),
+]);
+
+const replacementResolutionSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("committed"),
+      managedPath: z.string().min(1).max(4096),
+      archivePath: z.string().min(1).max(4096),
+      cleanupWarning: z.literal("leaseReleaseFailed").optional(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("rolledBack"),
+      managedPath: z.string().min(1).max(4096),
+      archivePath: z.string().min(1).max(4096),
+      cleanupWarning: z.literal("leaseReleaseFailed").optional(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("rollbackFailed"),
+      managedPath: z.string().min(1).max(4096),
+      archivePath: z.string().min(1).max(4096),
+      cleanupWarning: z.literal("leaseReleaseFailed").optional(),
+      message: z.string().optional(),
+    })
+    .strict(),
+]);
 
 const repositoryArchiveResultSchema = z.discriminatedUnion("status", [
   z
@@ -357,6 +450,20 @@ const successResultSchema = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("repository.replacementPrepared"),
+      operationId: z.string().min(1).max(128),
+      preparation: replacementPreparationSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("repository.replacementResolved"),
+      operationId: z.string().min(1).max(128),
+      resolution: replacementResolutionSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("repository.migrationPrepared"),
       preparation: repositoryMigrationPreparationSchema,
     })
@@ -456,6 +563,7 @@ const producedEventSchema = z.union([
         "inPlaceRestore",
         "repositoryMigration",
         "managedInitialization",
+        "managedReplacement",
         "repositoryRebuild",
       ]),
       status: z.enum(["started", "finished"]),
@@ -510,7 +618,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 7;
+    readonly protocolVersion: 8;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },

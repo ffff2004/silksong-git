@@ -7,6 +7,7 @@ import { createDesktopRuntimeCapabilities } from "./runtime-capabilities/desktop
 import type {
   ArchiveRepositoryResult,
   ManagedInitializationResult,
+  ManagedRepositoryReplacementResult,
   OpenExternalRepositoryResult,
   PickStaticEncodedSaveResult,
   RepoSessionConnection,
@@ -33,6 +34,13 @@ const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
   initializeManagedRepository: async () =>
     await invoke<ManagedInitializationResult>(
       "desktop_initialize_managed_repository",
+    ),
+  archiveAndReinitializeManagedRepository: async () =>
+    await invoke<ManagedRepositoryReplacementResult>(
+      "desktop_archive_and_reinitialize_managed_repository",
+      {
+        input: { confirmation: "archive-and-reinitialize-managed-repository" },
+      },
     ),
   pickStaticEncodedSave: async () =>
     await invoke<PickStaticEncodedSaveResult>(

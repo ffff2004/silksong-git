@@ -29,6 +29,7 @@ import {
   InvalidRestoreBackupDirectoryError,
   migrateSaveHistoryRepository,
   observeSave,
+  prepareManagedRepositoryReplacement,
   prepareSaveHistoryMigration,
   queryHistory,
   queryRawObservations,
@@ -601,6 +602,170 @@ test("archiveManagedRepository reports an atomic move failure with the source in
   assert.equal(result.reason, "moveFailed");
   await assert.doesNotReject(stat(repo.repoPath));
   assert.deepEqual(await readdir(archivesRoot), []);
+});
+
+test("managed replacement prepares, commits, and releases leases at the moved archive", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const observed = await observeSave({ repoPath: repo.repoPath });
+  assert.equal(observed.status, "committed");
+  const archivesRoot = path.join(repo.tempDirectory, "archives");
+  await mkdir(archivesRoot);
+  const replacementPath = path.join(repo.tempDirectory, "replacement-claim");
+  await mkdir(replacementPath);
+  await writeFile(path.join(replacementPath, "owned-by-desktop"), "keep");
+
+  const prepared = await prepareManagedRepositoryReplacement({
+    managedRoot: repo.tempDirectory,
+    archivesRoot,
+    sourcePath: repo.repoPath,
+    watchedSavePath: repo.watchedSavePath,
+    archiveName: "history-repo--reinitialize-now",
+    confirmation: "archive-and-reinitialize-managed-repository",
+  });
+
+  assert.equal(prepared.status, "prepared");
+  assert.equal(prepared.sourceStatus, "ready");
+  await assert.rejects(stat(repo.repoPath));
+  await assert.doesNotReject(stat(prepared.operation.archivePath));
+  assert.equal(
+    await readFile(path.join(replacementPath, "owned-by-desktop"), "utf8"),
+    "keep",
+  );
+
+  const result = await prepared.operation.resolve("commit");
+  assert.equal(result.status, "committed");
+  await assert.doesNotReject(stat(prepared.operation.archivePath));
+  const rebuilt = await rebuildSemanticReadModel({
+    repoPath: prepared.operation.archivePath,
+  });
+  assert.equal(rebuilt.observationCount, 1);
+  const nextWatcher = await acquireSaveHistoryWatcher({
+    repoPath: prepared.operation.archivePath,
+  });
+  await nextWatcher.release();
+  assert.deepEqual(
+    await readFile(repo.watchedSavePath),
+    await readFile(path.join(prepared.operation.archivePath, "save.dat")),
+  );
+  const archivedExport = await readEncodedSave({
+    repoPath: prepared.operation.archivePath,
+    access: "readOnly",
+    commitRef: observed.observation.commit.ref,
+  });
+  assert.deepEqual(
+    archivedExport.encodedBytes,
+    await readFile(repo.watchedSavePath),
+  );
+});
+
+test("managed replacement rolls back only its archive and refuses identity or watcher mismatches", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const archivesRoot = path.join(repo.tempDirectory, "archives");
+  await mkdir(archivesRoot);
+
+  const rejected = await prepareManagedRepositoryReplacement({
+    managedRoot: repo.tempDirectory,
+    archivesRoot,
+    sourcePath: repo.repoPath,
+    watchedSavePath: path.join(repo.tempDirectory, "different-save.dat"),
+    archiveName: "history-repo--reinitialize-now",
+    confirmation: "archive-and-reinitialize-managed-repository",
+  });
+  assert.deepEqual(rejected, {
+    status: "rejected",
+    reason: "differentWatchedSave",
+    sourceStatus: "ready",
+  });
+  await assert.doesNotReject(stat(repo.repoPath));
+
+  const watcher = await acquireSaveHistoryWatcher({ repoPath: repo.repoPath });
+  const blocked = await prepareManagedRepositoryReplacement({
+    managedRoot: repo.tempDirectory,
+    archivesRoot,
+    sourcePath: repo.repoPath,
+    watchedSavePath: repo.watchedSavePath,
+    archiveName: "history-repo--reinitialize-now",
+    confirmation: "archive-and-reinitialize-managed-repository",
+  });
+  assert.deepEqual(blocked, {
+    status: "failed",
+    reason: "watcherAlreadyAcquired",
+    sourceStatus: "ready",
+  });
+  await watcher.release();
+
+  const prepared = await prepareManagedRepositoryReplacement({
+    managedRoot: repo.tempDirectory,
+    archivesRoot,
+    sourcePath: repo.repoPath,
+    watchedSavePath: repo.watchedSavePath,
+    archiveName: "history-repo--reinitialize-now",
+    confirmation: "archive-and-reinitialize-managed-repository",
+  });
+  assert.equal(prepared.status, "prepared");
+  const rollback = await prepared.operation.resolve("rollback");
+  assert.equal(rollback.status, "rolledBack");
+  await assert.doesNotReject(stat(repo.repoPath));
+  await assert.rejects(stat(prepared.operation.archivePath));
+});
+
+test("managed replacement validates confirmation and direct-child placement", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const archivesRoot = path.join(repo.tempDirectory, "archives");
+  await mkdir(archivesRoot);
+
+  const confirmation = await prepareManagedRepositoryReplacement({
+    managedRoot: repo.tempDirectory,
+    archivesRoot,
+    sourcePath: repo.repoPath,
+    watchedSavePath: repo.watchedSavePath,
+    archiveName: "history-repo--reinitialize-now",
+    confirmation: "archive-and-reinitialize-managed-repository-typo",
+  });
+  assert.deepEqual(confirmation, {
+    status: "rejected",
+    reason: "confirmationRequired",
+  });
+
+  const invalidPlacement = await prepareManagedRepositoryReplacement({
+    managedRoot: archivesRoot,
+    archivesRoot,
+    sourcePath: repo.repoPath,
+    watchedSavePath: repo.watchedSavePath,
+    archiveName: "history-repo--reinitialize-now",
+    confirmation: "archive-and-reinitialize-managed-repository",
+  });
+  assert.deepEqual(invalidPlacement, {
+    status: "rejected",
+    reason: "invalidPlacement",
+  });
+  await assert.doesNotReject(stat(repo.repoPath));
+});
+
+test("managed replacement reports rollback failure and retains both discoverable locations", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const archivesRoot = path.join(repo.tempDirectory, "archives");
+  await mkdir(archivesRoot);
+  const prepared = await prepareManagedRepositoryReplacement({
+    managedRoot: repo.tempDirectory,
+    archivesRoot,
+    sourcePath: repo.repoPath,
+    watchedSavePath: repo.watchedSavePath,
+    archiveName: "history-repo--reinitialize-now",
+    confirmation: "archive-and-reinitialize-managed-repository",
+  });
+  assert.equal(prepared.status, "prepared");
+  await mkdir(repo.repoPath);
+  await writeFile(path.join(repo.repoPath, "replacement-populated"), "keep");
+
+  const rollback = await prepared.operation.resolve("rollback");
+  assert.equal(rollback.status, "rollbackFailed");
+  await assert.doesNotReject(stat(repo.repoPath));
+  await assert.doesNotReject(stat(prepared.operation.archivePath));
+  assert.equal(
+    await readFile(path.join(repo.repoPath, "replacement-populated"), "utf8"),
+    "keep",
+  );
 });
 
 test("Git integrity warnings do not block a verified archive or migration", async (t) => {

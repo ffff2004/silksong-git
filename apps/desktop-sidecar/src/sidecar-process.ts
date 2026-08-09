@@ -6,6 +6,8 @@ import type { Writable } from "node:stream";
 
 import { decodeEncodedSave } from "@silksong-git/core";
 import type {
+  ManagedRepositoryReplacementPreparationResult,
+  ManagedRepositoryReplacementResolution,
   MigrateSaveHistoryRepositoryResult,
   PrepareSaveHistoryMigrationResult,
   PreparedSaveHistoryMigration,
@@ -19,6 +21,7 @@ import {
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
   observeSave,
+  prepareManagedRepositoryReplacement,
   prepareSaveHistoryMigration,
   rebuildSemanticReadModel,
 } from "@silksong-git/history";
@@ -46,6 +49,8 @@ import {
   repositoryMigrationCommitCommandSchema,
   repositoryMigrationPrepareCommandSchema,
   repositoryRebuildCommandSchema,
+  repositoryReplacementPrepareCommandSchema,
+  repositoryReplacementResolveCommandSchema,
   saveInspectCommandSchema,
   sessionOpenCommandSchema,
   watcherStartCommandSchema,
@@ -64,6 +69,21 @@ export async function runDesktopSidecarProcess(
   const lines = createInterface({ input: input.input });
   let session: RepoSession | undefined;
   let preparedMigration: PreparedSaveHistoryMigration | undefined;
+  let pendingReplacement:
+    | {
+        readonly operationId: string;
+        readonly operation: Extract<
+          ManagedRepositoryReplacementPreparationResult,
+          { readonly status: "prepared" }
+        >["operation"];
+      }
+    | undefined;
+  let completedReplacement:
+    | {
+        readonly operationId: string;
+        readonly resolution: ManagedRepositoryReplacementResolution;
+      }
+    | undefined;
   let commandEvents: DesktopSidecarEvent[] | undefined;
   const processState = {
     gracefulShutdown: false,
@@ -123,6 +143,7 @@ export async function runDesktopSidecarProcess(
     input.input.pause();
 
     if (!processState.gracefulShutdown) {
+      await releasePreparedReplacementAfterUnexpectedExit();
       await releasePreparedMigrationAfterUnexpectedExit();
       await stopSessionAfterUnexpectedExit();
     }
@@ -245,6 +266,26 @@ export async function runDesktopSidecarProcess(
       case "repository.migration.commit": {
         return {
           response: await commitRepositoryMigration(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
+      case "repository.replacement.prepare": {
+        return {
+          response: await prepareRepositoryReplacement(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
+      case "repository.replacement.resolve": {
+        return {
+          response: await resolveRepositoryReplacement(
             envelope.requestId,
             envelope.command,
           ),
@@ -545,7 +586,6 @@ export async function runDesktopSidecarProcess(
         "The comparison paths must be absolute.",
       );
     }
-
     try {
       return createSuccessResponse(requestId, {
         type: "repository.watchedSaveCompared",
@@ -633,7 +673,11 @@ export async function runDesktopSidecarProcess(
         "The repository archive paths must be absolute.",
       );
     }
-    if (session !== undefined || preparedMigration !== undefined) {
+    if (
+      session !== undefined
+      || preparedMigration !== undefined
+      || pendingReplacement !== undefined
+    ) {
       return createFailureResponse(
         requestId,
         "repository_archive_failed",
@@ -696,6 +740,13 @@ export async function runDesktopSidecarProcess(
         requestId,
         "repository_migration_not_prepared",
         "A Desktop repository migration is already in progress.",
+      );
+    }
+    if (pendingReplacement !== undefined) {
+      return createFailureResponse(
+        requestId,
+        "repository_migration_not_prepared",
+        "A managed repository replacement is already in progress.",
       );
     }
 
@@ -776,6 +827,168 @@ export async function runDesktopSidecarProcess(
         mutation: "repositoryMigration",
         status: "finished",
       });
+    }
+  }
+
+  async function prepareRepositoryReplacement(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult =
+      repositoryReplacementPrepareCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.replacement.prepare command is invalid.",
+      );
+    }
+
+    const {
+      operationId,
+      managedRoot,
+      archivesRoot,
+      sourcePath,
+      watchedSavePath,
+      archiveName,
+      confirmation,
+    } = commandResult.data;
+    if (
+      !path.isAbsolute(managedRoot)
+      || !path.isAbsolute(archivesRoot)
+      || !path.isAbsolute(sourcePath)
+      || !path.isAbsolute(watchedSavePath)
+    ) {
+      return createFailureResponse(
+        requestId,
+        "invalid_repo_path",
+        "The repository replacement paths must be absolute.",
+      );
+    }
+    if (completedReplacement?.operationId === operationId) {
+      return createFailureResponse(
+        requestId,
+        "repository_replacement_prepare_failed",
+        "This replacement operation has already reached a terminal result.",
+      );
+    }
+    if (
+      session !== undefined
+      || preparedMigration !== undefined
+      || pendingReplacement !== undefined
+    ) {
+      return createFailureResponse(
+        requestId,
+        "repository_replacement_prepare_failed",
+        "The sidecar is busy with another session or mutation.",
+      );
+    }
+
+    emitEvent({
+      type: "mutation.activity",
+      mutation: "managedReplacement",
+      status: "started",
+    });
+    let preparation: ManagedRepositoryReplacementPreparationResult;
+    try {
+      preparation = await prepareManagedRepositoryReplacement({
+        managedRoot,
+        archivesRoot,
+        sourcePath,
+        watchedSavePath,
+        archiveName,
+        confirmation,
+      });
+    } catch {
+      emitEvent({
+        type: "mutation.activity",
+        mutation: "managedReplacement",
+        status: "finished",
+      });
+      writeDiagnostic("Managed repository replacement preparation failed.");
+      return createFailureResponse(
+        requestId,
+        "repository_replacement_prepare_failed",
+        "The managed repository replacement could not be prepared.",
+      );
+    }
+
+    if (preparation.status === "prepared") {
+      pendingReplacement = {
+        operationId,
+        operation: preparation.operation,
+      };
+    } else {
+      emitEvent({
+        type: "mutation.activity",
+        mutation: "managedReplacement",
+        status: "finished",
+      });
+    }
+
+    return createSuccessResponse(requestId, {
+      type: "repository.replacementPrepared",
+      operationId,
+      preparation: toProtocolReplacementPreparation(preparation, operationId),
+    });
+  }
+
+  async function resolveRepositoryReplacement(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult =
+      repositoryReplacementResolveCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.replacement.resolve command is invalid.",
+      );
+    }
+
+    const { operationId, decision } = commandResult.data;
+    if (completedReplacement?.operationId === operationId) {
+      return createSuccessResponse(requestId, {
+        type: "repository.replacementResolved",
+        operationId,
+        resolution: completedReplacement.resolution,
+      });
+    }
+
+    const pending = pendingReplacement;
+    if (pending === undefined || pending.operationId !== operationId) {
+      return createFailureResponse(
+        requestId,
+        "repository_replacement_not_prepared",
+        "No prepared managed repository replacement matches this operation.",
+      );
+    }
+
+    try {
+      const resolution = await resolvePendingReplacement(
+        pending.operation,
+        decision,
+      );
+      pendingReplacement = undefined;
+      completedReplacement = { operationId, resolution };
+      emitEvent({
+        type: "mutation.activity",
+        mutation: "managedReplacement",
+        status: "finished",
+      });
+      return createSuccessResponse(requestId, {
+        type: "repository.replacementResolved",
+        operationId,
+        resolution,
+      });
+    } catch {
+      writeDiagnostic("Managed repository replacement resolution failed.");
+      return createFailureResponse(
+        requestId,
+        "repository_replacement_resolve_failed",
+        "The managed repository replacement could not be resolved.",
+      );
     }
   }
 
@@ -937,6 +1150,13 @@ export async function runDesktopSidecarProcess(
         "The Desktop sidecar could not shut down while a repository migration is in progress.",
       );
     }
+    if (pendingReplacement !== undefined) {
+      return createFailureResponse(
+        requestId,
+        "shutdown_failed",
+        "The Desktop sidecar could not shut down while a managed repository replacement is in progress.",
+      );
+    }
 
     try {
       await stopOpenSession();
@@ -1023,6 +1243,35 @@ export async function runDesktopSidecarProcess(
     }
   }
 
+  async function releasePreparedReplacementAfterUnexpectedExit() {
+    const pending = pendingReplacement;
+    pendingReplacement = undefined;
+    if (pending === undefined) {
+      return;
+    }
+
+    const cleanupWarning = await pending.operation
+      .release()
+      .catch(() => "leaseReleaseFailed" as const);
+    if (cleanupWarning !== undefined) {
+      writeDiagnostic("Managed repository replacement lease cleanup failed.");
+    }
+  }
+
+  async function resolvePendingReplacement(
+    operation: Extract<
+      ManagedRepositoryReplacementPreparationResult,
+      { readonly status: "prepared" }
+    >["operation"],
+    decision: "commit" | "rollback",
+  ) {
+    if (decision === "rollback" && session !== undefined) {
+      await stopOpenSession();
+      session = undefined;
+    }
+    return await operation.resolve(decision);
+  }
+
   async function stopOpenSession() {
     if (session !== undefined) {
       await session.stop();
@@ -1100,6 +1349,22 @@ function toProtocolMigrationPreparation(
   return {
     status: "prepared" as const,
     snapshot: result.operation.snapshot,
+  };
+}
+
+function toProtocolReplacementPreparation(
+  result: ManagedRepositoryReplacementPreparationResult,
+  operationId: string,
+) {
+  if (result.status !== "prepared") {
+    return result;
+  }
+
+  return {
+    status: "prepared" as const,
+    operationId,
+    archivePath: result.operation.archivePath,
+    sourceStatus: result.sourceStatus,
   };
 }
 

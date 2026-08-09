@@ -321,7 +321,7 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
     },
   });
 
-  sidecar.send(command("future-version", { type: "watcher.start" }, 8));
+  sidecar.send(command("future-version", { type: "watcher.start" }, 9));
   assert.deepEqual(await sidecar.readMessage(), {
     protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
@@ -831,6 +831,167 @@ test("archives an uninspectable managed child through the narrow sidecar command
     "opaque",
   );
   await shutDown(sidecar);
+});
+
+test("holds and resolves one managed replacement operation, replaying terminal requests", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const archivesRoot = path.join(path.dirname(repo.repoPath), "archives");
+  await mkdir(archivesRoot);
+  const replacementPath = path.join(path.dirname(repo.repoPath), "replacement");
+  await mkdir(replacementPath);
+  await writeFile(path.join(replacementPath, "desktop-owned"), "keep");
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  sidecar.send(
+    command("replacement-prepare", {
+      type: "repository.replacement.prepare",
+      operationId: "lifecycle-replacement-1",
+      managedRoot: path.dirname(repo.repoPath),
+      archivesRoot,
+      sourcePath: repo.repoPath,
+      watchedSavePath: repo.watchedSavePath,
+      archiveName: "history-repo--reinitialize-now",
+      confirmation: "archive-and-reinitialize-managed-repository",
+    }),
+  );
+  const prepared = parseSuccessfulResponse(
+    await readResponse(sidecar, "replacement-prepare"),
+  );
+  assert.equal(prepared.result.type, "repository.replacementPrepared");
+  assert.equal(prepared.result.preparation.status, "prepared");
+  assert.equal(
+    prepared.result.preparation.operationId,
+    "lifecycle-replacement-1",
+  );
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "managedReplacement",
+      status: "started",
+    },
+  });
+
+  sidecar.send(
+    command("replacement-initialize", {
+      type: "repository.initialize",
+      repoPath: replacementPath,
+      watchedSavePath: repo.watchedSavePath,
+    }),
+  );
+  const initialized = parseSuccessfulResponse(
+    await readResponse(sidecar, "replacement-initialize"),
+  );
+  assert.deepEqual(initialized.result, {
+    type: "repository.initializationResult",
+    initialization: { status: "initialized" },
+  });
+
+  sidecar.send(
+    command("replacement-commit", {
+      type: "repository.replacement.resolve",
+      operationId: "lifecycle-replacement-1",
+      decision: "commit",
+    }),
+  );
+  const committed = parseSuccessfulResponse(
+    await readResponse(sidecar, "replacement-commit"),
+  );
+  assert.equal(committed.result.type, "repository.replacementResolved");
+  assert.equal(committed.result.resolution.status, "committed");
+  const { archivePath } = committed.result.resolution;
+  await assert.doesNotReject(stat(archivePath));
+  assert.equal(
+    await readFile(path.join(replacementPath, "desktop-owned"), "utf8"),
+    "keep",
+  );
+  await assert.rejects(stat(repo.repoPath));
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "managedReplacement",
+      status: "finished",
+    },
+  });
+
+  sidecar.send(
+    command("replacement-commit-duplicate", {
+      type: "repository.replacement.resolve",
+      operationId: "lifecycle-replacement-1",
+      decision: "rollback",
+    }),
+  );
+  const duplicate = parseSuccessfulResponse(
+    await readResponse(sidecar, "replacement-commit-duplicate"),
+  );
+  assert.deepEqual(duplicate.result, committed.result);
+  await shutDown(sidecar);
+});
+
+test("abnormal sidecar exit releases a prepared replacement lease without rollback", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const archivesRoot = path.join(path.dirname(repo.repoPath), "archives");
+  await mkdir(archivesRoot);
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+  sidecar.send(
+    command("replacement-crash-prepare", {
+      type: "repository.replacement.prepare",
+      operationId: "lifecycle-replacement-crash",
+      managedRoot: path.dirname(repo.repoPath),
+      archivesRoot,
+      sourcePath: repo.repoPath,
+      watchedSavePath: repo.watchedSavePath,
+      archiveName: "history-repo--reinitialize-crash",
+      confirmation: "archive-and-reinitialize-managed-repository",
+    }),
+  );
+  const prepared = parseSuccessfulResponse(
+    await readResponse(sidecar, "replacement-crash-prepare"),
+  );
+  assert.equal(prepared.result.type, "repository.replacementPrepared");
+  assert.equal(prepared.result.preparation.status, "prepared");
+  const { archivePath } = prepared.result.preparation;
+  await sidecar.readMessage();
+  sidecar.closeInput();
+  const exit = await sidecar.waitForExit();
+  assert.notEqual(exit.code, 0);
+  await assert.rejects(stat(repo.repoPath));
+  await assert.doesNotReject(stat(archivePath));
+  const recoveredSidecar = spawnSidecar(t);
+  await readReady(recoveredSidecar);
+  recoveredSidecar.send(
+    command("rebuild-after-crash", {
+      type: "repository.rebuild",
+      repoPath: archivePath,
+    }),
+  );
+  const rebuilt = parseSuccessfulResponse(
+    await readResponse(recoveredSidecar, "rebuild-after-crash"),
+  );
+  assert.equal(rebuilt.result.type, "repository.rebuilt");
+  recoveredSidecar.send(
+    command("open-after-crash", {
+      type: "session.open",
+      repoPath: archivePath,
+    }),
+  );
+  const opened = parseSuccessfulResponse(
+    await readResponse(recoveredSidecar, "open-after-crash"),
+  );
+  assert.equal(opened.result.type, "session.opened");
+  recoveredSidecar.send(
+    command("watch-after-crash", { type: "watcher.start" }),
+  );
+  const watching = parseSuccessfulResponse(
+    await readResponse(recoveredSidecar, "watch-after-crash"),
+  );
+  assert.equal(watching.result.type, "watcher.started");
+  await shutDown(recoveredSidecar, "shutdown-after-crash");
 });
 
 test("holds the Desktop migration operation between verified snapshot publication and commit", async (t) => {

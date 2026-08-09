@@ -13,6 +13,7 @@ import {
 import type {
   ArchiveRepositoryResult,
   ManagedInitializationResult,
+  ManagedRepositoryReplacementResult,
   OpenExternalRepositoryResult,
   RepositoryLibrary,
   RepositoryLifecycle,
@@ -69,6 +70,7 @@ interface LocalHistoryStore {
   readonly isSupported: boolean;
   readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
   readonly initializeManagedRepository: () => Promise<ManagedInitializationResult>;
+  readonly archiveAndReinitializeManagedRepository: () => Promise<ManagedRepositoryReplacementResult>;
   readonly openLibraryEntry: (input: {
     readonly lifecycle: Exclude<RepositoryLifecycle, "external">;
     readonly name: string;
@@ -252,6 +254,24 @@ export function LocalHistoryProvider(props: {
       setWorkflowState({ kind: "transitioning" });
       try {
         return await props.runtimeCapabilities.initializeManagedRepository();
+      } finally {
+        setWorkflowState({ kind: "active" });
+      }
+    },
+    async archiveAndReinitializeManagedRepository() {
+      if (
+        props.runtimeCapabilities.kind !== "desktop"
+        || props.runtimeCapabilities.archiveAndReinitializeManagedRepository
+          === undefined
+      ) {
+        throw new Error(
+          "Managed repository replacement is unavailable in this Desktop version.",
+        );
+      }
+      ensureWorkflowActive(workflowState());
+      setWorkflowState({ kind: "transitioning" });
+      try {
+        return await props.runtimeCapabilities.archiveAndReinitializeManagedRepository();
       } finally {
         setWorkflowState({ kind: "active" });
       }

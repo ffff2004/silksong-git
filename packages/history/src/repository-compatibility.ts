@@ -45,12 +45,16 @@ import type {
   CompareWatchedSaveInput,
   GitIntegrityPolicy,
   InspectSaveHistoryRepositoryInput,
+  ManagedRepositoryReplacementPreparationResult,
+  ManagedRepositoryReplacementResolution,
   MigrateSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryResult,
   MigrationCleanupFailure,
   MigrationSourceState,
+  PrepareManagedRepositoryReplacementInput,
   PrepareSaveHistoryMigrationInput,
   PrepareSaveHistoryMigrationResult,
+  PreparedManagedRepositoryReplacement,
   PreparedSaveHistoryMigration,
   SaveHistoryRepositoryCapability,
   SaveHistoryRepositoryInspection,
@@ -156,7 +160,11 @@ async function archiveAtValidatedPlacement(
       name: path.basename(destinationPath),
     };
   } finally {
-    await releaseArchiveMoveLeases(leases, destinationPath);
+    await releaseArchiveMoveLeases(
+      leases,
+      placement.sourcePath,
+      destinationPath,
+    );
   }
 }
 
@@ -188,19 +196,13 @@ async function acquireArchiveMoveLeases(
 
 async function releaseArchiveMoveLeases(
   leases: ArchiveMoveLeases,
+  sourcePath: string,
   destinationPath: string | undefined,
 ) {
+  const currentPath = destinationPath ?? sourcePath;
   await Promise.allSettled([
-    leases.watcher?.release(),
-    leases.writer?.release(),
-  ]);
-  if (destinationPath === undefined) {
-    return;
-  }
-  const layout = getRepositoryLayout(destinationPath);
-  await Promise.allSettled([
-    rm(layout.watchLockPath, { force: true }),
-    rm(layout.writeLockPath, { force: true }),
+    leases.watcher?.releaseAt(currentPath),
+    leases.writer?.releaseAt(currentPath),
   ]);
 }
 
@@ -344,6 +346,261 @@ export async function compareWatchedSave(
     || (configured.device === candidate.device
       && configured.inode === candidate.inode)
   );
+}
+
+/**
+ * Prepares the reversible archive move used by Desktop's explicit replacement workflow.
+ *
+ * The returned handle owns both repository leases until `resolve` or the crash-only `release`
+ * finalizer is called. Once the source directory is moved, the lock files move with it; lease
+ * release therefore always targets the operation's current directory instead of assuming the old
+ * managed path still contains the lock files. This operation never reads, writes, creates, or
+ * removes Desktop's claimed replacement directory.
+ */
+export async function prepareManagedRepositoryReplacement(
+  input: PrepareManagedRepositoryReplacementInput,
+): Promise<ManagedRepositoryReplacementPreparationResult> {
+  if (input.confirmation !== "archive-and-reinitialize-managed-repository") {
+    return { status: "rejected", reason: "confirmationRequired" };
+  }
+
+  const placement = await validateArchiveMovePlacement(input);
+  if (placement === undefined) {
+    return { status: "rejected", reason: "invalidPlacement" };
+  }
+
+  const initialInspection = await inspectRepository(
+    placement.sourcePath,
+    "strict",
+  );
+  if (!isReplacementSourceStatus(initialInspection.inspection.status)) {
+    return {
+      status: "rejected",
+      reason: "sourceNotEligible",
+      sourceStatus: initialInspection.inspection.status,
+    };
+  }
+
+  let writer: Awaited<ReturnType<typeof acquireHistoryWriteLease>>;
+  try {
+    writer = await acquireHistoryWriteLease(placement.sourcePath);
+  } catch (error) {
+    return replacementPreparationFailure(
+      error,
+      initialInspection.inspection.status,
+    );
+  }
+
+  let watcher: Awaited<ReturnType<typeof acquireRepositoryWatchExclusion>>;
+  try {
+    watcher = await acquireRepositoryWatchExclusion({
+      repoPath: placement.sourcePath,
+    });
+  } catch (error) {
+    await writer.release();
+    return replacementPreparationFailure(
+      error,
+      initialInspection.inspection.status,
+    );
+  }
+
+  // Every path after acquiring these leases must release them, including publication failures.
+  // eslint-disable-next-line unicorn/try-complexity
+  try {
+    const underLock = await inspectRepository(placement.sourcePath, "strict");
+    if (!isReplacementSourceStatus(underLock.inspection.status)) {
+      await releaseReplacementLeases(watcher, writer, placement.sourcePath);
+      return {
+        status: "rejected",
+        reason: "sourceNotEligible",
+        sourceStatus: underLock.inspection.status,
+      };
+    }
+
+    if (
+      !(await doesWatchedSaveMatch(placement.sourcePath, input.watchedSavePath))
+    ) {
+      await releaseReplacementLeases(watcher, writer, placement.sourcePath);
+      return {
+        status: "rejected",
+        reason: "differentWatchedSave",
+        sourceStatus: underLock.inspection.status,
+      };
+    }
+
+    const archivePath = await withPublicationLock(
+      placement.archivesRoot,
+      async () => {
+        const candidate = await claimArchiveMovePath(
+          placement.archivesRoot,
+          input.archiveName,
+        );
+        return await renameToClaimedArchivePath(
+          placement.sourcePath,
+          candidate,
+        );
+      },
+    );
+
+    let currentPath = archivePath;
+    let terminal: ManagedRepositoryReplacementResolution | undefined;
+    let leasesReleased = false;
+    const operation: PreparedManagedRepositoryReplacement = Object.freeze({
+      archivePath,
+      async resolve(decision: "commit" | "rollback") {
+        if (terminal !== undefined) {
+          return terminal;
+        }
+
+        if (decision === "commit") {
+          const cleanupWarning = await releaseReplacementLeases(
+            watcher,
+            writer,
+            currentPath,
+          );
+          leasesReleased = true;
+          terminal = {
+            status: "committed",
+            managedPath: placement.sourcePath,
+            archivePath,
+            ...(cleanupWarning !== undefined && { cleanupWarning }),
+          };
+          return terminal;
+        }
+
+        // Rollback must release the held leases even when the original path was repopulated.
+        // eslint-disable-next-line unicorn/try-complexity
+        try {
+          await moveArchiveBack(archivePath, placement.sourcePath);
+          currentPath = placement.sourcePath;
+          const cleanupWarning = await releaseReplacementLeases(
+            watcher,
+            writer,
+            currentPath,
+          );
+          leasesReleased = true;
+          terminal = {
+            status: "rolledBack",
+            managedPath: placement.sourcePath,
+            archivePath,
+            ...(cleanupWarning !== undefined && { cleanupWarning }),
+          };
+        } catch {
+          const cleanupWarning = await releaseReplacementLeases(
+            watcher,
+            writer,
+            currentPath,
+          );
+          leasesReleased = true;
+          terminal = {
+            status: "rollbackFailed",
+            managedPath: placement.sourcePath,
+            archivePath,
+            ...(cleanupWarning !== undefined && { cleanupWarning }),
+            message: "The archived repository could not be moved back safely.",
+          };
+        }
+
+        return terminal;
+      },
+      async release() {
+        if (leasesReleased) {
+          return undefined;
+        }
+        leasesReleased = true;
+        return await releaseReplacementLeases(watcher, writer, currentPath);
+      },
+    });
+
+    return {
+      status: "prepared",
+      operation,
+      sourceStatus: underLock.inspection.status,
+    };
+  } catch (error) {
+    await releaseReplacementLeases(watcher, writer, placement.sourcePath);
+    return replacementPreparationFailure(
+      error,
+      initialInspection.inspection.status,
+    );
+  }
+}
+
+function isReplacementSourceStatus(
+  status: SaveHistoryRepositoryStatus,
+): status is "ready" | "legacyConfig" | "migrationRequired" {
+  return (
+    status === "ready"
+    || status === "legacyConfig"
+    || status === "migrationRequired"
+  );
+}
+
+async function doesWatchedSaveMatch(
+  repoPath: string,
+  selectedSavePath: string,
+): Promise<boolean> {
+  let identities:
+    | readonly [CanonicalFileIdentity, CanonicalFileIdentity]
+    | undefined;
+  try {
+    const configuredPath = await readConfiguredWatchedSavePath(repoPath);
+    identities = await Promise.all([
+      canonicalFileIdentity(configuredPath),
+      canonicalFileIdentity(selectedSavePath),
+    ]);
+  } catch {
+    return false;
+  }
+  const [configured, selected] = identities;
+  return (
+    configured.canonicalPath === selected.canonicalPath
+    || (configured.device === selected.device
+      && configured.inode === selected.inode)
+  );
+}
+
+async function moveArchiveBack(archivePath: string, managedPath: string) {
+  if (await pathExists(managedPath)) {
+    throw new Error("The original managed repository path is no longer empty.");
+  }
+  await rename(archivePath, managedPath);
+}
+
+function replacementPreparationFailure(
+  error: unknown,
+  sourceStatus: SaveHistoryRepositoryStatus,
+): ManagedRepositoryReplacementPreparationResult {
+  if (error instanceof SaveHistoryWatcherAlreadyAcquiredError) {
+    return {
+      status: "failed",
+      reason: "watcherAlreadyAcquired",
+      sourceStatus,
+    };
+  }
+  if (error instanceof SaveHistoryRepositoryBusyError) {
+    return { status: "failed", reason: "repositoryBusy", sourceStatus };
+  }
+  return {
+    status: "failed",
+    reason: "moveFailed",
+    sourceStatus,
+    message: "The managed repository could not be archived safely.",
+  };
+}
+
+async function releaseReplacementLeases(
+  watcher: Awaited<ReturnType<typeof acquireRepositoryWatchExclusion>>,
+  writer: Awaited<ReturnType<typeof acquireHistoryWriteLease>>,
+  repoPath: string,
+): Promise<"leaseReleaseFailed" | undefined> {
+  const results = await Promise.allSettled([
+    watcher.releaseAt(repoPath),
+    writer.releaseAt(repoPath),
+  ]);
+  return results.some((result) => result.status === "rejected")
+    ? "leaseReleaseFailed"
+    : undefined;
 }
 
 interface CanonicalFileIdentity {
