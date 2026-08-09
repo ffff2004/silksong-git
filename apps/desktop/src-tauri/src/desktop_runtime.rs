@@ -25,7 +25,7 @@ use crate::managed_initialization::{
 };
 use crate::save_location::{SaveLocationPlatform, SaveLocationSystem, initial_directory};
 
-const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 8;
+const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 9;
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
 const BUNDLED_SIDECAR_NAME: &str = "silksong-git-desktop-sidecar";
 const REPLACEMENT_CONFIRMATION: &str = "archive-and-reinitialize-managed-repository";
@@ -1054,40 +1054,6 @@ impl DesktopWorkflow {
                 ));
             }
         };
-        let managed_protocol_path = match repository_path_for_protocol(&replacement_root) {
-            Ok(path) => path,
-            Err(error) => {
-                let residual = cleanup_replacement_claim(&replacement_root, &claimed);
-                let _ = candidate.shutdown();
-                self.finish_transition(None);
-                return Ok(replacement_failure(
-                    "archive",
-                    "invalidPath",
-                    &error.user_message(),
-                    "notAttempted",
-                    Some(source.path.to_string_lossy().into_owned()),
-                    None,
-                    residual,
-                ));
-            }
-        };
-        let archives_protocol_path = match repository_path_for_protocol(&archives_root) {
-            Ok(path) => path,
-            Err(error) => {
-                let residual = cleanup_replacement_claim(&replacement_root, &claimed);
-                let _ = candidate.shutdown();
-                self.finish_transition(None);
-                return Ok(replacement_failure(
-                    "archive",
-                    "invalidPath",
-                    &error.user_message(),
-                    "notAttempted",
-                    Some(source.path.to_string_lossy().into_owned()),
-                    None,
-                    residual,
-                ));
-            }
-        };
         let replacement_protocol_path = match repository_path_for_protocol(&claimed.path) {
             Ok(path) => path,
             Err(error) => {
@@ -1110,6 +1076,24 @@ impl DesktopWorkflow {
             ArchivePlacementPurpose::Reinitialize,
             initialized_at,
         );
+        let archive_target_path =
+            match repository_path_for_protocol(&archives_root.join(&archive_name)) {
+                Ok(path) => path,
+                Err(error) => {
+                    let residual = cleanup_replacement_claim(&replacement_root, &claimed);
+                    let _ = candidate.shutdown();
+                    self.finish_transition(None);
+                    return Ok(replacement_failure(
+                        "archive",
+                        "invalidPath",
+                        &error.user_message(),
+                        "notAttempted",
+                        Some(source.path.to_string_lossy().into_owned()),
+                        None,
+                        residual,
+                    ));
+                }
+            };
         let operation_id = format!(
             "desktop-replacement-{}-{}",
             initialized_at.timestamp_millis(),
@@ -1118,12 +1102,9 @@ impl DesktopWorkflow {
         let prepared = match candidate.command(json!({
             "type": "repository.replacement.prepare",
             "operationId": operation_id,
-            "managedRoot": managed_protocol_path,
-            "archivesRoot": archives_protocol_path,
             "sourcePath": source_protocol_path,
-            "watchedSavePath": selected_protocol_path,
-            "archiveName": archive_name,
-            "confirmation": confirmation,
+            "targetPath": archive_target_path,
+            "expectedWatchedSavePath": selected_protocol_path,
         })) {
             Ok(response) => parse_repository_replacement_preparation(&response),
             Err(error) => Err(error.into()),
@@ -1851,10 +1832,9 @@ impl DesktopWorkflow {
             return Err(DesktopRuntimeError::InvalidDirectory);
         }
         let source_protocol_path = repository_path_for_protocol(&source_path)?;
-        let managed_protocol_path = repository_path_for_protocol(&managed_root)?;
-        let archives_protocol_path = repository_path_for_protocol(&archives_root)?;
         let archive_name =
             archive_placement_name(&source_name, ArchivePlacementPurpose::User, archived_at);
+        let target_path = repository_path_for_protocol(&archives_root.join(&archive_name))?;
 
         let (mut source_session, source_was_current) = {
             let mut state = self
@@ -1908,10 +1888,8 @@ impl DesktopWorkflow {
         };
         let response = candidate.command(json!({
             "type": "repository.archive",
-            "repoPath": source_protocol_path,
-            "managedRoot": managed_protocol_path,
-            "archivesRoot": archives_protocol_path,
-            "archiveName": archive_name,
+            "sourcePath": source_protocol_path,
+            "targetPath": target_path,
         }));
         let result = response
             .map_err(DesktopRuntimeError::from)
@@ -3402,7 +3380,7 @@ fn parse_repository_replacement_preparation(
     match preparation.get("status").and_then(Value::as_str) {
         Some("prepared") => {
             let archive_path = preparation
-                .get("archivePath")
+                .get("destinationPath")
                 .and_then(Value::as_str)
                 .filter(|path| !path.is_empty())
                 .ok_or_else(|| {
@@ -5243,7 +5221,7 @@ mod tests {
 import fs from "node:fs";
 import path from "node:path";
 const write = (message) => process.stdout.write(JSON.stringify(message) + "\n");
-write({ protocolVersion: 8, kind: "event", event: { type: "process.ready" } });
+write({ protocolVersion: 9, kind: "event", event: { type: "process.ready" } });
 let buffer = "";
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
@@ -5253,12 +5231,12 @@ process.stdin.on("data", (chunk) => {
     const request = JSON.parse(buffer.slice(0, newline));
     buffer = buffer.slice(newline + 1);
     if (request.command.type === "repository.archive") {
-      const destination = path.join(request.command.archivesRoot, request.command.archiveName);
-      fs.renameSync(request.command.repoPath, destination);
-      write({ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true,
-        result: { type: "repository.archiveResult", archive: { status: "archived", repoPath: destination, name: request.command.archiveName } } });
+      const destination = request.command.targetPath;
+      fs.renameSync(request.command.sourcePath, destination);
+      write({ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true,
+        result: { type: "repository.archiveResult", archive: { status: "archived", repoPath: destination, name: path.basename(destination) } } });
     } else if (request.command.type === "process.shutdown") {
-      write({ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true,
+      write({ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true,
         result: { type: "process.shutdownComplete" } });
       process.exit(0);
     }
@@ -6551,13 +6529,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 8, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 9, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 8, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 9, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 
-write({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -6664,14 +6642,15 @@ process.stdin.on("data", (chunk) => {{
                 .expect("serialize comparison marker path");
         let source = r#"
 import fs from "node:fs";
+import path from "node:path";
 function write(message) {
   process.stdout.write(JSON.stringify(message) + "\n");
 }
 function response(requestId, result) {
-  write({ protocolVersion: 8, kind: "response", requestId, ok: true, result });
+  write({ protocolVersion: 9, kind: "response", requestId, ok: true, result });
 }
 function failure(requestId) {
-  write({ protocolVersion: 8, kind: "response", requestId, ok: false, error: { code: "repository_watched_save_compare_failed", message: "uncomparable Watched Save should be skipped" } });
+  write({ protocolVersion: 9, kind: "response", requestId, ok: false, error: { code: "repository_watched_save_compare_failed", message: "uncomparable Watched Save should be skipped" } });
 }
 function inspection() {
   return { status: "ready", requiredAction: "open", capabilities: ["read", "write"] };
@@ -6680,7 +6659,7 @@ const comparisonMarker = __COMPARISON_MARKER__;
 let sourcePath;
 let archivePath;
 
-write({ protocolVersion: 8, kind: "event", event: { type: "process.ready" } });
+write({ protocolVersion: 9, kind: "event", event: { type: "process.ready" } });
 let buffer = "";
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
@@ -6702,10 +6681,10 @@ process.stdin.on("data", (chunk) => {
       }
     } else if (request.command.type === "repository.replacement.prepare") {
       sourcePath = request.command.sourcePath;
-      archivePath = request.command.archivesRoot + "/" + request.command.archiveName;
-      fs.mkdirSync(request.command.archivesRoot, { recursive: true });
+      archivePath = request.command.targetPath;
+      fs.mkdirSync(path.dirname(archivePath), { recursive: true });
       fs.renameSync(sourcePath, archivePath);
-      response(request.requestId, { type: "repository.replacementPrepared", preparation: { status: "prepared", archivePath, sourceStatus: "ready" } });
+      response(request.requestId, { type: "repository.replacementPrepared", preparation: { status: "prepared", destinationPath: archivePath, sourceStatus: "ready" } });
     } else if (request.command.type === "repository.initialize") {
       response(request.requestId, { type: "repository.initializationResult", initialization: { status: "initialized" } });
     } else if (request.command.type === "session.open") {
@@ -6713,7 +6692,7 @@ process.stdin.on("data", (chunk) => {
     } else if (request.command.type === "watcher.start") {
       response(request.requestId, { type: "watcher.started" });
     } else if (request.command.type === "repository.replacement.resolve") {
-      response(request.requestId, { type: "repository.replacementResolved", resolution: { status: "committed", managedPath: sourcePath, archivePath } });
+      response(request.requestId, { type: "repository.replacementResolved", resolution: { status: "committed", sourcePath, destinationPath: archivePath } });
     } else if (request.command.type === "process.shutdown") {
       response(request.requestId, { type: "process.shutdownComplete" });
       process.exit(0);
@@ -6748,13 +6727,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 8, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 9, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 8, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 9, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 
-write({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -6782,12 +6761,12 @@ process.stdin.on("data", (chunk) => {{
     }}
     if (type === "repository.replacement.prepare") {{
       sourcePath = request.command.sourcePath;
-      archivePath = path.join(request.command.archivesRoot, request.command.archiveName);
+      archivePath = request.command.targetPath;
       fs.mkdirSync(path.dirname(archivePath), {{ recursive: true }});
       fs.renameSync(sourcePath, archivePath);
       response(request.requestId, {{
         type: "repository.replacementPrepared",
-        preparation: {{ status: "prepared", archivePath, sourceStatus: "ready" }},
+        preparation: {{ status: "prepared", destinationPath: archivePath, sourceStatus: "ready" }},
       }});
       continue;
     }}
@@ -6830,19 +6809,19 @@ process.stdin.on("data", (chunk) => {{
         if (rollback === "failed") {{
           response(request.requestId, {{
             type: "repository.replacementResolved",
-            resolution: {{ status: "rollbackFailed", managedPath: sourcePath, archivePath, message: "fixture rollback failed" }},
+            resolution: {{ status: "rollbackFailed", sourcePath, destinationPath: archivePath, message: "fixture rollback failed" }},
           }});
         }} else {{
           fs.renameSync(archivePath, sourcePath);
           response(request.requestId, {{
             type: "repository.replacementResolved",
-            resolution: {{ status: "rolledBack", managedPath: sourcePath, archivePath }},
+            resolution: {{ status: "rolledBack", sourcePath, destinationPath: archivePath }},
           }});
         }}
       }} else {{
         response(request.requestId, {{
           type: "repository.replacementResolved",
-          resolution: {{ status: "committed", managedPath: sourcePath, archivePath }},
+          resolution: {{ status: "committed", sourcePath, destinationPath: archivePath }},
         }});
       }}
       continue;
@@ -6885,13 +6864,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 8, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 9, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 8, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 9, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 function mutation(status) {{
-  write({{ protocolVersion: 8, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
+  write({{ protocolVersion: 9, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
 }}
 function inspection() {{
   const ready = repositoryStatus === "ready";
@@ -6902,7 +6881,7 @@ function inspection() {{
   }};
 }}
 
-write({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -6992,7 +6971,7 @@ if (process.argv.includes(repository)) {{
   process.exitCode = 91;
   process.exit();
 }}
-process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -7011,14 +6990,14 @@ process.stdin.on("data", (chunk) => {{
       result = {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
     }} else if (request.command.type === "process.shutdown") {{
       result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }} else {{
       result = {{ type: request.command.type === "watcher.start" ? "watcher.started" : "watcher.stopped" }};
     }}
-    process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+    process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
     if (request.command.type === "session.open" && {status:?} === "mutation") {{
-      process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
     }}
   }}
 }});
@@ -7031,7 +7010,7 @@ process.stdin.on("data", (chunk) => {{
         format!(
             r#"
 const repository = {repository};
-process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -7043,7 +7022,7 @@ process.stdin.on("data", (chunk) => {{
     ? {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }}
     : {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
   if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) throw new Error("wrong repository");
-  process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
   if (request.command.type === "session.open") process.exit(1);
 }});
 "#
@@ -7058,7 +7037,7 @@ process.stdin.on("data", (chunk) => {{
 import fs from "node:fs";
 const repository = {repository};
 const marker = {marker};
-process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -7070,12 +7049,12 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "repository.inspect") {{
       if (request.command.repoPath !== repository) throw new Error("repository path was not sent over stdin");
       const result = {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }};
-  process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       continue;
     }}
     if (request.command.type === "session.open") {{
       const error = {{
-        protocolVersion: 8,
+        protocolVersion: 9,
         kind: "response",
         requestId: request.requestId,
         ok: false,
@@ -7090,7 +7069,7 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "process.shutdown") {{
       fs.writeFileSync(marker, "shutdown");
       const result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 8, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }}
     throw new Error("unexpected candidate command");

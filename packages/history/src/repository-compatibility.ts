@@ -39,23 +39,23 @@ import {
 import { getRepositoryLayout } from "./layout.ts";
 import { isSemanticReadModelCurrent } from "./read-model.ts";
 import type {
-  ArchiveManagedRepositoryInput,
-  ArchiveManagedRepositoryResult,
-  ArchiveSnapshot,
   CompareWatchedSaveInput,
   GitIntegrityPolicy,
   InspectSaveHistoryRepositoryInput,
-  ManagedRepositoryReplacementPreparationResult,
-  ManagedRepositoryReplacementResolution,
   MigrateSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryResult,
   MigrationCleanupFailure,
   MigrationSourceState,
-  PrepareManagedRepositoryReplacementInput,
+  PrepareRepositoryReplacementInput,
   PrepareSaveHistoryMigrationInput,
   PrepareSaveHistoryMigrationResult,
-  PreparedManagedRepositoryReplacement,
+  PreparedRepositoryReplacement,
   PreparedSaveHistoryMigration,
+  RelocateRepositoryInput,
+  RelocateRepositoryResult,
+  RepositoryReplacementPreparationResult,
+  RepositoryReplacementResolution,
+  RepositorySnapshot,
   SaveHistoryRepositoryCapability,
   SaveHistoryRepositoryInspection,
   SaveHistoryRepositoryRequiredAction,
@@ -86,7 +86,7 @@ interface InspectedRepository {
   readonly fingerprint: string;
 }
 
-interface ArchiveSnapshotFileSystem {
+interface RepositorySnapshotFileSystem {
   readonly copyRepository: (
     sourcePath: string,
     targetPath: string,
@@ -97,8 +97,8 @@ interface ArchiveSnapshotFileSystem {
   ) => Promise<void>;
 }
 
-const archiveSnapshotFileSystemState: {
-  override: ArchiveSnapshotFileSystem | undefined;
+const repositorySnapshotFileSystemState: {
+  override: RepositorySnapshotFileSystem | undefined;
 } = { override: undefined };
 
 export async function inspectSaveHistoryRepository(
@@ -112,55 +112,43 @@ export async function inspectSaveHistoryRepository(
 }
 
 /**
- * Atomically moves one direct App-managed child into the App archive root. Repository format is
- * deliberately irrelevant: placement is Desktop policy, while History owns exclusion from its
- * writers and watchers for the duration of the filesystem move.
+ * Atomically moves one real repository directory to a caller-selected destination. Repository
+ * format is deliberately irrelevant: placement policy is caller-owned, while History owns exclusion
+ * from its writers and watchers for the duration of the filesystem move.
  */
-export async function archiveManagedRepository(
-  input: ArchiveManagedRepositoryInput,
-): Promise<ArchiveManagedRepositoryResult> {
-  const placement = await validateArchiveMovePlacement(input);
+export async function relocateRepository(
+  input: RelocateRepositoryInput,
+): Promise<RelocateRepositoryResult> {
+  const placement = await validateRelocationPlacement(input);
   if (placement === undefined) {
     return { status: "failed", reason: "invalidPlacement" };
   }
 
-  return await archiveAtValidatedPlacement(input, placement).catch(
-    archiveMoveFailure,
-  );
+  return await relocateAtValidatedPlacement(placement).catch(relocationFailure);
 }
 
-async function archiveAtValidatedPlacement(
-  input: ArchiveManagedRepositoryInput,
-  placement: {
-    readonly archivesRoot: string;
-    readonly sourcePath: string;
-  },
-): Promise<ArchiveManagedRepositoryResult> {
-  const leases = await acquireArchiveMoveLeases(placement.sourcePath);
+async function relocateAtValidatedPlacement(placement: {
+  readonly sourcePath: string;
+  readonly targetPath: string;
+}): Promise<RelocateRepositoryResult> {
+  const leases = await acquireRelocationLeases(placement.sourcePath);
   let destinationPath: string | undefined;
 
   try {
     destinationPath = await withPublicationLock(
-      placement.archivesRoot,
+      path.dirname(placement.targetPath),
       async () => {
-        const candidate = await claimArchiveMovePath(
-          placement.archivesRoot,
-          input.archiveName,
-        );
-        return await renameToClaimedArchivePath(
-          placement.sourcePath,
-          candidate,
-        );
+        const candidate = await claimRelocationPath(placement.targetPath);
+        return await renameToClaimedPath(placement.sourcePath, candidate);
       },
     );
 
     return {
-      status: "archived",
-      repoPath: destinationPath,
-      name: path.basename(destinationPath),
+      status: "relocated",
+      destinationPath,
     };
   } finally {
-    await releaseArchiveMoveLeases(
+    await releaseRelocationLeases(
       leases,
       placement.sourcePath,
       destinationPath,
@@ -168,16 +156,16 @@ async function archiveAtValidatedPlacement(
   }
 }
 
-interface ArchiveMoveLeases {
+interface RelocationLeases {
   readonly watcher?: Awaited<
     ReturnType<typeof acquireRepositoryWatchExclusion>
   >;
   readonly writer?: Awaited<ReturnType<typeof acquireHistoryWriteLease>>;
 }
 
-async function acquireArchiveMoveLeases(
+async function acquireRelocationLeases(
   sourcePath: string,
-): Promise<ArchiveMoveLeases> {
+): Promise<RelocationLeases> {
   const controlDirectory = path.join(sourcePath, ".silksong-git");
   if (!(await isRealDirectory(controlDirectory))) {
     return {};
@@ -194,8 +182,8 @@ async function acquireArchiveMoveLeases(
   }
 }
 
-async function releaseArchiveMoveLeases(
-  leases: ArchiveMoveLeases,
+async function releaseRelocationLeases(
+  leases: RelocationLeases,
   sourcePath: string,
   destinationPath: string | undefined,
 ) {
@@ -206,7 +194,7 @@ async function releaseArchiveMoveLeases(
   ]);
 }
 
-function archiveMoveFailure(error: unknown): ArchiveManagedRepositoryResult {
+function relocationFailure(error: unknown): RelocateRepositoryResult {
   if (error instanceof SaveHistoryWatcherAlreadyAcquiredError) {
     return { status: "failed", reason: "watcherAlreadyAcquired" };
   }
@@ -220,64 +208,66 @@ function archiveMoveFailure(error: unknown): ArchiveManagedRepositoryResult {
   };
 }
 
-async function validateArchiveMovePlacement(
-  input: ArchiveManagedRepositoryInput,
+async function validateRelocationPlacement(
+  input: RelocateRepositoryInput,
 ): Promise<
   | {
-      readonly managedRoot: string;
-      readonly archivesRoot: string;
       readonly sourcePath: string;
+      readonly targetPath: string;
     }
   | undefined
 > {
   if (
-    input.archiveName === ""
-    || input.archiveName === "."
-    || input.archiveName === ".."
-    || path.basename(input.archiveName) !== input.archiveName
+    !path.isAbsolute(input.sourcePath)
+    || !path.isAbsolute(input.targetPath)
   ) {
     return undefined;
   }
-  let resolved:
-    | readonly [
-        managedRoot: string,
-        archivesRoot: string,
-        sourceMetadata: Awaited<ReturnType<typeof lstat>>,
-      ]
-    | undefined;
+  const targetParent = path.dirname(path.resolve(input.targetPath));
+  if (
+    path.basename(input.targetPath) === ""
+    || path.basename(input.targetPath) === "."
+    || path.basename(input.targetPath) === ".."
+  ) {
+    return undefined;
+  }
+
+  let resolved: readonly [
+    sourceParent: string,
+    targetParent: string,
+    sourceMetadata: Awaited<ReturnType<typeof lstat>>,
+  ];
   try {
     resolved = await Promise.all([
-      realpath(input.managedRoot),
-      realpath(input.archivesRoot),
+      realpath(path.dirname(input.sourcePath)),
+      realpath(targetParent),
       lstat(input.sourcePath),
     ]);
   } catch {
     return undefined;
   }
-  return await validateResolvedArchivePlacement(input, resolved);
-}
 
-async function validateResolvedArchivePlacement(
-  input: ArchiveManagedRepositoryInput,
-  resolved: readonly [
-    managedRoot: string,
-    archivesRoot: string,
-    sourceMetadata: Awaited<ReturnType<typeof lstat>>,
-  ],
-) {
-  const [managedRoot, archivesRoot, sourceMetadata] = resolved;
+  const [sourceParent, resolvedTargetParent, sourceMetadata] = resolved;
   if (!sourceMetadata.isDirectory() || sourceMetadata.isSymbolicLink()) {
     return undefined;
   }
   const sourcePath = await realpath(input.sourcePath);
   if (
-    path.dirname(sourcePath) !== managedRoot
-    || path.dirname(input.sourcePath) !== managedRoot
-    || managedRoot === archivesRoot
+    path.dirname(sourcePath) !== sourceParent
+    || path.dirname(input.sourcePath) !== sourceParent
+    || resolvedTargetParent !== targetParent
+    || isPathWithin(sourcePath, resolvedTargetParent)
+    || sourcePath === path.resolve(input.targetPath)
   ) {
     return undefined;
   }
-  return { managedRoot, archivesRoot, sourcePath };
+  return {
+    sourcePath,
+    targetPath: path.join(
+      resolvedTargetParent,
+      path.basename(input.targetPath),
+    ),
+  };
 }
 
 async function isRealDirectory(directoryPath: string): Promise<boolean> {
@@ -290,13 +280,9 @@ async function isRealDirectory(directoryPath: string): Promise<boolean> {
   return metadata?.isDirectory() === true && !metadata.isSymbolicLink();
 }
 
-async function claimArchiveMovePath(
-  archivesRoot: string,
-  archiveName: string,
-): Promise<string> {
+async function claimRelocationPath(targetPath: string): Promise<string> {
   for (let suffix = 1; suffix <= 10_000; suffix++) {
-    const name = suffix === 1 ? archiveName : `${archiveName}-${suffix}`;
-    const candidate = path.join(archivesRoot, name);
+    const candidate = suffix === 1 ? targetPath : `${targetPath}-${suffix}`;
     const claimed = await mkdir(candidate).then(
       () => true,
       (error: unknown) => {
@@ -310,10 +296,10 @@ async function claimArchiveMovePath(
       return candidate;
     }
   }
-  throw new Error("Could not find an unused archive move path.");
+  throw new Error("Could not find an unused relocation path.");
 }
 
-async function renameToClaimedArchivePath(
+async function renameToClaimedPath(
   sourcePath: string,
   claimedPath: string,
 ): Promise<string> {
@@ -330,8 +316,8 @@ async function renameToClaimedArchivePath(
 
 /**
  * Compares a candidate save with a repository's configured Watched Save without exposing Project
- * Config through generic repository inspection. File identity is resolved by History so Desktop
- * callers do not need to know config, Git, or SQLite details.
+ * Config through generic repository inspection. File identity is resolved by History so callers do
+ * not need to know config, Git, or SQLite details.
  */
 export async function compareWatchedSave(
   input: CompareWatchedSaveInput,
@@ -349,22 +335,18 @@ export async function compareWatchedSave(
 }
 
 /**
- * Prepares the reversible archive move used by Desktop's explicit replacement workflow.
+ * Prepares the reversible repository move used by an explicit replacement workflow.
  *
  * The returned handle owns both repository leases until `resolve` or the crash-only `release`
  * finalizer is called. Once the source directory is moved, the lock files move with it; lease
  * release therefore always targets the operation's current directory instead of assuming the old
  * managed path still contains the lock files. This operation never reads, writes, creates, or
- * removes Desktop's claimed replacement directory.
+ * removes the caller's claimed replacement directory.
  */
-export async function prepareManagedRepositoryReplacement(
-  input: PrepareManagedRepositoryReplacementInput,
-): Promise<ManagedRepositoryReplacementPreparationResult> {
-  if (input.confirmation !== "archive-and-reinitialize-managed-repository") {
-    return { status: "rejected", reason: "confirmationRequired" };
-  }
-
-  const placement = await validateArchiveMovePlacement(input);
+export async function prepareRepositoryReplacement(
+  input: PrepareRepositoryReplacementInput,
+): Promise<RepositoryReplacementPreparationResult> {
+  const placement = await validateRelocationPlacement(input);
   if (placement === undefined) {
     return { status: "rejected", reason: "invalidPlacement" };
   }
@@ -418,7 +400,10 @@ export async function prepareManagedRepositoryReplacement(
     }
 
     if (
-      !(await doesWatchedSaveMatch(placement.sourcePath, input.watchedSavePath))
+      !(await doesWatchedSaveMatch(
+        placement.sourcePath,
+        input.expectedWatchedSavePath,
+      ))
     ) {
       await releaseReplacementLeases(watcher, writer, placement.sourcePath);
       return {
@@ -428,25 +413,19 @@ export async function prepareManagedRepositoryReplacement(
       };
     }
 
-    const archivePath = await withPublicationLock(
-      placement.archivesRoot,
+    const destinationPath = await withPublicationLock(
+      path.dirname(placement.targetPath),
       async () => {
-        const candidate = await claimArchiveMovePath(
-          placement.archivesRoot,
-          input.archiveName,
-        );
-        return await renameToClaimedArchivePath(
-          placement.sourcePath,
-          candidate,
-        );
+        const candidate = await claimRelocationPath(placement.targetPath);
+        return await renameToClaimedPath(placement.sourcePath, candidate);
       },
     );
 
-    let currentPath = archivePath;
-    let terminal: ManagedRepositoryReplacementResolution | undefined;
+    let currentPath = destinationPath;
+    let terminal: RepositoryReplacementResolution | undefined;
     let leasesReleased = false;
-    const operation: PreparedManagedRepositoryReplacement = Object.freeze({
-      archivePath,
+    const operation: PreparedRepositoryReplacement = Object.freeze({
+      destinationPath,
       async resolve(decision: "commit" | "rollback") {
         if (terminal !== undefined) {
           return terminal;
@@ -461,8 +440,8 @@ export async function prepareManagedRepositoryReplacement(
           leasesReleased = true;
           terminal = {
             status: "committed",
-            managedPath: placement.sourcePath,
-            archivePath,
+            sourcePath: placement.sourcePath,
+            destinationPath,
             ...(cleanupWarning !== undefined && { cleanupWarning }),
           };
           return terminal;
@@ -471,7 +450,7 @@ export async function prepareManagedRepositoryReplacement(
         // Rollback must release the held leases even when the original path was repopulated.
         // eslint-disable-next-line unicorn/try-complexity
         try {
-          await moveArchiveBack(archivePath, placement.sourcePath);
+          await moveRepositoryBack(destinationPath, placement.sourcePath);
           currentPath = placement.sourcePath;
           const cleanupWarning = await releaseReplacementLeases(
             watcher,
@@ -481,8 +460,8 @@ export async function prepareManagedRepositoryReplacement(
           leasesReleased = true;
           terminal = {
             status: "rolledBack",
-            managedPath: placement.sourcePath,
-            archivePath,
+            sourcePath: placement.sourcePath,
+            destinationPath,
             ...(cleanupWarning !== undefined && { cleanupWarning }),
           };
         } catch {
@@ -494,10 +473,10 @@ export async function prepareManagedRepositoryReplacement(
           leasesReleased = true;
           terminal = {
             status: "rollbackFailed",
-            managedPath: placement.sourcePath,
-            archivePath,
+            sourcePath: placement.sourcePath,
+            destinationPath,
             ...(cleanupWarning !== undefined && { cleanupWarning }),
-            message: "The archived repository could not be moved back safely.",
+            message: "The relocated repository could not be moved back safely.",
           };
         }
 
@@ -560,17 +539,17 @@ async function doesWatchedSaveMatch(
   );
 }
 
-async function moveArchiveBack(archivePath: string, managedPath: string) {
-  if (await pathExists(managedPath)) {
-    throw new Error("The original managed repository path is no longer empty.");
+async function moveRepositoryBack(destinationPath: string, sourcePath: string) {
+  if (await pathExists(sourcePath)) {
+    throw new Error("The original repository path is no longer empty.");
   }
-  await rename(archivePath, managedPath);
+  await rename(destinationPath, sourcePath);
 }
 
 function replacementPreparationFailure(
   error: unknown,
   sourceStatus: SaveHistoryRepositoryStatus,
-): ManagedRepositoryReplacementPreparationResult {
+): RepositoryReplacementPreparationResult {
   if (error instanceof SaveHistoryWatcherAlreadyAcquiredError) {
     return {
       status: "failed",
@@ -585,7 +564,7 @@ function replacementPreparationFailure(
     status: "failed",
     reason: "moveFailed",
     sourceStatus,
-    message: "The managed repository could not be archived safely.",
+    message: "The repository could not be relocated safely.",
   };
 }
 
@@ -674,9 +653,10 @@ export async function migrateSaveHistoryRepository(
 }
 
 /**
- * Creates and publishes a verified archive while retaining History's write and watcher leases. The
- * returned operation is intentionally one-way: Desktop must report the snapshot before calling
- * commit, and there is no cancellation path that could leave the lease ownership ambiguous.
+ * Creates and publishes a verified repository snapshot while retaining History's write and watcher
+ * leases. The returned operation is intentionally one-way: the caller must report the snapshot
+ * before calling commit, and there is no cancellation path that could leave the lease ownership
+ * ambiguous.
  */
 export async function prepareSaveHistoryMigration(
   input: PrepareSaveHistoryMigrationInput,
@@ -714,7 +694,8 @@ export async function prepareSaveHistoryMigration(
     return {
       status: "failed",
       reason: "snapshotFailed",
-      message: "The repository could not be prepared for an archive snapshot.",
+      message:
+        "The repository could not be prepared for a repository snapshot.",
     };
   }
 
@@ -734,7 +715,7 @@ export async function prepareSaveHistoryMigration(
   let watcherLease: Awaited<ReturnType<typeof acquireWatchLock>> | undefined;
   try {
     watcherLease = await acquireMigrationWatcherExclusion(input.repoPath);
-    const snapshot = await createArchiveSnapshot(input);
+    const snapshot = await createRepositorySnapshot(input);
     let completed = false;
     let leasesReleased = false;
     const operation: PreparedSaveHistoryMigration = Object.freeze({
@@ -799,7 +780,7 @@ export async function prepareSaveHistoryMigration(
     return {
       status: "failed",
       reason: "snapshotFailed",
-      message: "The archive snapshot could not be verified or published.",
+      message: "The repository snapshot could not be verified or published.",
     };
   }
 }
@@ -825,9 +806,9 @@ class SnapshotDirectoryDigestMismatchError extends Error {
   override name = "SnapshotDirectoryDigestMismatchError";
 }
 
-async function createArchiveSnapshot(
+async function createRepositorySnapshot(
   input: PrepareSaveHistoryMigrationInput,
-): Promise<ArchiveSnapshot> {
+): Promise<RepositorySnapshot> {
   if (
     !path.isAbsolute(input.repoPath)
     || !path.isAbsolute(input.snapshotPath)
@@ -839,7 +820,7 @@ async function createArchiveSnapshot(
   const targetPath = path.resolve(input.snapshotPath);
   if (isPathWithin(sourcePath, targetPath)) {
     throw new Error(
-      "The archive snapshot destination cannot be inside its source.",
+      "The repository snapshot destination cannot be inside its source.",
     );
   }
 
@@ -848,11 +829,11 @@ async function createArchiveSnapshot(
     path.dirname(targetPath),
     `.${path.basename(targetPath)}.staging-${createOpaqueId(12)}`,
   );
-  const archiveFileSystem = getArchiveSnapshotFileSystem();
+  const snapshotFileSystem = getRepositorySnapshotFileSystem();
 
   try {
     await mkdir(path.dirname(targetPath), { recursive: true });
-    await archiveFileSystem.copyRepository(sourcePath, stagingPath);
+    await snapshotFileSystem.copyRepository(sourcePath, stagingPath);
 
     const sourceDigestAfter = await calculateDirectoryDigest(sourcePath);
     const stagedDigest = await calculateDirectoryDigest(stagingPath);
@@ -882,9 +863,9 @@ async function createArchiveSnapshot(
 }
 
 function withGitIntegrityWarning(
-  snapshot: Omit<ArchiveSnapshot, "gitIntegrityWarning">,
+  snapshot: Omit<RepositorySnapshot, "gitIntegrityWarning">,
   warning: string | undefined,
-): ArchiveSnapshot {
+): RepositorySnapshot {
   if (warning === undefined) {
     return snapshot;
   }
@@ -896,36 +877,38 @@ async function copyDurableRepository(sourcePath: string, targetPath: string) {
   await copyDurableEntry(sourcePath, targetPath, "");
 }
 
-const nodeArchiveSnapshotFileSystem: ArchiveSnapshotFileSystem = Object.freeze({
-  copyRepository: copyDurableRepository,
-  writeConfigAtomically,
-});
+const nodeRepositorySnapshotFileSystem: RepositorySnapshotFileSystem =
+  Object.freeze({
+    copyRepository: copyDurableRepository,
+    writeConfigAtomically,
+  });
 
-function getArchiveSnapshotFileSystem(): ArchiveSnapshotFileSystem {
+function getRepositorySnapshotFileSystem(): RepositorySnapshotFileSystem {
   return (
-    archiveSnapshotFileSystemState.override ?? nodeArchiveSnapshotFileSystem
+    repositorySnapshotFileSystemState.override
+    ?? nodeRepositorySnapshotFileSystem
   );
 }
 
 /**
  * Test-only fault injection. The public migration preparation Interface remains the only entry
  * point exercised by the behavior tests; this private adapter hook cannot be imported from the
- * package root or supplied by Desktop/CLI callers.
+ * package root or supplied by external callers.
  */
-export async function withArchiveSnapshotFileSystemForTests<T>(
+export async function withRepositorySnapshotFileSystemForTests<T>(
   configure: (
-    fileSystem: ArchiveSnapshotFileSystem,
-  ) => ArchiveSnapshotFileSystem,
+    fileSystem: RepositorySnapshotFileSystem,
+  ) => RepositorySnapshotFileSystem,
   operation: () => Promise<T>,
 ): Promise<T> {
-  const previous = archiveSnapshotFileSystemState.override;
-  archiveSnapshotFileSystemState.override = configure(
-    nodeArchiveSnapshotFileSystem,
+  const previous = repositorySnapshotFileSystemState.override;
+  repositorySnapshotFileSystemState.override = configure(
+    nodeRepositorySnapshotFileSystem,
   );
   try {
     return await operation();
   } finally {
-    archiveSnapshotFileSystemState.override = previous;
+    repositorySnapshotFileSystemState.override = previous;
   }
 }
 
@@ -1045,7 +1028,7 @@ function assertSnapshotDigestsMatch(
     || sourceDigestBefore !== stagedDigest
   ) {
     throw new SnapshotDirectoryDigestMismatchError(
-      "The source changed while the archive snapshot was being copied.",
+      "The source changed while the repository snapshot was being copied.",
     );
   }
 }
@@ -1073,7 +1056,7 @@ async function publishSnapshotNoReplace(
       }
     }
 
-    throw new Error("Could not find an unused archive snapshot path.");
+    throw new Error("Could not find an unused repository snapshot path.");
   });
 }
 
@@ -1250,7 +1233,7 @@ function createFailedMigrationResult(
 
 function withSnapshotState(
   result: MigrateSaveHistoryRepositoryResult,
-  snapshot: ArchiveSnapshot,
+  snapshot: RepositorySnapshot,
 ): MigrateSaveHistoryRepositoryResult {
   return {
     ...result,
@@ -1304,7 +1287,7 @@ export async function assertRepositoryCapability(
   if (
     access === "readOnly"
     && capability === "read"
-    && isReadOnlyArchiveStatus(inspection.status)
+    && isReadOnlyCompatibleStatus(inspection.status)
   ) {
     return;
   }
@@ -1370,8 +1353,8 @@ async function inspectRepositoryCandidate(
   const configText = await readConfigText(repoPath);
   const config =
     configText === undefined ? undefined : parseProjectConfig(configText);
-  // Repository compatibility is structural. Git fsck is advisory for the Desktop archive workflow
-  // and must not turn an otherwise migratable repository into an invalid candidate.
+  // Repository compatibility is structural. Git fsck is advisory for a read-only inspection and
+  // must not turn an otherwise migratable repository into an invalid candidate.
   const gitRepository =
     gitIntegrityPolicy === "strict"
       ? await isUsableGitRepository(repoPath)
@@ -1529,7 +1512,9 @@ function isMigrationStatus(status: SaveHistoryRepositoryStatus): boolean {
   return status === "legacyConfig" || status === "migrationRequired";
 }
 
-function isReadOnlyArchiveStatus(status: SaveHistoryRepositoryStatus): boolean {
+function isReadOnlyCompatibleStatus(
+  status: SaveHistoryRepositoryStatus,
+): boolean {
   return isMigrationStatus(status);
 }
 
@@ -1612,10 +1597,10 @@ async function persistMigratedConfig(
   | { readonly status: "written" }
   | { readonly status: "failed"; readonly sourceState: MigrationSourceState }
 > {
-  const archiveFileSystem = getArchiveSnapshotFileSystem();
+  const snapshotFileSystem = getRepositorySnapshotFileSystem();
 
   try {
-    await archiveFileSystem.writeConfigAtomically(configPath, contents);
+    await snapshotFileSystem.writeConfigAtomically(configPath, contents);
   } catch {
     return {
       status: "failed",

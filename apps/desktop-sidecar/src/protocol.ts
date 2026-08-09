@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const desktopSidecarProtocolVersion = 8 as const;
+export const desktopSidecarProtocolVersion = 9 as const;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -79,10 +79,8 @@ export const repositoryCompareWatchedSaveCommandSchema = z
 export const repositoryArchiveCommandSchema = z
   .object({
     type: z.literal("repository.archive"),
-    managedRoot: z.string().min(1).max(4096),
-    archivesRoot: z.string().min(1).max(4096),
-    repoPath: z.string().min(1).max(4096),
-    archiveName: z.string().min(1).max(512),
+    sourcePath: z.string().min(1).max(4096),
+    targetPath: z.string().min(1).max(4096),
   })
   .strict();
 
@@ -90,12 +88,9 @@ export const repositoryReplacementPrepareCommandSchema = z
   .object({
     type: z.literal("repository.replacement.prepare"),
     operationId: z.string().min(1).max(128),
-    managedRoot: z.string().min(1).max(4096),
-    archivesRoot: z.string().min(1).max(4096),
     sourcePath: z.string().min(1).max(4096),
-    watchedSavePath: z.string().min(1).max(4096),
-    archiveName: z.string().min(1).max(512),
-    confirmation: z.literal("archive-and-reinitialize-managed-repository"),
+    targetPath: z.string().min(1).max(4096),
+    expectedWatchedSavePath: z.string().min(1).max(4096),
   })
   .strict();
 
@@ -232,7 +227,7 @@ const replacementPreparationSchema = z.discriminatedUnion("status", [
     .object({
       status: z.literal("prepared"),
       operationId: z.string().min(1).max(128),
-      archivePath: z.string().min(1).max(4096),
+      destinationPath: z.string().min(1).max(4096),
       sourceStatus: replacementSourceStatusSchema,
     })
     .strict(),
@@ -240,7 +235,6 @@ const replacementPreparationSchema = z.discriminatedUnion("status", [
     .object({
       status: z.literal("rejected"),
       reason: z.enum([
-        "confirmationRequired",
         "invalidPlacement",
         "sourceNotEligible",
         "differentWatchedSave",
@@ -266,24 +260,24 @@ const replacementResolutionSchema = z.discriminatedUnion("status", [
   z
     .object({
       status: z.literal("committed"),
-      managedPath: z.string().min(1).max(4096),
-      archivePath: z.string().min(1).max(4096),
+      sourcePath: z.string().min(1).max(4096),
+      destinationPath: z.string().min(1).max(4096),
       cleanupWarning: z.literal("leaseReleaseFailed").optional(),
     })
     .strict(),
   z
     .object({
       status: z.literal("rolledBack"),
-      managedPath: z.string().min(1).max(4096),
-      archivePath: z.string().min(1).max(4096),
+      sourcePath: z.string().min(1).max(4096),
+      destinationPath: z.string().min(1).max(4096),
       cleanupWarning: z.literal("leaseReleaseFailed").optional(),
     })
     .strict(),
   z
     .object({
       status: z.literal("rollbackFailed"),
-      managedPath: z.string().min(1).max(4096),
-      archivePath: z.string().min(1).max(4096),
+      sourcePath: z.string().min(1).max(4096),
+      destinationPath: z.string().min(1).max(4096),
       cleanupWarning: z.literal("leaseReleaseFailed").optional(),
       message: z.string().optional(),
     })
@@ -369,7 +363,7 @@ const repositoryMigrationResultSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
-const archiveSnapshotSchema = z
+const repositorySnapshotSchema = z
   .object({
     repoPath: z.string().min(1).max(4096),
     directoryDigest: z.string().regex(/^[0-9a-f]{64}$/v),
@@ -381,7 +375,7 @@ const repositoryMigrationPreparationSchema = z.discriminatedUnion("status", [
   z
     .object({
       status: z.literal("prepared"),
-      snapshot: archiveSnapshotSchema,
+      snapshot: repositorySnapshotSchema,
     })
     .strict(),
   z
@@ -618,7 +612,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 8;
+    readonly protocolVersion: 9;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },

@@ -35,10 +35,12 @@ incompatible repository exposes
 no ordinary read or write capability by default; a caller must use a compatible
 newer application rather than relying on an incidental parse of its files.
 
-The Repo Session may explicitly request read-only access for a Desktop Archived
-Repository. That access admits compatible legacy or migration-required data for
-read and export workflows, using advisory integrity classification, while the
-normal History and CLI paths retain strict compatibility and capability checks.
+The Repo Session may explicitly request read-only access for a caller-selected
+repository path. That access admits compatible legacy or migration-required
+data for read and export workflows, using advisory integrity classification,
+while the normal History and CLI paths retain strict compatibility and
+capability checks. Any application-specific placement or lifecycle meaning
+belongs to the caller rather than this Module.
 
 An explicitly confirmed migration consumes the inspection ID under History's
 write serialization. History re-inspects the candidate, rejects stale IDs,
@@ -52,8 +54,8 @@ repository.
 Desktop's migration workflow uses the two-phase
 `prepareSaveHistoryMigration` Interface. Desktop supplies the canonical source
 repository path, an opaque target snapshot path, the inspection ID, and the
-literal confirmation; History does not own managed/archive roots or parse
-archive names. Preparation holds repository serialization and watcher
+literal confirmation; History does not own caller roots or parse placement
+names. Preparation holds repository serialization and watcher
 exclusion, copies the complete durable repository to a staging directory,
 compares canonical SHA-256 Merkle directory digests before and after the copy,
 advises on Git integrity, and atomically publishes the collision-adjusted
@@ -61,30 +63,31 @@ snapshot path. It returns a non-cancelable in-memory operation lease. Desktop
 reports that actual path and any advisory warning before calling the operation's
 `commit`, which then performs the existing migration ordering. Every migration
 result reports whether the source is unchanged, migrated, or unknown and
-whether an archive snapshot was not created or remains retained. Snapshot
+whether a repository snapshot was not created or remains retained. Snapshot
 failure does not migrate or modify the source; a published snapshot is
 retained even when migration later fails. Lease-release failure is reported as
 a separate lifecycle warning without replacing those source and snapshot
 states. The one-phase CLI migration remains unchanged.
 
-History also exposes the narrow standalone Desktop archive move. It does not
-inspect repository compatibility or assign archive lifecycle. Given canonical
-App-owned roots, one direct non-symlink child, and an opaque App-generated name,
-History holds its write and watcher exclusions where applicable and atomically
-renames the directory to an unused direct archive child. Existing watcher
-ownership is refused, and failures before rename leave the source unchanged.
-This move never reads the Watched Save, creates an observation, copies an
-Archive Snapshot, edits Project Config, or initializes a replacement.
+History also exposes the generic `relocateRepository({ sourcePath, targetPath
+})` Interface. It does not inspect repository compatibility or assign lifecycle
+meaning to either path. The caller supplies a real source directory and an
+opaque destination base path; History validates direct-directory and symlink
+safety, rejects destinations contained by the source, holds its write and
+watcher exclusions where applicable, and atomically renames the directory to a
+collision-safe destination. Existing watcher ownership is refused, failures
+before rename leave the source unchanged, and an uninspectable source is still
+accepted when it is a valid real directory.
 
-Explicit managed replacement uses the separate
-`prepareManagedRepositoryReplacement` Interface. It revalidates the canonical
-direct-child source, accepts only `ready`, `legacyConfig`, or
-`migrationRequired`, and compares the same Watched Save identity while holding
-writer and watcher exclusions. It atomically moves the source to a collision-safe
-`<old-name>--reinitialize-<local timestamp>` archive and returns a handle with
-only `resolve("commit" | "rollback")` plus a crash-only `release` finalizer.
-Leases release at the operation's current directory so moved lock files remain
-owned. History never claims, initializes, or deletes Desktop's replacement
+Explicit repository replacement uses the separate generic
+`prepareRepositoryReplacement({ sourcePath, targetPath,
+expectedWatchedSavePath })` Interface. It revalidates the source, accepts only
+`ready`, `legacyConfig`, or `migrationRequired`, and compares the expected
+Watched Save identity while holding writer and watcher exclusions. It atomically
+moves the source to a collision-safe destination and returns a handle with only
+`resolve("commit" | "rollback")` plus a crash-only `release` finalizer. Leases
+release at the operation's current directory so moved lock files remain owned.
+History never claims, initializes, or deletes a caller-owned replacement
 directory; post-success lease-release failure is a warning.
 
 Semantic Read Model schema metadata is intentionally separate from the durable

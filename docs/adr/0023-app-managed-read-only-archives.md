@@ -17,11 +17,12 @@ Each workflow preserves the existing archive if its later operation fails.
 CLI migration remains outside this App-managed archive mechanism and uses its
 own recovery behavior.
 
-History owns creating a consistent Archive Snapshot through a public Interface.
-The Desktop App may allow a durable migration to write only after that snapshot
-succeeds and is atomically published under `archives/`. The published snapshot
-is retained as an Archived Repository whether migration succeeds or fails; the
-App has no automatic retention or deletion policy. Issue #47 owns the precise
+History owns creating a consistent Repository Snapshot through its public
+migration Interface. Desktop selects the opaque snapshot destination and may
+allow a durable migration to write only after that snapshot succeeds and is
+atomically published under `archives/`. The published snapshot is retained as
+an Archived Repository whether migration succeeds or fails; the App has no
+automatic retention or deletion policy. Issue #47 owns the precise
 confirmation, validation, and mutation-lifecycle behavior for this workflow.
 
 Archive placement, rather than a name or registry entry, determines archive

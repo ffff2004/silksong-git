@@ -46,7 +46,7 @@ export async function acquireRepositoryWatchExclusion(
 ): Promise<WatchLock> {
   return await acquireWatchLock({
     repoPath: input.repoPath,
-    watchedSavePath: "desktop-archive-move",
+    watchedSavePath: "repository-relocation",
     now: input.now ?? new Date(),
   });
 }

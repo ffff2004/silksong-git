@@ -109,8 +109,12 @@ _Avoid_: Active watcher, registry entry
 An App-managed repository or repository snapshot stored directly beneath the managed `archives/` root. Archive placement is an App-only, read-only lifecycle classification, not a Project Config field, save-generation claim, or provenance record. The App may inspect, browse, diff, search, and export a compatible Archived Repository, but never watches, checkpoints, relinks, restores in place, migrates, or rebuilds it.
 _Avoid_: Deleted repository, inactive watcher, old save generation
 
+**Repository Snapshot**:
+A complete, verified copy of a Save History Repository published at a caller-selected destination. Snapshot consistency, digest verification, and publication are History behavior; the destination's lifecycle meaning is not.
+_Avoid_: Archive, Git backup, config backup
+
 **Archive Snapshot**:
-A complete, verified copy of a Managed Repository made by the Desktop App as a precondition of its durable migration workflow. Once published, it becomes an Archived Repository and remains retained whether that migration succeeds or fails.
+A Desktop-placed Repository Snapshot made as a precondition of the Desktop App's durable migration workflow. Once published beneath `archives/`, it becomes an Archived Repository and remains retained whether that migration succeeds or fails. CLI migration may create a recovery snapshot without entering this App-only archive lifecycle.
 _Avoid_: Git backup, config backup
 
 **Watched Save**:

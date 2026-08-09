@@ -6,6 +6,7 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  open,
   readdir,
   readFile,
   rm,
@@ -20,7 +21,6 @@ import test from "node:test";
 
 import {
   acquireSaveHistoryWatcher,
-  archiveManagedRepository,
   compareWatchedSave,
   diffCommits,
   getSaveState,
@@ -29,12 +29,13 @@ import {
   InvalidRestoreBackupDirectoryError,
   migrateSaveHistoryRepository,
   observeSave,
-  prepareManagedRepositoryReplacement,
+  prepareRepositoryReplacement,
   prepareSaveHistoryMigration,
   queryHistory,
   queryRawObservations,
   readEncodedSave,
   rebuildSemanticReadModel,
+  relocateRepository,
   RestoreConflictError,
   restoreEncodedSave,
   RestoreTargetExistsError,
@@ -42,7 +43,7 @@ import {
   SaveHistoryWatcherAlreadyAcquiredError,
   searchSemanticEvents,
 } from "./index.ts";
-import { withArchiveSnapshotFileSystemForTests } from "./repository-compatibility.ts";
+import { withRepositorySnapshotFileSystemForTests } from "./repository-compatibility.ts";
 import type { ProjectConfigOverrides } from "./types.ts";
 
 const fixtureDirectory = path.join(
@@ -447,7 +448,7 @@ test("migrateSaveHistoryRepository requires confirmation, a fresh inspection, an
   assert.deepEqual(consumedToken.snapshotState, { status: "notCreated" });
 });
 
-test("Desktop migration preparation publishes a collision-safe verified snapshot before commit", async (t) => {
+test("migration preparation publishes a collision-safe verified snapshot before commit", async (t) => {
   const repo = await createHistoryRepo(t);
   await setRepositoryFormatVersion(repo, undefined);
   const inspection = await inspectSaveHistoryRepository({
@@ -455,8 +456,8 @@ test("Desktop migration preparation publishes a collision-safe verified snapshot
   });
   const snapshotBase = path.join(
     repo.tempDirectory,
-    "archives",
-    "save--pre-migration-now",
+    "snapshots",
+    "save-snapshot",
   );
 
   const first = await prepareSaveHistoryMigration({
@@ -490,93 +491,90 @@ test("Desktop migration preparation publishes a collision-safe verified snapshot
   await second.operation.commit();
 });
 
-test("archiveManagedRepository atomically moves an inspectable repository without changing config", async (t) => {
+test("relocateRepository atomically moves an inspectable repository without changing config", async (t) => {
   const repo = await createHistoryRepo(t);
   const observed = await observeSave({ repoPath: repo.repoPath });
   assert.equal(observed.status, "committed");
-  const managedRoot = repo.tempDirectory;
-  const archivesRoot = path.join(repo.tempDirectory, "archives");
-  await mkdir(archivesRoot);
+  const destinationRoot = path.join(repo.tempDirectory, "destinations");
+  await mkdir(destinationRoot);
   const configBefore = await readFile(repo.configPath);
 
-  const result = await archiveManagedRepository({
-    managedRoot,
-    archivesRoot,
+  const result = await relocateRepository({
     sourcePath: repo.repoPath,
-    archiveName: "history-repo--user-now",
+    targetPath: path.join(destinationRoot, "history-repo-moved"),
   });
 
-  assert.equal(result.status, "archived");
-  assert.equal(result.name, "history-repo--user-now");
+  assert.equal(result.status, "relocated");
+  assert.equal(
+    result.destinationPath,
+    path.join(destinationRoot, "history-repo-moved"),
+  );
   await assert.rejects(stat(repo.repoPath));
   assert.deepEqual(
-    await readFile(path.join(result.repoPath, ".silksong-git", "config.json")),
+    await readFile(
+      path.join(result.destinationPath, ".silksong-git", "config.json"),
+    ),
     configBefore,
   );
   const exported = await readEncodedSave({
-    repoPath: result.repoPath,
+    repoPath: result.destinationPath,
     access: "readOnly",
     commitRef: observed.observation.commit.ref,
   });
   assert.deepEqual(exported.encodedBytes, await readFile(repo.watchedSavePath));
 });
 
-test("archiveManagedRepository accepts unavailable children and avoids collisions", async (t) => {
+test("relocateRepository accepts unavailable children and avoids collisions", async (t) => {
   const root = await createTempDirectory(t);
   const sourcePath = path.join(root, "broken");
-  const archivesRoot = path.join(root, "archives");
+  const destinationRoot = path.join(root, "destinations");
   await mkdir(sourcePath);
-  await mkdir(archivesRoot);
-  await mkdir(path.join(archivesRoot, "broken--user-now"));
+  await mkdir(destinationRoot);
+  await mkdir(path.join(destinationRoot, "broken-repository"));
   await writeFile(path.join(sourcePath, "opaque"), "unchanged");
 
-  const result = await archiveManagedRepository({
-    managedRoot: root,
-    archivesRoot,
+  const result = await relocateRepository({
     sourcePath,
-    archiveName: "broken--user-now",
+    targetPath: path.join(destinationRoot, "broken-repository"),
   });
 
-  assert.equal(result.status, "archived");
-  assert.equal(result.name, "broken--user-now-2");
+  assert.equal(result.status, "relocated");
   assert.equal(
-    await readFile(path.join(result.repoPath, "opaque"), "utf8"),
+    result.destinationPath,
+    path.join(destinationRoot, "broken-repository-2"),
+  );
+  assert.equal(
+    await readFile(path.join(result.destinationPath, "opaque"), "utf8"),
     "unchanged",
   );
 });
 
-test("archiveManagedRepository rejects symlinks, escapes, and active watcher ownership", async (t) => {
+test("relocateRepository rejects symlinks, escapes, and active watcher ownership", async (t) => {
   const repo = await createHistoryRepo(t);
-  const archivesRoot = path.join(repo.tempDirectory, "archives");
-  await mkdir(archivesRoot);
+  const destinationRoot = path.join(repo.tempDirectory, "destinations");
+  await mkdir(destinationRoot);
   const linked = path.join(repo.tempDirectory, "linked");
   await symlink(repo.repoPath, linked, "dir");
 
   assert.deepEqual(
-    await archiveManagedRepository({
-      managedRoot: repo.tempDirectory,
-      archivesRoot,
+    await relocateRepository({
       sourcePath: linked,
-      archiveName: "linked--user-now",
+      targetPath: path.join(destinationRoot, "linked-repository"),
     }),
     { status: "failed", reason: "invalidPlacement" },
   );
   assert.deepEqual(
-    await archiveManagedRepository({
-      managedRoot: archivesRoot,
-      archivesRoot,
+    await relocateRepository({
       sourcePath: repo.repoPath,
-      archiveName: "escaped--user-now",
+      targetPath: path.join(repo.repoPath, "escaped-destination"),
     }),
     { status: "failed", reason: "invalidPlacement" },
   );
 
   const watcher = await acquireSaveHistoryWatcher({ repoPath: repo.repoPath });
-  const blocked = await archiveManagedRepository({
-    managedRoot: repo.tempDirectory,
-    archivesRoot,
+  const blocked = await relocateRepository({
     sourcePath: repo.repoPath,
-    archiveName: "history-repo--user-now",
+    targetPath: path.join(destinationRoot, "history-repo-moved"),
   });
   assert.deepEqual(blocked, {
     status: "failed",
@@ -586,47 +584,70 @@ test("archiveManagedRepository rejects symlinks, escapes, and active watcher own
   await assert.doesNotReject(stat(repo.repoPath));
 });
 
-test("archiveManagedRepository reports an atomic move failure with the source intact", async (t) => {
+test("relocateRepository refuses an active writer lock with the source intact", async (t) => {
   const repo = await createHistoryRepo(t);
-  const archivesRoot = path.join(repo.tempDirectory, "archives");
-  await mkdir(archivesRoot);
+  const destinationRoot = path.join(repo.tempDirectory, "destinations");
+  await mkdir(destinationRoot);
+  const writerLock = await open(
+    path.join(repo.repoPath, ".silksong-git", "write.lock"),
+    "wx",
+  );
+  t.after(async () => {
+    await writerLock.close();
+    await rm(path.join(repo.repoPath, ".silksong-git", "write.lock"), {
+      force: true,
+    });
+  });
 
-  const result = await archiveManagedRepository({
-    managedRoot: repo.tempDirectory,
-    archivesRoot,
+  const result = await relocateRepository({
     sourcePath: repo.repoPath,
-    archiveName: "x".repeat(300),
+    targetPath: path.join(destinationRoot, "history-repo"),
+  });
+
+  assert.deepEqual(result, {
+    status: "failed",
+    reason: "repositoryBusy",
+  });
+  await assert.doesNotReject(stat(repo.repoPath));
+  await assert.rejects(stat(path.join(destinationRoot, "history-repo")));
+});
+
+test("relocateRepository reports an atomic move failure with the source intact", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const destinationRoot = path.join(repo.tempDirectory, "destinations");
+  await mkdir(destinationRoot);
+
+  const result = await relocateRepository({
+    sourcePath: repo.repoPath,
+    targetPath: path.join(destinationRoot, "x".repeat(300)),
   });
 
   assert.equal(result.status, "failed");
   assert.equal(result.reason, "moveFailed");
   await assert.doesNotReject(stat(repo.repoPath));
-  assert.deepEqual(await readdir(archivesRoot), []);
+  assert.deepEqual(await readdir(destinationRoot), []);
 });
 
-test("managed replacement prepares, commits, and releases leases at the moved archive", async (t) => {
+test("repository replacement prepares, commits, and releases leases at the moved destination", async (t) => {
   const repo = await createHistoryRepo(t);
   const observed = await observeSave({ repoPath: repo.repoPath });
   assert.equal(observed.status, "committed");
-  const archivesRoot = path.join(repo.tempDirectory, "archives");
-  await mkdir(archivesRoot);
+  const destinationRoot = path.join(repo.tempDirectory, "destinations");
+  await mkdir(destinationRoot);
   const replacementPath = path.join(repo.tempDirectory, "replacement-claim");
   await mkdir(replacementPath);
   await writeFile(path.join(replacementPath, "owned-by-desktop"), "keep");
 
-  const prepared = await prepareManagedRepositoryReplacement({
-    managedRoot: repo.tempDirectory,
-    archivesRoot,
+  const prepared = await prepareRepositoryReplacement({
     sourcePath: repo.repoPath,
-    watchedSavePath: repo.watchedSavePath,
-    archiveName: "history-repo--reinitialize-now",
-    confirmation: "archive-and-reinitialize-managed-repository",
+    targetPath: path.join(destinationRoot, "history-repo-moved"),
+    expectedWatchedSavePath: repo.watchedSavePath,
   });
 
   assert.equal(prepared.status, "prepared");
   assert.equal(prepared.sourceStatus, "ready");
   await assert.rejects(stat(repo.repoPath));
-  await assert.doesNotReject(stat(prepared.operation.archivePath));
+  await assert.doesNotReject(stat(prepared.operation.destinationPath));
   assert.equal(
     await readFile(path.join(replacementPath, "owned-by-desktop"), "utf8"),
     "keep",
@@ -634,42 +655,42 @@ test("managed replacement prepares, commits, and releases leases at the moved ar
 
   const result = await prepared.operation.resolve("commit");
   assert.equal(result.status, "committed");
-  await assert.doesNotReject(stat(prepared.operation.archivePath));
+  await assert.doesNotReject(stat(prepared.operation.destinationPath));
   const rebuilt = await rebuildSemanticReadModel({
-    repoPath: prepared.operation.archivePath,
+    repoPath: prepared.operation.destinationPath,
   });
   assert.equal(rebuilt.observationCount, 1);
   const nextWatcher = await acquireSaveHistoryWatcher({
-    repoPath: prepared.operation.archivePath,
+    repoPath: prepared.operation.destinationPath,
   });
   await nextWatcher.release();
   assert.deepEqual(
     await readFile(repo.watchedSavePath),
-    await readFile(path.join(prepared.operation.archivePath, "save.dat")),
+    await readFile(path.join(prepared.operation.destinationPath, "save.dat")),
   );
-  const archivedExport = await readEncodedSave({
-    repoPath: prepared.operation.archivePath,
+  const destinationExport = await readEncodedSave({
+    repoPath: prepared.operation.destinationPath,
     access: "readOnly",
     commitRef: observed.observation.commit.ref,
   });
   assert.deepEqual(
-    archivedExport.encodedBytes,
+    destinationExport.encodedBytes,
     await readFile(repo.watchedSavePath),
   );
 });
 
-test("managed replacement rolls back only its archive and refuses identity or watcher mismatches", async (t) => {
+test("repository replacement rolls back only its destination and refuses identity or watcher mismatches", async (t) => {
   const repo = await createHistoryRepo(t);
-  const archivesRoot = path.join(repo.tempDirectory, "archives");
-  await mkdir(archivesRoot);
+  const destinationRoot = path.join(repo.tempDirectory, "destinations");
+  await mkdir(destinationRoot);
 
-  const rejected = await prepareManagedRepositoryReplacement({
-    managedRoot: repo.tempDirectory,
-    archivesRoot,
+  const rejected = await prepareRepositoryReplacement({
     sourcePath: repo.repoPath,
-    watchedSavePath: path.join(repo.tempDirectory, "different-save.dat"),
-    archiveName: "history-repo--reinitialize-now",
-    confirmation: "archive-and-reinitialize-managed-repository",
+    targetPath: path.join(destinationRoot, "history-repo-moved"),
+    expectedWatchedSavePath: path.join(
+      repo.tempDirectory,
+      "different-save.dat",
+    ),
   });
   assert.deepEqual(rejected, {
     status: "rejected",
@@ -679,13 +700,10 @@ test("managed replacement rolls back only its archive and refuses identity or wa
   await assert.doesNotReject(stat(repo.repoPath));
 
   const watcher = await acquireSaveHistoryWatcher({ repoPath: repo.repoPath });
-  const blocked = await prepareManagedRepositoryReplacement({
-    managedRoot: repo.tempDirectory,
-    archivesRoot,
+  const blocked = await prepareRepositoryReplacement({
     sourcePath: repo.repoPath,
-    watchedSavePath: repo.watchedSavePath,
-    archiveName: "history-repo--reinitialize-now",
-    confirmation: "archive-and-reinitialize-managed-repository",
+    targetPath: path.join(destinationRoot, "history-repo-moved"),
+    expectedWatchedSavePath: repo.watchedSavePath,
   });
   assert.deepEqual(blocked, {
     status: "failed",
@@ -694,46 +712,27 @@ test("managed replacement rolls back only its archive and refuses identity or wa
   });
   await watcher.release();
 
-  const prepared = await prepareManagedRepositoryReplacement({
-    managedRoot: repo.tempDirectory,
-    archivesRoot,
+  const prepared = await prepareRepositoryReplacement({
     sourcePath: repo.repoPath,
-    watchedSavePath: repo.watchedSavePath,
-    archiveName: "history-repo--reinitialize-now",
-    confirmation: "archive-and-reinitialize-managed-repository",
+    targetPath: path.join(destinationRoot, "history-repo-moved"),
+    expectedWatchedSavePath: repo.watchedSavePath,
   });
   assert.equal(prepared.status, "prepared");
   const rollback = await prepared.operation.resolve("rollback");
   assert.equal(rollback.status, "rolledBack");
   await assert.doesNotReject(stat(repo.repoPath));
-  await assert.rejects(stat(prepared.operation.archivePath));
+  await assert.rejects(stat(prepared.operation.destinationPath));
 });
 
-test("managed replacement validates confirmation and direct-child placement", async (t) => {
+test("repository replacement validates target placement", async (t) => {
   const repo = await createHistoryRepo(t);
-  const archivesRoot = path.join(repo.tempDirectory, "archives");
-  await mkdir(archivesRoot);
+  const destinationRoot = path.join(repo.tempDirectory, "destinations");
+  await mkdir(destinationRoot);
 
-  const confirmation = await prepareManagedRepositoryReplacement({
-    managedRoot: repo.tempDirectory,
-    archivesRoot,
+  const invalidPlacement = await prepareRepositoryReplacement({
     sourcePath: repo.repoPath,
-    watchedSavePath: repo.watchedSavePath,
-    archiveName: "history-repo--reinitialize-now",
-    confirmation: "archive-and-reinitialize-managed-repository-typo",
-  });
-  assert.deepEqual(confirmation, {
-    status: "rejected",
-    reason: "confirmationRequired",
-  });
-
-  const invalidPlacement = await prepareManagedRepositoryReplacement({
-    managedRoot: archivesRoot,
-    archivesRoot,
-    sourcePath: repo.repoPath,
-    watchedSavePath: repo.watchedSavePath,
-    archiveName: "history-repo--reinitialize-now",
-    confirmation: "archive-and-reinitialize-managed-repository",
+    targetPath: path.join(repo.repoPath, "destinations", "history-repo-moved"),
+    expectedWatchedSavePath: repo.watchedSavePath,
   });
   assert.deepEqual(invalidPlacement, {
     status: "rejected",
@@ -742,17 +741,14 @@ test("managed replacement validates confirmation and direct-child placement", as
   await assert.doesNotReject(stat(repo.repoPath));
 });
 
-test("managed replacement reports rollback failure and retains both discoverable locations", async (t) => {
+test("repository replacement reports rollback failure and retains both discoverable locations", async (t) => {
   const repo = await createHistoryRepo(t);
-  const archivesRoot = path.join(repo.tempDirectory, "archives");
-  await mkdir(archivesRoot);
-  const prepared = await prepareManagedRepositoryReplacement({
-    managedRoot: repo.tempDirectory,
-    archivesRoot,
+  const destinationRoot = path.join(repo.tempDirectory, "destinations");
+  await mkdir(destinationRoot);
+  const prepared = await prepareRepositoryReplacement({
     sourcePath: repo.repoPath,
-    watchedSavePath: repo.watchedSavePath,
-    archiveName: "history-repo--reinitialize-now",
-    confirmation: "archive-and-reinitialize-managed-repository",
+    targetPath: path.join(destinationRoot, "history-repo-moved"),
+    expectedWatchedSavePath: repo.watchedSavePath,
   });
   assert.equal(prepared.status, "prepared");
   await mkdir(repo.repoPath);
@@ -761,14 +757,14 @@ test("managed replacement reports rollback failure and retains both discoverable
   const rollback = await prepared.operation.resolve("rollback");
   assert.equal(rollback.status, "rollbackFailed");
   await assert.doesNotReject(stat(repo.repoPath));
-  await assert.doesNotReject(stat(prepared.operation.archivePath));
+  await assert.doesNotReject(stat(prepared.operation.destinationPath));
   assert.equal(
     await readFile(path.join(repo.repoPath, "replacement-populated"), "utf8"),
     "keep",
   );
 });
 
-test("Git integrity warnings do not block a verified archive or migration", async (t) => {
+test("Git integrity warnings do not block a verified repository snapshot or migration", async (t) => {
   const repo = await createHistoryRepo(t);
   const observed = await observeSave({ repoPath: repo.repoPath });
   assert.equal(observed.status, "committed");
@@ -785,7 +781,7 @@ test("Git integrity warnings do not block a verified archive or migration", asyn
   });
   assert.equal(inspection.status, "legacyConfig");
   const prepared = await prepareSaveHistoryMigration({
-    snapshotPath: path.join(repo.tempDirectory, "archives", "corrupt-git"),
+    snapshotPath: path.join(repo.tempDirectory, "snapshots", "corrupt-git"),
     repoPath: repo.repoPath,
     inspectionId: inspection.inspectionId,
     confirmation: "migrate-save-history-repository",
@@ -806,7 +802,7 @@ test("Git integrity warnings do not block a verified archive or migration", asyn
   });
 });
 
-test("Desktop migration preparation copies durable content and retains a published archive when commit is stale", async (t) => {
+test("migration preparation copies durable content and retains a published snapshot when commit is stale", async (t) => {
   const repo = await createHistoryRepo(t);
   await setRepositoryFormatVersion(repo, undefined);
   const inspection = await inspectSaveHistoryRepository({
@@ -814,7 +810,7 @@ test("Desktop migration preparation copies durable content and retains a publish
   });
   const snapshotPath = path.join(
     repo.tempDirectory,
-    "archives",
+    "snapshots",
     "opaque-target",
   );
   const prepared = await prepareSaveHistoryMigration({
@@ -849,14 +845,14 @@ test("Desktop migration preparation copies durable content and retains a publish
   assert.ok(retainedSnapshot.isDirectory());
 });
 
-test("Desktop migration preparation failure does not change the source", async (t) => {
+test("migration preparation failure does not change the source", async (t) => {
   const repo = await createHistoryRepo(t);
   await setRepositoryFormatVersion(repo, undefined);
   const inspection = await inspectSaveHistoryRepository({
     repoPath: repo.repoPath,
   });
   const result = await prepareSaveHistoryMigration({
-    snapshotPath: path.join(repo.repoPath, "archive-inside-source"),
+    snapshotPath: path.join(repo.repoPath, "snapshot-inside-source"),
     repoPath: repo.repoPath,
     inspectionId: inspection.inspectionId,
     confirmation: "migrate-save-history-repository",
@@ -873,7 +869,7 @@ test("Desktop migration preparation failure does not change the source", async (
     repoPath: repo.repoPath,
   });
   const retry = await prepareSaveHistoryMigration({
-    snapshotPath: path.join(repo.tempDirectory, "archive-after-failure"),
+    snapshotPath: path.join(repo.tempDirectory, "snapshot-after-failure"),
     repoPath: repo.repoPath,
     inspectionId: retryInspection.inspectionId,
     confirmation: "migrate-save-history-repository",
@@ -882,14 +878,14 @@ test("Desktop migration preparation failure does not change the source", async (
   await retry.operation.release();
 });
 
-test("migration post-write failure reports the migrated source and retains its archive", async (t) => {
+test("migration post-write failure reports the migrated source and retains its published snapshot", async (t) => {
   const repo = await createHistoryRepo(t);
   await setRepositoryFormatVersion(repo, undefined);
   const inspection = await inspectSaveHistoryRepository({
     repoPath: repo.repoPath,
   });
-  const snapshotPath = path.join(repo.tempDirectory, "archives", "post-write");
-  const prepared = await withArchiveSnapshotFileSystemForTests(
+  const snapshotPath = path.join(repo.tempDirectory, "snapshots", "post-write");
+  const prepared = await withRepositorySnapshotFileSystemForTests(
     (fileSystem) => ({
       ...fileSystem,
       async writeConfigAtomically(configPath, contents) {
@@ -907,7 +903,7 @@ test("migration post-write failure reports the migrated source and retains its a
   );
 
   assert.equal(prepared.status, "prepared");
-  const migration = await withArchiveSnapshotFileSystemForTests(
+  const migration = await withRepositorySnapshotFileSystemForTests(
     (fileSystem) => ({
       ...fileSystem,
       async writeConfigAtomically(configPath, contents) {
@@ -928,11 +924,11 @@ test("migration post-write failure reports the migrated source and retains its a
     repoPath: repo.repoPath,
   });
   assert.equal(sourceInspection.status, "ready");
-  const archiveInspection = await inspectSaveHistoryRepository({
+  const snapshotInspection = await inspectSaveHistoryRepository({
     repoPath: snapshotPath,
     gitIntegrityPolicy: "advisory",
   });
-  assert.equal(archiveInspection.status, "legacyConfig");
+  assert.equal(snapshotInspection.status, "legacyConfig");
   await assert.doesNotReject(async () => await stat(snapshotPath));
 });
 
@@ -942,14 +938,14 @@ test("a source/staged digest mismatch prevents migration and publication", async
   const inspection = await inspectSaveHistoryRepository({
     repoPath: repo.repoPath,
   });
-  const snapshotPath = path.join(repo.tempDirectory, "archives", "churn");
+  const snapshotPath = path.join(repo.tempDirectory, "snapshots", "churn");
   const sourceMutationPath = path.join(
     repo.repoPath,
     "bounded-mutation-marker",
   );
   let result: Awaited<ReturnType<typeof prepareSaveHistoryMigration>>;
   try {
-    result = await withArchiveSnapshotFileSystemForTests(
+    result = await withRepositorySnapshotFileSystemForTests(
       (fileSystem) => ({
         ...fileSystem,
         async copyRepository(sourcePath, targetPath) {
@@ -972,7 +968,8 @@ test("a source/staged digest mismatch prevents migration and publication", async
   assert.deepEqual(result, {
     status: "failed",
     reason: "directoryDigestMismatch",
-    message: "The source changed while the archive snapshot was being copied.",
+    message:
+      "The source changed while the repository snapshot was being copied.",
   });
   await assert.rejects(stat(snapshotPath));
   const sourceInspection = await inspectSaveHistoryRepository({
@@ -981,7 +978,7 @@ test("a source/staged digest mismatch prevents migration and publication", async
   assert.equal(sourceInspection.status, "legacyConfig");
 });
 
-test("Desktop migration preparation refuses an externally owned watcher without changing the source", async (t) => {
+test("migration preparation refuses an externally owned watcher without changing the source", async (t) => {
   const repo = await createHistoryRepo(t);
   const watcher = await acquireSaveHistoryWatcher({ repoPath: repo.repoPath });
   t.after(async () => {
@@ -993,7 +990,7 @@ test("Desktop migration preparation refuses an externally owned watcher without 
   });
 
   const result = await prepareSaveHistoryMigration({
-    snapshotPath: path.join(repo.tempDirectory, "archive"),
+    snapshotPath: path.join(repo.tempDirectory, "snapshot"),
     repoPath: repo.repoPath,
     inspectionId: inspection.inspectionId,
     confirmation: "migrate-save-history-repository",

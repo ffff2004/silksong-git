@@ -116,44 +116,36 @@ export interface MigrateSaveHistoryRepositoryInput {
 }
 
 export interface PrepareSaveHistoryMigrationInput extends MigrateSaveHistoryRepositoryInput {
-  /** An opaque, canonical destination selected by Desktop. */
+  /** An opaque, canonical destination selected by the caller. */
   readonly snapshotPath: string;
 }
 
-export interface ArchiveSnapshot {
+export interface RepositorySnapshot {
   readonly repoPath: string;
   readonly directoryDigest: string;
   readonly gitIntegrityWarning?: string;
 }
 
-export interface ArchiveManagedRepositoryInput {
-  /**
-   * Canonical App-owned roots; History validates placement but does not persist lifecycle state.
-   */
-  readonly managedRoot: string;
-  readonly archivesRoot: string;
+export interface RelocateRepositoryInput {
+  /** The existing real repository directory to move. */
   readonly sourcePath: string;
-  /** App-owned collision base name, without a path separator. */
-  readonly archiveName: string;
+  /** A collision-safe destination base path selected by the caller. */
+  readonly targetPath: string;
 }
 
-export interface PrepareManagedRepositoryReplacementInput {
-  /** Canonical App-owned roots. History validates direct-child placement. */
-  readonly managedRoot: string;
-  readonly archivesRoot: string;
-  /** The existing direct child to move; this is never the replacement directory. */
+export interface PrepareRepositoryReplacementInput {
+  /** The existing repository to move; this is never the replacement directory. */
   readonly sourcePath: string;
-  /** The save path selected by Desktop, revalidated under History's leases. */
-  readonly watchedSavePath: string;
-  /** App-owned collision-safe base name, without a path separator. */
-  readonly archiveName: string;
-  readonly confirmation: string;
+  /** A collision-safe destination base path selected by the caller. */
+  readonly targetPath: string;
+  /** The save path selected by the caller, revalidated under History's leases. */
+  readonly expectedWatchedSavePath: string;
 }
 
-export type ManagedRepositoryReplacementPreparationResult =
+export type RepositoryReplacementPreparationResult =
   | {
       readonly status: "prepared";
-      readonly operation: PreparedManagedRepositoryReplacement;
+      readonly operation: PreparedRepositoryReplacement;
       readonly sourceStatus: Extract<
         SaveHistoryRepositoryStatus,
         "ready" | "legacyConfig" | "migrationRequired"
@@ -162,7 +154,6 @@ export type ManagedRepositoryReplacementPreparationResult =
   | {
       readonly status: "rejected";
       readonly reason:
-        | "confirmationRequired"
         | "invalidPlacement"
         | "sourceNotEligible"
         | "differentWatchedSave";
@@ -178,42 +169,41 @@ export type ManagedRepositoryReplacementPreparationResult =
       readonly message?: string;
     };
 
-export type ManagedRepositoryReplacementResolution =
+export type RepositoryReplacementResolution =
   | {
       readonly status: "committed";
-      readonly managedPath: string;
-      readonly archivePath: string;
+      readonly sourcePath: string;
+      readonly destinationPath: string;
       readonly cleanupWarning?: "leaseReleaseFailed";
     }
   | {
       readonly status: "rolledBack";
-      readonly managedPath: string;
-      readonly archivePath: string;
+      readonly sourcePath: string;
+      readonly destinationPath: string;
       readonly cleanupWarning?: "leaseReleaseFailed";
     }
   | {
       readonly status: "rollbackFailed";
-      readonly managedPath: string;
-      readonly archivePath: string;
+      readonly sourcePath: string;
+      readonly destinationPath: string;
       readonly cleanupWarning?: "leaseReleaseFailed";
       readonly message?: string;
     };
 
-export interface PreparedManagedRepositoryReplacement {
-  readonly archivePath: string;
+export interface PreparedRepositoryReplacement {
+  readonly destinationPath: string;
   /** Resolving is idempotent for the lifetime of this operation. */
   readonly resolve: (
     decision: "commit" | "rollback",
-  ) => Promise<ManagedRepositoryReplacementResolution>;
+  ) => Promise<RepositoryReplacementResolution>;
   /** Crash-only cleanup: release leases at the current directory, never move it back. */
   readonly release: () => Promise<"leaseReleaseFailed" | undefined>;
 }
 
-export type ArchiveManagedRepositoryResult =
+export type RelocateRepositoryResult =
   | {
-      readonly status: "archived";
-      readonly repoPath: string;
-      readonly name: string;
+      readonly status: "relocated";
+      readonly destinationPath: string;
     }
   | {
       readonly status: "failed";
@@ -228,7 +218,7 @@ export type ArchiveManagedRepositoryResult =
 export type MigrationCleanupFailure = "leaseReleaseFailed";
 
 export interface PreparedSaveHistoryMigration {
-  readonly snapshot: ArchiveSnapshot;
+  readonly snapshot: RepositorySnapshot;
   /**
    * Commits the already-published snapshot's migration. There is deliberately no user cancellation
    * or rollback path: the lease remains owned until this finishes.
@@ -385,7 +375,7 @@ export interface RebuildSemanticReadModelResult {
 
 export interface QueryHistoryInput {
   readonly repoPath: string;
-  /** Allows a read-only session to browse compatible pre-migration archives. */
+  /** Allows a read-only session to browse compatible pre-migration repositories. */
   readonly access?: "readOnly";
   readonly includeFiltered?: boolean;
   readonly limit?: number;
@@ -402,7 +392,7 @@ type HistoryOrder = "asc" | "desc";
 
 export interface QueryRawObservationsInput {
   readonly repoPath: string;
-  /** Allows a read-only session to browse compatible pre-migration archives. */
+  /** Allows a read-only session to browse compatible pre-migration repositories. */
   readonly access?: "readOnly";
   readonly limit?: number;
   readonly cursor?: string;
@@ -425,7 +415,7 @@ type SaveStateSelector =
 
 export interface GetSaveStateInput {
   readonly repoPath: string;
-  /** Allows a read-only session to browse compatible pre-migration archives. */
+  /** Allows a read-only session to browse compatible pre-migration repositories. */
   readonly access?: "readOnly";
   readonly selector: SaveStateSelector;
 }
@@ -441,7 +431,7 @@ export type GetSaveStateResult =
 
 export interface ReadEncodedSaveInput {
   readonly repoPath: string;
-  /** Allows a read-only session to export from compatible pre-migration archives. */
+  /** Allows a read-only session to export from compatible pre-migration repositories. */
   readonly access?: "readOnly";
   readonly commitRef: string;
 }
@@ -455,7 +445,7 @@ export interface ReadEncodedSaveResult {
 
 export interface DiffCommitsInput {
   readonly repoPath: string;
-  /** Allows a read-only session to browse compatible pre-migration archives. */
+  /** Allows a read-only session to browse compatible pre-migration repositories. */
   readonly access?: "readOnly";
   readonly fromRef: string;
   readonly toRef: string;
@@ -472,7 +462,7 @@ export interface DiffCommitsResult {
 
 export interface SearchSemanticEventsInput {
   readonly repoPath: string;
-  /** Allows a read-only session to browse compatible pre-migration archives. */
+  /** Allows a read-only session to browse compatible pre-migration repositories. */
   readonly access?: "readOnly";
   readonly query: {
     readonly itemId?: string;

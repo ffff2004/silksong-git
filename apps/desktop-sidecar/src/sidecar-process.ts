@@ -6,24 +6,25 @@ import type { Writable } from "node:stream";
 
 import { decodeEncodedSave } from "@silksong-git/core";
 import type {
-  ManagedRepositoryReplacementPreparationResult,
-  ManagedRepositoryReplacementResolution,
   MigrateSaveHistoryRepositoryResult,
   PrepareSaveHistoryMigrationResult,
   PreparedSaveHistoryMigration,
   RebuildSemanticReadModelResult,
+  RelocateRepositoryResult,
+  RepositoryReplacementPreparationResult,
+  RepositoryReplacementResolution,
   SaveHistoryRepositoryInspection,
 } from "@silksong-git/history";
 import {
-  archiveManagedRepository,
   compareWatchedSave,
   initSaveHistory,
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
   observeSave,
-  prepareManagedRepositoryReplacement,
+  prepareRepositoryReplacement as prepareHistoryRepositoryReplacement,
   prepareSaveHistoryMigration,
   rebuildSemanticReadModel,
+  relocateRepository,
 } from "@silksong-git/history";
 import type { RepoSession, RepoSessionEvent } from "@silksong-git/repo-session";
 import { openRepoSession } from "@silksong-git/repo-session";
@@ -73,7 +74,7 @@ export async function runDesktopSidecarProcess(
     | {
         readonly operationId: string;
         readonly operation: Extract<
-          ManagedRepositoryReplacementPreparationResult,
+          RepositoryReplacementPreparationResult,
           { readonly status: "prepared" }
         >["operation"];
       }
@@ -81,7 +82,7 @@ export async function runDesktopSidecarProcess(
   let completedReplacement:
     | {
         readonly operationId: string;
-        readonly resolution: ManagedRepositoryReplacementResolution;
+        readonly resolution: RepositoryReplacementResolution;
       }
     | undefined;
   let commandEvents: DesktopSidecarEvent[] | undefined;
@@ -660,13 +661,8 @@ export async function runDesktopSidecarProcess(
         "The repository.archive command is invalid.",
       );
     }
-    const { managedRoot, archivesRoot, repoPath, archiveName } =
-      commandResult.data;
-    if (
-      !path.isAbsolute(repoPath)
-      || !path.isAbsolute(managedRoot)
-      || !path.isAbsolute(archivesRoot)
-    ) {
+    const { sourcePath, targetPath } = commandResult.data;
+    if (!path.isAbsolute(sourcePath) || !path.isAbsolute(targetPath)) {
       return createFailureResponse(
         requestId,
         "invalid_repo_path",
@@ -688,12 +684,9 @@ export async function runDesktopSidecarProcess(
     try {
       return createSuccessResponse(requestId, {
         type: "repository.archiveResult",
-        archive: await archiveManagedRepository({
-          managedRoot,
-          archivesRoot,
-          sourcePath: repoPath,
-          archiveName,
-        }),
+        archive: toProtocolArchiveResult(
+          await relocateRepository({ sourcePath, targetPath }),
+        ),
       });
     } catch {
       writeDiagnostic("Repository archive move failed.");
@@ -764,11 +757,11 @@ export async function runDesktopSidecarProcess(
         mutation: "repositoryMigration",
         status: "finished",
       });
-      writeDiagnostic("Repository archive snapshot failed.");
+      writeDiagnostic("Repository snapshot preparation failed.");
       return createFailureResponse(
         requestId,
         "repository_migrate_failed",
-        "The repository archive snapshot could not be created.",
+        "The repository snapshot could not be created.",
       );
     }
     if (preparation.status === "prepared") {
@@ -844,20 +837,12 @@ export async function runDesktopSidecarProcess(
       );
     }
 
-    const {
-      operationId,
-      managedRoot,
-      archivesRoot,
-      sourcePath,
-      watchedSavePath,
-      archiveName,
-      confirmation,
-    } = commandResult.data;
+    const { operationId, sourcePath, targetPath, expectedWatchedSavePath } =
+      commandResult.data;
     if (
-      !path.isAbsolute(managedRoot)
-      || !path.isAbsolute(archivesRoot)
-      || !path.isAbsolute(sourcePath)
-      || !path.isAbsolute(watchedSavePath)
+      !path.isAbsolute(sourcePath)
+      || !path.isAbsolute(targetPath)
+      || !path.isAbsolute(expectedWatchedSavePath)
     ) {
       return createFailureResponse(
         requestId,
@@ -889,15 +874,12 @@ export async function runDesktopSidecarProcess(
       mutation: "managedReplacement",
       status: "started",
     });
-    let preparation: ManagedRepositoryReplacementPreparationResult;
+    let preparation: RepositoryReplacementPreparationResult;
     try {
-      preparation = await prepareManagedRepositoryReplacement({
-        managedRoot,
-        archivesRoot,
+      preparation = await prepareHistoryRepositoryReplacement({
         sourcePath,
-        watchedSavePath,
-        archiveName,
-        confirmation,
+        targetPath,
+        expectedWatchedSavePath,
       });
     } catch {
       emitEvent({
@@ -1260,7 +1242,7 @@ export async function runDesktopSidecarProcess(
 
   async function resolvePendingReplacement(
     operation: Extract<
-      ManagedRepositoryReplacementPreparationResult,
+      RepositoryReplacementPreparationResult,
       { readonly status: "prepared" }
     >["operation"],
     decision: "commit" | "rollback",
@@ -1328,6 +1310,18 @@ function toProtocolInspection(inspection: SaveHistoryRepositoryInspection) {
   };
 }
 
+function toProtocolArchiveResult(result: RelocateRepositoryResult) {
+  if (result.status === "relocated") {
+    return {
+      status: "archived" as const,
+      repoPath: result.destinationPath,
+      name: path.basename(result.destinationPath),
+    };
+  }
+
+  return result;
+}
+
 function toProtocolMigration(result: MigrateSaveHistoryRepositoryResult) {
   if (result.status !== "migrated") {
     return result;
@@ -1353,7 +1347,7 @@ function toProtocolMigrationPreparation(
 }
 
 function toProtocolReplacementPreparation(
-  result: ManagedRepositoryReplacementPreparationResult,
+  result: RepositoryReplacementPreparationResult,
   operationId: string,
 ) {
   if (result.status !== "prepared") {
@@ -1363,7 +1357,7 @@ function toProtocolReplacementPreparation(
   return {
     status: "prepared" as const,
     operationId,
-    archivePath: result.operation.archivePath,
+    destinationPath: result.operation.destinationPath,
     sourceStatus: result.sourceStatus,
   };
 }

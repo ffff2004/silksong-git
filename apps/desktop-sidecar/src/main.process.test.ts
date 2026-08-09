@@ -321,7 +321,7 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
     },
   });
 
-  sidecar.send(command("future-version", { type: "watcher.start" }, 9));
+  sidecar.send(command("future-version", { type: "watcher.start" }, 10));
   assert.deepEqual(await sidecar.readMessage(), {
     protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
@@ -808,10 +808,8 @@ test("archives an uninspectable managed child through the narrow sidecar command
   sidecar.send(
     command("archive", {
       type: "repository.archive",
-      repoPath,
-      managedRoot,
-      archivesRoot,
-      archiveName: "opaque--user-now",
+      sourcePath: repoPath,
+      targetPath: path.join(archivesRoot, "opaque--user-now"),
     }),
   );
   const response = parseSuccessfulResponse(
@@ -847,12 +845,9 @@ test("holds and resolves one managed replacement operation, replaying terminal r
     command("replacement-prepare", {
       type: "repository.replacement.prepare",
       operationId: "lifecycle-replacement-1",
-      managedRoot: path.dirname(repo.repoPath),
-      archivesRoot,
       sourcePath: repo.repoPath,
-      watchedSavePath: repo.watchedSavePath,
-      archiveName: "history-repo--reinitialize-now",
-      confirmation: "archive-and-reinitialize-managed-repository",
+      targetPath: path.join(archivesRoot, "history-repo--reinitialize-now"),
+      expectedWatchedSavePath: repo.watchedSavePath,
     }),
   );
   const prepared = parseSuccessfulResponse(
@@ -901,8 +896,8 @@ test("holds and resolves one managed replacement operation, replaying terminal r
   );
   assert.equal(committed.result.type, "repository.replacementResolved");
   assert.equal(committed.result.resolution.status, "committed");
-  const { archivePath } = committed.result.resolution;
-  await assert.doesNotReject(stat(archivePath));
+  const { destinationPath } = committed.result.resolution;
+  await assert.doesNotReject(stat(destinationPath));
   assert.equal(
     await readFile(path.join(replacementPath, "desktop-owned"), "utf8"),
     "keep",
@@ -942,12 +937,9 @@ test("abnormal sidecar exit releases a prepared replacement lease without rollba
     command("replacement-crash-prepare", {
       type: "repository.replacement.prepare",
       operationId: "lifecycle-replacement-crash",
-      managedRoot: path.dirname(repo.repoPath),
-      archivesRoot,
       sourcePath: repo.repoPath,
-      watchedSavePath: repo.watchedSavePath,
-      archiveName: "history-repo--reinitialize-crash",
-      confirmation: "archive-and-reinitialize-managed-repository",
+      targetPath: path.join(archivesRoot, "history-repo--reinitialize-crash"),
+      expectedWatchedSavePath: repo.watchedSavePath,
     }),
   );
   const prepared = parseSuccessfulResponse(
@@ -955,19 +947,19 @@ test("abnormal sidecar exit releases a prepared replacement lease without rollba
   );
   assert.equal(prepared.result.type, "repository.replacementPrepared");
   assert.equal(prepared.result.preparation.status, "prepared");
-  const { archivePath } = prepared.result.preparation;
+  const { destinationPath } = prepared.result.preparation;
   await sidecar.readMessage();
   sidecar.closeInput();
   const exit = await sidecar.waitForExit();
   assert.notEqual(exit.code, 0);
   await assert.rejects(stat(repo.repoPath));
-  await assert.doesNotReject(stat(archivePath));
+  await assert.doesNotReject(stat(destinationPath));
   const recoveredSidecar = spawnSidecar(t);
   await readReady(recoveredSidecar);
   recoveredSidecar.send(
     command("rebuild-after-crash", {
       type: "repository.rebuild",
-      repoPath: archivePath,
+      repoPath: destinationPath,
     }),
   );
   const rebuilt = parseSuccessfulResponse(
@@ -977,7 +969,7 @@ test("abnormal sidecar exit releases a prepared replacement lease without rollba
   recoveredSidecar.send(
     command("open-after-crash", {
       type: "session.open",
-      repoPath: archivePath,
+      repoPath: destinationPath,
     }),
   );
   const opened = parseSuccessfulResponse(

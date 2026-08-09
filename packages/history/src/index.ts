@@ -28,12 +28,12 @@ export {
   searchSemanticEvents,
 } from "./history-interface.ts";
 export {
-  archiveManagedRepository,
   compareWatchedSave,
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
-  prepareManagedRepositoryReplacement,
+  prepareRepositoryReplacement,
   prepareSaveHistoryMigration,
+  relocateRepository,
 } from "./repository-compatibility.ts";
 export { acquireSaveHistoryWatcher } from "./save-history-watcher.ts";
 export { getSaveState, readEncodedSave } from "./save-state.ts";
@@ -57,9 +57,6 @@ export {
 export { restoreEncodedSave } from "./restore.ts";
 export type {
   AcquireSaveHistoryWatcherInput,
-  ArchiveManagedRepositoryInput,
-  ArchiveManagedRepositoryResult,
-  ArchiveSnapshot,
   CompareWatchedSaveInput,
   DiffCommitsInput,
   DiffCommitsResult,
@@ -72,8 +69,6 @@ export type {
   InitSaveHistoryInput,
   InitSaveHistoryResult,
   InspectSaveHistoryRepositoryInput,
-  ManagedRepositoryReplacementPreparationResult,
-  ManagedRepositoryReplacementResolution,
   MigrateSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryResult,
   MigrationCleanupFailure,
@@ -83,9 +78,9 @@ export type {
   ObserveSaveHistoryWatcherInput,
   ObserveSaveInput,
   ObserveSaveResult,
-  PreparedManagedRepositoryReplacement,
+  PreparedRepositoryReplacement,
   PreparedSaveHistoryMigration,
-  PrepareManagedRepositoryReplacementInput,
+  PrepareRepositoryReplacementInput,
   PrepareSaveHistoryMigrationInput,
   PrepareSaveHistoryMigrationResult,
   ProjectConfig,
@@ -99,6 +94,11 @@ export type {
   ReadEncodedSaveResult,
   RebuildSemanticReadModelInput,
   RebuildSemanticReadModelResult,
+  RelocateRepositoryInput,
+  RelocateRepositoryResult,
+  RepositoryReplacementPreparationResult,
+  RepositoryReplacementResolution,
+  RepositorySnapshot,
   RestoreEncodedSaveInput,
   RestoreEncodedSaveResult,
   RestoreTarget,

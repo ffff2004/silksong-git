@@ -21,7 +21,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 8,
+  "protocolVersion": 9,
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +36,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 8,
+  "protocolVersion": 9,
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,7 +49,7 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 8 accepts these commands:
+Version 9 accepts these commands:
 
 - `repository.inspect` with one absolute `repoPath` and an optional
   `gitIntegrityPolicy` of `strict` (default) or `advisory`;
@@ -62,12 +62,11 @@ Version 8 accepts these commands:
   Watched Save identity matches the candidate for current or legacy-compatible
   Project Config. An unavailable or incompatible config is a comparison
   failure, not a false match;
-- `repository.archive` with absolute canonical `managedRoot`, `archivesRoot`,
-  and managed `repoPath` values plus one App-generated `archiveName`;
+- `repository.archive` with an absolute `sourcePath` and an App-generated
+  absolute `targetPath`;
 - `repository.replacement.prepare` with an App-generated lifecycle
-  `operationId`, canonical roots, the managed source, selected Watched Save,
-  archive name, and the literal
-  `archive-and-reinitialize-managed-repository` confirmation;
+  `operationId`, an absolute `sourcePath`, an App-generated absolute
+  `targetPath`, and an absolute `expectedWatchedSavePath`;
 - `repository.replacement.resolve` with that lifecycle `operationId` and a
   `commit` or `rollback` decision;
 - `repository.migrate` with one absolute `repoPath`, a prior opaque inspection
@@ -93,27 +92,29 @@ read-only browsing and the Desktop migration preflight are the only advisory
 callers; they use structural Git classification so a snapshot or read-only
 session can proceed while the published snapshot reports any Git integrity
 warning.
-`repository.archive` is the narrow standalone move adapter. It opens no Repo
-Session and performs no repository inspection. History validates direct-child
-placement and symlink safety, excludes public History writers and watchers
-where the repository control directory exists, and atomically renames the
-existing directory to a collision-safe archive child. It never observes the
-Watched Save, checkpoints, copies a snapshot, edits Project Config, or
-initializes a replacement.
+`repository.archive` is the Desktop-specific standalone relocation adapter. It
+opens no Repo Session and performs no repository inspection. The Desktop sends
+the exact source and target paths; History validates source/target directory and
+symlink safety, excludes public History writers and watchers where the
+repository control directory exists, and atomically renames the existing
+directory to a collision-safe destination. It never observes the Watched Save,
+checkpoints, copies a snapshot, edits Project Config, or initializes a
+replacement.
 `repository.replacement.prepare` is the narrow reversible replacement adapter.
-History revalidates the direct-child source, eligible compatibility status, and
-Watched Save identity while holding writer and watcher exclusions, then moves
-the source atomically to a collision-safe reinitialize archive and retains the
-leases. The sidecar holds one prepared operation in memory until
+The Desktop sends exact source and target paths. History revalidates the source,
+eligible compatibility status, and expected Watched Save identity while holding
+writer and watcher exclusions, then moves the source atomically to a
+collision-safe destination and retains the leases. The sidecar holds one
+prepared operation in memory until
 `repository.replacement.resolve`; terminal resolve responses are replayed for
-duplicate requests without repeating a move. `commit` retains the archive and
-`rollback` moves it back. Abnormal sidecar exit releases leases without
-rollback, leaving directories for Desktop discovery. The replacement directory
-is never touched by History.
+duplicate requests without repeating a move. `commit` retains the destination
+and `rollback` moves it back. Abnormal sidecar exit releases leases without
+rollback, leaving directories for Desktop discovery. The caller-owned
+replacement directory is never touched by History.
 `repository.migrate` returns History's safe migration result, including an
 explicit stale-inspection or confirmation rejection when applicable. Migration
 results also report `sourceState` (`unchanged`, `migrated`, or `unknown`) and
-`snapshotState` (`notCreated` or a retained archive path). A result may also
+`snapshotState` (`notCreated` or a retained repository snapshot path). A result may also
 report `cleanupFailure: "leaseReleaseFailed"`; this is a separate lifecycle
 warning and does not replace the source or snapshot state. The
 sidecar never evaluates repository versions or carries out migration itself.
@@ -150,7 +151,7 @@ compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 8,
+  "protocolVersion": 9,
   "kind": "response",
   "requestId": "open-1",
   "ok": true,

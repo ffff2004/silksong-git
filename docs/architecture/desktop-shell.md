@@ -124,16 +124,17 @@ Standalone archive is a third narrow direct-History exception because it also
 accepts an uninspectable Managed Repository child. Desktop validates canonical
 direct-child containment and rejects symlinks, enters its session transition,
 stops its own watcher without a final observation, drains and closes its Repo
-Session, then sends opaque canonical roots, source, and an App-generated name
-through `repository.archive`. History holds writer and watcher exclusion
-continuously through the atomic rename; external watcher ownership causes a
-safe refusal.
+Session, computes the App-owned archive target path, and sends exact source and
+target paths through `repository.archive`. History holds writer and watcher
+exclusion continuously through the atomic rename; external watcher ownership
+causes a safe refusal.
 
 Archive-and-reinitialize is one Desktop Workflow. Desktop validates the selected
 save as a readable, decodable regular file, discovers the managed source by
 History Watched Save identity, claims the exact replacement child, transitions
-the current App-owned session and watcher, and asks the sidecar to prepare the
-reversible History archive transaction. It then runs initialization/baseline,
+the current App-owned session and watcher, computes the archive target path, and
+asks the sidecar to prepare the reversible generic History relocation. It then
+runs initialization/baseline,
 session-open, and watcher-start in that claimed child. Success is reported only
 after all stages succeed and History commits. Known failures clean only the
 exact replacement claim and request rollback, reporting rollback status and any

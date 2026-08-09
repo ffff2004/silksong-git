@@ -137,8 +137,8 @@ export async function readCurrentHead(
 }
 
 /**
- * Checks only the repository/work-tree shape. Integrity is intentionally kept separate so archive
- * validation can report fsck failures without making a byte-identical snapshot unsafe to publish.
+ * Checks only the repository/work-tree shape. Integrity is intentionally kept separate so callers
+ * can report fsck failures without making a byte-identical snapshot unsafe to publish.
  */
 export async function isUsableGitRepository(
   repoPath: string,
@@ -179,7 +179,7 @@ export async function validateGitIntegrity(
     await runGit(repoPath, ["fsck", "--no-dangling", "--no-reflogs"]);
     return undefined;
   } catch {
-    return "Git integrity validation reported a problem. The verified archive was retained, but Git may need repair.";
+    return "Git integrity validation reported a problem. The verified repository snapshot was retained, but Git may need repair.";
   }
 }
 
