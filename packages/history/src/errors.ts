@@ -11,3 +11,4 @@ export { RestoreWriteVerificationError } from "./errors/restore-write-verificati
 export { SaveHistoryRepositoryBusyError } from "./errors/save-history-repository-busy-error.ts";
 export { SaveHistoryRepositoryIncompatibleError } from "./errors/save-history-repository-incompatible-error.ts";
 export { SaveHistoryWatcherAlreadyAcquiredError } from "./errors/save-history-watcher-already-acquired-error.ts";
+export { WatchedSaveUnavailableError } from "./errors/watched-save-unavailable-error.ts";

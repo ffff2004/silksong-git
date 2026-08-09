@@ -429,6 +429,26 @@ export type GetSaveStateResult =
     }
   | { readonly status: "empty" };
 
+export interface InPlaceRestorePreflightInput {
+  readonly repoPath: string;
+  /** Allows a read-only session to inspect compatible pre-migration repositories. */
+  readonly access?: "readOnly";
+}
+
+export type InPlaceRestorePreflightResult =
+  | { readonly status: "emptyHistory" }
+  | {
+      readonly status: "targetMissing";
+      readonly expectedCurrent: { readonly status: "missing" };
+    }
+  | {
+      readonly status: "targetPresent";
+      readonly expectedCurrent: {
+        readonly status: "present";
+        readonly encodedSha256: string;
+      };
+    };
+
 export interface ReadEncodedSaveInput {
   readonly repoPath: string;
   /** Allows a read-only session to export from compatible pre-migration repositories. */

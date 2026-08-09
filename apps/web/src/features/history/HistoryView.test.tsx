@@ -795,34 +795,20 @@ describe("History view", () => {
     expect(anchorClick).toHaveBeenCalledTimes(1);
   });
 
-  it("restores against the latest committed observation once and reports synchronization conflicts", async () => {
+  it("refreshes the preflight after a synchronization conflict before retrying", async () => {
     const latestHash = "c".repeat(64);
+    const refreshedHash = "d".repeat(64);
+    const preflightRequests: string[] = [];
     const restoreRequests: RequestInit[] = [];
-    let saveRequests = 0;
+    let preflightCalls = 0;
+    const { promise: refreshedPreflight, resolve: releaseRefreshedPreflight } =
+      Promise.withResolvers<Response>();
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = requestUrl(input);
         if (url.includes("/api/v1/save")) {
-          saveRequests++;
-          return saveRequests === 1
-            ? Response.json({ status: "empty" })
-            : Response.json({
-                status: "available",
-                observation: {
-                  ...createObservationEntry("latest").observation,
-                  encodedSha256: latestHash,
-                },
-                decodedSave: {},
-                semanticSnapshot: {
-                  items: [],
-                  summary: {},
-                  version: {
-                    saveSchemaVersion: "1",
-                    semanticCoreVersion: "test",
-                  },
-                },
-              });
+          return Response.json({ status: "empty" });
         }
         if (url.includes("/api/v1/watcher")) {
           return Response.json({
@@ -840,16 +826,158 @@ describe("History view", () => {
             events: [createSummaryEvent("source", "source", "rosaries")],
           });
         }
+        if (url.includes("/api/v1/restores/in-place/preflight")) {
+          preflightRequests.push(url);
+          preflightCalls++;
+          if (preflightCalls === 2) {
+            return await refreshedPreflight;
+          }
+          return Response.json({
+            status: "targetPresent",
+            expectedCurrent: {
+              status: "present",
+              encodedSha256: preflightCalls === 1 ? latestHash : refreshedHash,
+            },
+          });
+        }
+        if (url.includes("/api/v1/restores/in-place")) {
+          restoreRequests.push(init ?? {});
+          return restoreRequests.length === 1
+            ? Response.json(
+                {
+                  error: {
+                    code: "restore_conflict",
+                    message: "The Watched Save changed after confirmation.",
+                  },
+                },
+                { status: 409 },
+              )
+            : Response.json({
+                commit: {
+                  ref: "source-commit",
+                  shortRef: "source",
+                  committedAt: "2026-07-15T00:00:00.000Z",
+                },
+                targetPath: "/tmp/user1.dat",
+                writtenSha256: "e".repeat(64),
+              });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    await connectLocalHistory();
+    const card = await screen.findByTestId("history-commit-card");
+    fireEvent.click(getCardAction(card, "Restore"));
+    await waitFor(() => {
+      expect(preflightRequests).toHaveLength(1);
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Confirm Restore" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "The Watched Save changed after confirmation. Wait for watcher synchronization or create a Manual Checkpoint before trying again.",
+      ),
+    ).toBeDefined();
+    expect(restoreRequests).toHaveLength(1);
+    await waitFor(() => {
+      expect(preflightRequests).toHaveLength(2);
+    });
+    expect(
+      await screen.findByText("Checking restore availability…"),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Confirm Restore" }),
+    ).toBeNull();
+    releaseRefreshedPreflight(
+      Response.json({
+        status: "targetPresent",
+        expectedCurrent: { status: "present", encodedSha256: refreshedHash },
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Confirm Restore" }),
+    );
+    expect(
+      await screen.findByText(
+        "Restore completed. The watcher will observe the new save.",
+      ),
+    ).toBeDefined();
+    expect(restoreRequests).toHaveLength(2);
+    const restoreBody = restoreRequests[0]?.body;
+    if (typeof restoreBody !== "string") {
+      throw new TypeError("Expected Restore to send a JSON body.");
+    }
+    expect(JSON.parse(restoreBody)).toEqual({
+      confirmation: "restore-watched-save",
+      commitRef: "source-commit",
+      expectedCurrent: { status: "present", encodedSha256: latestHash },
+    });
+    const refreshedRestoreBody = restoreRequests[1]?.body;
+    if (typeof refreshedRestoreBody !== "string") {
+      throw new TypeError("Expected the retried Restore to send a JSON body.");
+    }
+    expect(JSON.parse(refreshedRestoreBody)).toEqual({
+      confirmation: "restore-watched-save",
+      commitRef: "source-commit",
+      expectedCurrent: { status: "present", encodedSha256: refreshedHash },
+    });
+    expect(screen.queryByText(/force/iu)).toBeNull();
+  });
+
+  it("does not auto-refresh after repository contention and waits before retrying", async () => {
+    let preflightCalls = 0;
+    const restoreRequests: RequestInit[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [createSummaryEvent("source", "source", "rosaries")],
+          });
+        }
+        if (url.includes("/api/v1/restores/in-place/preflight")) {
+          preflightCalls++;
+          return Response.json({
+            status: "targetPresent",
+            expectedCurrent: {
+              status: "present",
+              encodedSha256: "a".repeat(64),
+            },
+          });
+        }
         if (url.includes("/api/v1/restores/in-place")) {
           restoreRequests.push(init ?? {});
           return Response.json(
             {
               error: {
-                code: "restore_conflict",
-                message: "The Watched Save changed after confirmation.",
+                code: "repository_busy",
+                message: "Save History Repository is busy.",
               },
             },
-            { status: 409 },
+            {
+              headers: { "Retry-After": "1" },
+              status: 409,
+            },
           );
         }
 
@@ -861,28 +989,40 @@ describe("History view", () => {
     await connectLocalHistory();
     const card = await screen.findByTestId("history-commit-card");
     fireEvent.click(getCardAction(card, "Restore"));
+    await waitFor(() => {
+      expect(preflightCalls).toBe(1);
+    });
     fireEvent.click(
       await screen.findByRole("button", { name: "Confirm Restore" }),
     );
 
     expect(
-      await screen.findByText(
-        "The Watched Save changed after confirmation. Wait for watcher synchronization or create a Manual Checkpoint before trying again.",
-      ),
+      await screen.findByText("Save History Repository is busy."),
     ).toBeDefined();
+    expect(preflightCalls).toBe(1);
     expect(restoreRequests).toHaveLength(1);
-    const restoreBody = restoreRequests[0]?.body;
-    if (typeof restoreBody !== "string") {
-      throw new TypeError("Expected Restore to send a JSON body.");
-    }
-    expect(JSON.parse(restoreBody)).toEqual({
-      confirmation: "restore-watched-save",
-      commitRef: "source-commit",
-      expectedCurrent: { status: "present", encodedSha256: latestHash },
-    });
-    expect(screen.queryByText(/force/iu)).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Confirm Restore" }),
+      screen.queryByRole("button", { name: "Confirm Restore" }),
+    ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry Restore Check" }),
+    );
+    expect(
+      await screen.findByText("Waiting before checking restore availability…"),
+    ).toBeDefined();
+    expect(preflightCalls).toBe(1);
+    expect(
+      screen.queryByRole("button", { name: "Confirm Restore" }),
+    ).toBeNull();
+    await waitFor(
+      () => {
+        expect(preflightCalls).toBe(2);
+      },
+      { timeout: 2500 },
+    );
+    expect(
+      await screen.findByRole("button", { name: "Confirm Restore" }),
     ).toBeDefined();
   });
 
@@ -911,6 +1051,12 @@ describe("History view", () => {
             events: [createSummaryEvent("source", "source", "rosaries")],
           });
         }
+        if (url.includes("/api/v1/restores/in-place/preflight")) {
+          return Response.json({
+            status: "targetMissing",
+            expectedCurrent: { status: "missing" },
+          });
+        }
         if (url.includes("/api/v1/restores/in-place")) {
           restoreRequests.push(init ?? {});
           return Response.json({
@@ -932,9 +1078,6 @@ describe("History view", () => {
     await connectLocalHistory();
     const card = await screen.findByTestId("history-commit-card");
     fireEvent.click(getCardAction(card, "Restore"));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Confirm Restore" }),
-    );
 
     expect(
       await screen.findByText(
@@ -942,6 +1085,9 @@ describe("History view", () => {
       ),
     ).toBeDefined();
     expect(restoreRequests).toHaveLength(0);
+    expect(
+      screen.queryByRole("button", { name: "Confirm Restore" }),
+    ).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "Restore Missing Watched Save" }),
     );
@@ -960,6 +1106,467 @@ describe("History view", () => {
       confirmation: "restore-watched-save",
       commitRef: "source-commit",
       expectedCurrent: { status: "missing" },
+    });
+  });
+
+  it("requires fresh missing-file confirmation after a restore failure", async () => {
+    const initialHash = "a".repeat(64);
+    let preflightCalls = 0;
+    const restoreRequests: RequestInit[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [createSummaryEvent("source", "source", "rosaries")],
+          });
+        }
+        if (url.includes("/api/v1/restores/in-place/preflight")) {
+          preflightCalls++;
+          return Response.json(
+            preflightCalls === 1
+              ? {
+                  status: "targetPresent",
+                  expectedCurrent: {
+                    status: "present",
+                    encodedSha256: initialHash,
+                  },
+                }
+              : {
+                  status: "targetMissing",
+                  expectedCurrent: { status: "missing" },
+                },
+          );
+        }
+        if (url.includes("/api/v1/restores/in-place")) {
+          restoreRequests.push(init ?? {});
+          return restoreRequests.length === 1
+            ? Response.json(
+                {
+                  error: {
+                    code: "restore_conflict",
+                    message: "The Watched Save changed after confirmation.",
+                  },
+                },
+                { status: 409 },
+              )
+            : Response.json({
+                commit: {
+                  ref: "source-commit",
+                  shortRef: "source",
+                  committedAt: "2026-07-15T00:00:00.000Z",
+                },
+                targetPath: "/tmp/user1.dat",
+                writtenSha256: "b".repeat(64),
+              });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    await connectLocalHistory();
+    const card = await screen.findByTestId("history-commit-card");
+    fireEvent.click(getCardAction(card, "Restore"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Confirm Restore" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "The Watched Save changed after confirmation. Wait for watcher synchronization or create a Manual Checkpoint before trying again.",
+      ),
+    ).toBeDefined();
+    await waitFor(() => {
+      expect(preflightCalls).toBe(2);
+    });
+    expect(
+      screen.queryByRole("button", { name: "Confirm Restore" }),
+    ).toBeNull();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Restore Missing Watched Save",
+      }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Restore completed. The watcher will observe the new save.",
+      ),
+    ).toBeDefined();
+    expect(restoreRequests).toHaveLength(2);
+    const firstRestoreBody = restoreRequests[0]?.body;
+    const secondRestoreBody = restoreRequests[1]?.body;
+    if (
+      typeof firstRestoreBody !== "string"
+      || typeof secondRestoreBody !== "string"
+    ) {
+      throw new TypeError("Expected Restore to send JSON bodies.");
+    }
+    expect(JSON.parse(firstRestoreBody)).toEqual({
+      confirmation: "restore-watched-save",
+      commitRef: "source-commit",
+      expectedCurrent: { status: "present", encodedSha256: initialHash },
+    });
+    expect(JSON.parse(secondRestoreBody)).toEqual({
+      confirmation: "restore-watched-save",
+      commitRef: "source-commit",
+      expectedCurrent: { status: "missing" },
+    });
+  });
+
+  it.each([
+    ["request_timeout", "Request timed out."] as const,
+    ["unavailable", "Unable to reach the Local History API."] as const,
+  ])(
+    "does not auto-refresh after a %s restore failure",
+    async (failureKind, failureMessage) => {
+      let preflightCalls = 0;
+      const restoreRequests: RequestInit[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = requestUrl(input);
+          if (url.includes("/api/v1/save")) {
+            return Response.json({ status: "empty" });
+          }
+          if (url.includes("/api/v1/watcher")) {
+            return Response.json({
+              status: "running",
+              activity: "idle",
+              observationRevision: 0,
+              startedAt: "2026-07-15T00:00:00.000Z",
+              repoPath: "/tmp/history-repo",
+              watchedSavePath: "/tmp/user1.dat",
+              capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+            });
+          }
+          if (url.includes("/api/v1/history")) {
+            return Response.json({
+              events: [createSummaryEvent("source", "source", "rosaries")],
+            });
+          }
+          if (url.includes("/api/v1/restores/in-place/preflight")) {
+            preflightCalls++;
+            return Response.json({
+              status: "targetPresent",
+              expectedCurrent: {
+                status: "present",
+                encodedSha256: "a".repeat(64),
+              },
+            });
+          }
+          if (url.includes("/api/v1/restores/in-place")) {
+            restoreRequests.push(init ?? {});
+            if (failureKind === "unavailable") {
+              throw new TypeError("network unavailable");
+            }
+            return Response.json(
+              {
+                error: {
+                  code: "request_timeout",
+                  message: "Request timed out.",
+                },
+              },
+              { status: 408 },
+            );
+          }
+
+          throw new Error(`Unexpected request: ${url}`);
+        }),
+      );
+
+      render(() => <App />);
+      await connectLocalHistory();
+      const card = await screen.findByTestId("history-commit-card");
+      fireEvent.click(getCardAction(card, "Restore"));
+      await waitFor(() => {
+        expect(preflightCalls).toBe(1);
+      });
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Confirm Restore" }),
+      );
+
+      expect(await screen.findByText(failureMessage)).toBeDefined();
+      expect(preflightCalls).toBe(1);
+      expect(restoreRequests).toHaveLength(1);
+      expect(
+        screen.queryByRole("button", { name: "Confirm Restore" }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Retry Restore Check" }),
+      ).toBeDefined();
+    },
+  );
+
+  it("does not offer missing-file restore when preflight finds empty history", async () => {
+    const restoreRequests: RequestInit[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [createSummaryEvent("source", "source", "rosaries")],
+          });
+        }
+        if (url.includes("/api/v1/restores/in-place/preflight")) {
+          return Response.json({ status: "emptyHistory" });
+        }
+        if (url.includes("/api/v1/restores/in-place")) {
+          restoreRequests.push(init ?? {});
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    await connectLocalHistory();
+    const card = await screen.findByTestId("history-commit-card");
+    fireEvent.click(getCardAction(card, "Restore"));
+
+    expect(
+      await screen.findByText("No restore source or history is available."),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Confirm Restore" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Restore Missing Watched Save" }),
+    ).toBeNull();
+    expect(restoreRequests).toHaveLength(0);
+  });
+
+  it("does not reuse a present restore action when refreshed preflight is empty", async () => {
+    const initialHash = "a".repeat(64);
+    let preflightCalls = 0;
+    const restoreRequests: RequestInit[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [createSummaryEvent("source", "source", "rosaries")],
+          });
+        }
+        if (url.includes("/api/v1/restores/in-place/preflight")) {
+          preflightCalls++;
+          return Response.json(
+            preflightCalls === 1
+              ? {
+                  status: "targetPresent",
+                  expectedCurrent: {
+                    status: "present",
+                    encodedSha256: initialHash,
+                  },
+                }
+              : { status: "emptyHistory" },
+          );
+        }
+        if (url.includes("/api/v1/restores/in-place")) {
+          restoreRequests.push(init ?? {});
+          return Response.json(
+            {
+              error: {
+                code: "restore_conflict",
+                message: "The Watched Save changed after confirmation.",
+              },
+            },
+            { status: 409 },
+          );
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    await connectLocalHistory();
+    const card = await screen.findByTestId("history-commit-card");
+    fireEvent.click(getCardAction(card, "Restore"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Confirm Restore" }),
+    );
+
+    expect(
+      await screen.findByText("No restore source or history is available."),
+    ).toBeDefined();
+    expect(preflightCalls).toBe(2);
+    expect(
+      screen.queryByRole("button", { name: "Confirm Restore" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Restore Missing Watched Save" }),
+    ).toBeNull();
+    expect(restoreRequests).toHaveLength(1);
+    const restoreBody = restoreRequests[0]?.body;
+    if (typeof restoreBody !== "string") {
+      throw new TypeError("Expected Restore to send a JSON body.");
+    }
+    expect(JSON.parse(restoreBody)).toEqual({
+      confirmation: "restore-watched-save",
+      commitRef: "source-commit",
+      expectedCurrent: { status: "present", encodedSha256: initialHash },
+    });
+  });
+
+  it("keeps restore actions unavailable during and after a failed preflight", async () => {
+    let preflightCalls = 0;
+    const { promise: pendingPreflight, resolve: releasePreflight } =
+      Promise.withResolvers<Response>();
+    const restoreRequests: RequestInit[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/v1/save")) {
+          return Response.json({ status: "empty" });
+        }
+        if (url.includes("/api/v1/watcher")) {
+          return Response.json({
+            status: "running",
+            activity: "idle",
+            observationRevision: 0,
+            startedAt: "2026-07-15T00:00:00.000Z",
+            repoPath: "/tmp/history-repo",
+            watchedSavePath: "/tmp/user1.dat",
+            capturePolicy: { debounceWriteMs: 500, minCommitIntervalMs: 0 },
+          });
+        }
+        if (url.includes("/api/v1/history")) {
+          return Response.json({
+            events: [createSummaryEvent("source", "source", "rosaries")],
+          });
+        }
+        if (url.includes("/api/v1/restores/in-place/preflight")) {
+          preflightCalls++;
+          if (preflightCalls === 1) {
+            return await pendingPreflight;
+          }
+          return Response.json({
+            status: "targetPresent",
+            expectedCurrent: {
+              status: "present",
+              encodedSha256: "e".repeat(64),
+            },
+          });
+        }
+        if (url.includes("/api/v1/restores/in-place")) {
+          restoreRequests.push(init ?? {});
+          return Response.json({
+            commit: {
+              ref: "source-commit",
+              shortRef: "source",
+              committedAt: "2026-07-15T00:00:00.000Z",
+            },
+            targetPath: "/tmp/user1.dat",
+            writtenSha256: "f".repeat(64),
+          });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    render(() => <App />);
+    await connectLocalHistory();
+    const card = await screen.findByTestId("history-commit-card");
+    fireEvent.click(getCardAction(card, "Restore"));
+    await waitFor(() => {
+      expect(preflightCalls).toBe(1);
+    });
+    expect(
+      await screen.findByText("Checking restore availability…"),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Confirm Restore" }),
+    ).toBeNull();
+
+    releasePreflight(
+      Response.json(
+        {
+          error: {
+            code: "watched_save_unavailable",
+            message: "Watched Save is unavailable.",
+          },
+        },
+        { status: 503 },
+      ),
+    );
+
+    expect(
+      await screen.findByText("Watched Save is unavailable."),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Confirm Restore" }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry Restore Check" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Confirm Restore" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Restore completed. The watcher will observe the new save.",
+      ),
+    ).toBeDefined();
+    expect(restoreRequests).toHaveLength(1);
+    const restoreBody = restoreRequests[0]?.body;
+    if (typeof restoreBody !== "string") {
+      throw new TypeError("Expected Restore to send a JSON body.");
+    }
+    expect(JSON.parse(restoreBody)).toEqual({
+      confirmation: "restore-watched-save",
+      commitRef: "source-commit",
+      expectedCurrent: { status: "present", encodedSha256: "e".repeat(64) },
     });
   });
 });

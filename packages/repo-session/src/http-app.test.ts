@@ -1,6 +1,13 @@
 import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
-import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
@@ -158,6 +165,7 @@ test("OpenAPI describes the complete authenticated Local History API", () => {
     "/api/v1/history",
     "/api/v1/observations",
     "/api/v1/restores/in-place",
+    "/api/v1/restores/in-place/preflight",
     "/api/v1/save",
     "/api/v1/search",
     "/api/v1/watcher",
@@ -197,6 +205,103 @@ test("OpenAPI describes the complete authenticated Local History API", () => {
   assert.ok(
     document.paths["/api/v1/restores/in-place"]?.post?.responses["403"],
   );
+  assert.ok(
+    document.paths["/api/v1/restores/in-place/preflight"]?.get?.responses[
+      "503"
+    ],
+  );
+});
+
+test("in-place restore preflight reports three states and protects the restore race", async (t) => {
+  const tempDirectory = await mkdtemp(
+    path.join(tmpdir(), "silksong-http-preflight-test-"),
+  );
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "user1.dat");
+
+  t.after(async () => {
+    await rm(tempDirectory, { recursive: true, force: true });
+  });
+  await copyFile(minimalEncodedSavePath, watchedSavePath);
+  await initSaveHistory({ repoPath, watchedSavePath });
+
+  const session = await openRepoSession({ repoPath });
+  t.after(async () => {
+    await session.stop();
+  });
+  const http = {
+    request: async (requestPath: string, init?: RequestInit) =>
+      await fetch(new URL(requestPath, session.http.endpoint), init),
+    token: session.http.token,
+  };
+  const headers = { Authorization: `Bearer ${http.token}` };
+  const empty = await http.request("/api/v1/restores/in-place/preflight", {
+    headers,
+  });
+  assert.equal(empty.status, 200);
+  assert.deepEqual(await readJson(empty), { status: "emptyHistory" });
+
+  const observed = await observeSave({ repoPath });
+  assert.equal(observed.status, "committed");
+
+  const present = await http.request("/api/v1/restores/in-place/preflight", {
+    headers,
+  });
+  assert.equal(present.status, 200);
+  const presentBody = await readJson<{
+    readonly expectedCurrent: {
+      readonly encodedSha256: string;
+      readonly status: string;
+    };
+    readonly status: string;
+  }>(present);
+  assert.deepEqual(presentBody, {
+    status: "targetPresent",
+    expectedCurrent: {
+      status: "present",
+      encodedSha256: observed.observation.encodedSha256,
+    },
+  });
+
+  await rm(watchedSavePath);
+  const race = await http.request("/api/v1/restores/in-place", {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      commitRef: observed.observation.commit.ref,
+      confirmation: "restore-watched-save",
+      expectedCurrent: presentBody.expectedCurrent,
+    }),
+  });
+  assert.equal(race.status, 409);
+  assert.deepEqual(await readJson(race), {
+    error: {
+      code: "restore_conflict",
+      message: "The Watched Save changed after confirmation.",
+    },
+  });
+
+  const missing = await http.request("/api/v1/restores/in-place/preflight", {
+    headers,
+  });
+  assert.equal(missing.status, 200);
+  assert.deepEqual(await readJson(missing), {
+    status: "targetMissing",
+    expectedCurrent: { status: "missing" },
+  });
+
+  await mkdir(watchedSavePath);
+  const unavailable = await http.request(
+    "/api/v1/restores/in-place/preflight",
+    { headers },
+  );
+  assert.equal(unavailable.status, 503);
+  assert.deepEqual(await readJson(unavailable), {
+    error: {
+      code: "watched_save_unavailable",
+      message: "The Watched Save is unavailable.",
+    },
+  });
 });
 
 test("authenticated watcher reports the current watcher status", async (t) => {

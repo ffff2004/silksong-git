@@ -90,6 +90,10 @@ and defaults; the following boundaries are especially easy to confuse:
 - Save State requires exactly one of the latest selector or a commit ref. An
   empty query and a query containing both are invalid.
 - Diff requires both refs. Export requires a commit ref.
+- In-place restore preflight is a parameterless authenticated GET. It reports
+  whether history is empty, the Watched Save is missing, or the Watched Save
+  is present with the latest committed Encoded Save hash as its expected
+  current precondition.
 - A Manual Checkpoint requires an `application/json` request body, but the
   empty JSON object `{}` is valid and uses default checkpoint behavior. A
   missing body is not equivalent to `{}`.
@@ -174,6 +178,13 @@ the separate explicit `missing` precondition. History rechecks that condition
 under its write lock before backup or overwrite, and a mismatch returns
 `restore_conflict`. Export is a read-only download and does not write a Restore
 Target.
+
+Before opening the confirmation branch, the Web client calls the authenticated
+`GET /api/v1/restores/in-place/preflight` route. Empty history has no restore
+source and does not offer missing-file restore. A missing Watched Save requires
+the separate explicit confirmation that sends the `missing` precondition; a
+present Watched Save sends the returned latest committed hash. Preflight is a
+read-only snapshot, not a lock or authorization token.
 
 ## Repo Session Lifecycle
 

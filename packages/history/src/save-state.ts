@@ -1,18 +1,12 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { parseProjectConfig, readProjectConfig } from "./config.ts";
 import {
   readCurrentHead,
   readGitBlob,
   readHistoryCommit,
 } from "./git-store.ts";
 import { sha256Hex } from "./hash.ts";
-import {
-  decodedSaveArtifactPath,
-  encodedSaveArtifactPath,
-  getRepositoryLayout,
-} from "./layout.ts";
+import { decodedSaveArtifactPath, encodedSaveArtifactPath } from "./layout.ts";
 import { readRawSaveObservation, readSemanticSnapshot } from "./read-model.ts";
 import { assertRepositoryCapability } from "./repository-compatibility.ts";
 import type {
@@ -21,6 +15,7 @@ import type {
   ReadEncodedSaveInput,
   ReadEncodedSaveResult,
 } from "./types.ts";
+import { readWatchedSavePath } from "./watched-save.ts";
 
 export async function getSaveState(
   input: GetSaveStateInput,
@@ -86,27 +81,4 @@ export async function readEncodedSave(
     encodedSha256: sha256Hex(encodedBytes),
     suggestedFileName: `${safeStem}.${commit.shortRef}.dat`,
   };
-}
-
-async function readWatchedSavePath(
-  repoPath: string,
-  access: "readOnly" | undefined,
-): Promise<string> {
-  if (access !== "readOnly") {
-    const config = await readProjectConfig(repoPath);
-    return config.watchedSavePath;
-  }
-
-  const config = parseProjectConfig(
-    await readFile(getRepositoryLayout(repoPath).configPath, "utf8"),
-  );
-  if (
-    config.status === "current"
-    || config.status === "legacy"
-    || config.status === "migrationRequired"
-  ) {
-    return config.config.watchedSavePath;
-  }
-
-  throw new Error("Save History Repository Project Config is not readable.");
 }

@@ -29,6 +29,7 @@ import {
   InvalidRestoreBackupDirectoryError,
   migrateSaveHistoryRepository,
   observeSave,
+  preflightInPlaceRestore,
   prepareRepositoryReplacement,
   prepareSaveHistoryMigration,
   queryHistory,
@@ -42,6 +43,7 @@ import {
   SaveHistoryRepositoryIncompatibleError,
   SaveHistoryWatcherAlreadyAcquiredError,
   searchSemanticEvents,
+  WatchedSaveUnavailableError,
 } from "./index.ts";
 import { withRepositorySnapshotFileSystemForTests } from "./repository-compatibility.ts";
 import type { ProjectConfigOverrides } from "./types.ts";
@@ -1324,6 +1326,37 @@ test("getSaveState returns empty before the first Raw Save Observation", async (
       selector: { kind: "latest" },
     }),
     { status: "empty" },
+  );
+});
+
+test("preflightInPlaceRestore distinguishes history and Watched Save states", async (t) => {
+  const repo = await createHistoryRepo(t);
+
+  assert.deepEqual(await preflightInPlaceRestore({ repoPath: repo.repoPath }), {
+    status: "emptyHistory",
+  });
+
+  const observation = await observeSave({ repoPath: repo.repoPath });
+  assert.equal(observation.status, "committed");
+
+  assert.deepEqual(await preflightInPlaceRestore({ repoPath: repo.repoPath }), {
+    status: "targetPresent",
+    expectedCurrent: {
+      status: "present",
+      encodedSha256: observation.observation.encodedSha256,
+    },
+  });
+
+  await rm(repo.watchedSavePath);
+  assert.deepEqual(await preflightInPlaceRestore({ repoPath: repo.repoPath }), {
+    status: "targetMissing",
+    expectedCurrent: { status: "missing" },
+  });
+
+  await mkdir(repo.watchedSavePath);
+  await assert.rejects(
+    preflightInPlaceRestore({ repoPath: repo.repoPath }),
+    WatchedSaveUnavailableError,
   );
 });
 

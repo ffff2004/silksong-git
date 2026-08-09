@@ -52,8 +52,10 @@ export {
   SaveHistoryRepositoryBusyError,
   SaveHistoryRepositoryIncompatibleError,
   SaveHistoryWatcherAlreadyAcquiredError,
+  WatchedSaveUnavailableError,
 } from "./errors.ts";
 
+export { preflightInPlaceRestore } from "./restore-preflight.ts";
 export { restoreEncodedSave } from "./restore.ts";
 export type {
   AcquireSaveHistoryWatcherInput,
@@ -68,6 +70,8 @@ export type {
   HistoryResult,
   InitSaveHistoryInput,
   InitSaveHistoryResult,
+  InPlaceRestorePreflightInput,
+  InPlaceRestorePreflightResult,
   InspectSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryResult,

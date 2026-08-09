@@ -15,6 +15,7 @@ import {
   InvalidRestoreBackupDirectoryError,
   ObservationNotFoundError,
   observeSave,
+  preflightInPlaceRestore,
   queryHistory,
   queryRawObservations,
   readEncodedSave,
@@ -27,6 +28,7 @@ import {
   SaveHistoryRepositoryBusyError,
   SaveHistoryRepositoryIncompatibleError,
   searchSemanticEvents,
+  WatchedSaveUnavailableError,
 } from "@silksong-git/history";
 import type { LocalHttpErrorCode } from "./http-contract.ts";
 import { localHttpRoutes } from "./http-contract.ts";
@@ -313,6 +315,16 @@ function buildLocalHttpApp(input: CreateLocalHttpAppInput) {
         },
       });
     })
+    .openapi(localHttpRoutes.restoreInPlacePreflight, async (c) => {
+      const result = await preflightInPlaceRestore({
+        repoPath: input.repoPath,
+        ...(input.historyAccess !== undefined && {
+          access: input.historyAccess,
+        }),
+      });
+
+      return c.json(result, 200);
+    })
     .openapi(localHttpRoutes.restoreInPlace, async (c) => {
       const request = c.req.valid("json");
 
@@ -512,6 +524,13 @@ function mapError(error: unknown): {
       status: 503,
       code: "read_model_unavailable",
       message: "Semantic Read Model is unavailable.",
+    };
+  }
+  if (error instanceof WatchedSaveUnavailableError) {
+    return {
+      status: 503,
+      code: "watched_save_unavailable",
+      message: "The Watched Save is unavailable.",
     };
   }
   if (error instanceof SaveHistoryRepositoryIncompatibleError) {

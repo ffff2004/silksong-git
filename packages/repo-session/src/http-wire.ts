@@ -7,6 +7,7 @@ import type {
   HistoricalSemanticEvent,
   HistoryCommit,
   HistoryResult,
+  InPlaceRestorePreflightResult,
   ObserveSaveResult,
   RawObservationHistoryEntry,
   RawObservationHistoryResult,
@@ -110,6 +111,7 @@ export function createLocalHttpWireSchemas(
     cursor: cursorSchema.optional(),
     order: zod.enum(["asc", "desc"]).default("desc"),
   } as const;
+  const emptyQuerySchema = zod.object({}).strict();
   const saveQuerySchema = zod
     .object({
       selector: zod.literal("latest").optional(),
@@ -180,6 +182,32 @@ export function createLocalHttpWireSchemas(
       expectedCurrent: expectedCurrentSchema,
     })
     .strict();
+  const restorePreflightResultSchema: z.ZodType<InPlaceRestorePreflightResult> =
+    decorate(
+      zod.discriminatedUnion("status", [
+        zod.object({ status: zod.literal("emptyHistory") }).strict(),
+        zod
+          .object({
+            status: zod.literal("targetMissing"),
+            expectedCurrent: zod
+              .object({ status: zod.literal("missing") })
+              .strict(),
+          })
+          .strict(),
+        zod
+          .object({
+            status: zod.literal("targetPresent"),
+            expectedCurrent: zod
+              .object({
+                status: zod.literal("present"),
+                encodedSha256: zod.string().regex(/^[0-9a-f]{64}$/v),
+              })
+              .strict(),
+          })
+          .strict(),
+      ]),
+      "InPlaceRestorePreflightResult",
+    );
 
   const historyCommitSchema: z.ZodType<HistoryCommit> = decorate(
     zod.object({
@@ -528,6 +556,7 @@ export function createLocalHttpWireSchemas(
     textSchema,
     booleanQuerySchema,
     paginationSchema,
+    emptyQuerySchema,
     saveQuerySchema,
     historyQuerySchema,
     observationsQuerySchema,
@@ -537,6 +566,7 @@ export function createLocalHttpWireSchemas(
     exportQuerySchema,
     expectedCurrentSchema,
     restoreBodySchema,
+    restorePreflightResultSchema,
     historyCommitSchema,
     decodedSaveVersionSchema,
     recognizedSchemaStatus,
@@ -601,6 +631,7 @@ export const {
   textSchema,
   booleanQuerySchema,
   paginationSchema,
+  emptyQuerySchema,
   saveQuerySchema,
   historyQuerySchema,
   observationsQuerySchema,
@@ -610,6 +641,7 @@ export const {
   exportQuerySchema,
   expectedCurrentSchema,
   restoreBodySchema,
+  restorePreflightResultSchema,
   historyCommitSchema,
   decodedSaveVersionSchema,
   recognizedSchemaStatus,
@@ -674,3 +706,6 @@ export type LocalHttpSearchResult = z.infer<typeof searchResultSchema>;
 export type LocalHttpWatcherStatus = z.infer<typeof watcherStatusSchema>;
 export type LocalHttpCheckpointResult = z.infer<typeof observeSaveResultSchema>;
 export type LocalHttpRestoreResult = z.infer<typeof restoreResultSchema>;
+export type LocalHttpRestorePreflightResult = z.infer<
+  typeof restorePreflightResultSchema
+>;

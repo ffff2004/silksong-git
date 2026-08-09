@@ -141,6 +141,65 @@ describe("LocalHistoryClient", () => {
     );
   });
 
+  it("reads the authenticated in-place restore preflight", async () => {
+    const requests: string[] = [];
+    const client = createLocalHistoryClient({
+      endpoint: "http://127.0.0.1:4312",
+      fetch: async (input) => {
+        requests.push(requestUrl(input));
+        return Response.json({
+          status: "targetPresent",
+          expectedCurrent: {
+            status: "present",
+            encodedSha256: "a".repeat(64),
+          },
+        });
+      },
+      token: "session-token",
+    });
+
+    await expect(client.getRestorePreflight()).resolves.toEqual({
+      status: "targetPresent",
+      expectedCurrent: {
+        status: "present",
+        encodedSha256: "a".repeat(64),
+      },
+    });
+    expect(requests).toEqual([
+      "http://127.0.0.1:4312/api/v1/restores/in-place/preflight",
+    ]);
+  });
+
+  it("exposes Retry-After from repository-busy mutation failures", async () => {
+    const client = createLocalHistoryClient({
+      endpoint: "http://127.0.0.1:4312",
+      fetch: async () =>
+        Response.json(
+          {
+            error: {
+              code: "repository_busy",
+              message: "Save History Repository is busy.",
+            },
+          },
+          {
+            headers: { "Retry-After": "1" },
+            status: 409,
+          },
+        ),
+      token: "session-token",
+    });
+
+    await expect(
+      client.restoreInPlace({
+        commitRef: "source-commit",
+        expectedCurrent: { status: "missing" },
+      }),
+    ).rejects.toMatchObject({
+      code: "repository_busy",
+      retryAfterMs: 1000,
+    });
+  });
+
   it("classifies a failed request as temporarily unavailable", async () => {
     const client = createLocalHistoryClient({
       endpoint: "http://127.0.0.1:4312",

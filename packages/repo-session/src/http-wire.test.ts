@@ -2,8 +2,10 @@ import { strict as assert } from "node:assert";
 import test from "node:test";
 
 import {
+  emptyQuerySchema,
   historyQuerySchema,
   historyResultSchema,
+  restorePreflightResultSchema,
   saveQuerySchema,
   searchQuerySchema,
   watcherStatusSchema,
@@ -55,4 +57,23 @@ test("wire response schemas accept additive fields without changing DTOs", () =>
     historyResultSchema.parse({ events: [], futureField: true }),
     { events: [] },
   );
+});
+
+test("restore preflight response schema is strict and discriminated", () => {
+  assert.equal(
+    restorePreflightResultSchema.safeParse({
+      status: "targetPresent",
+      expectedCurrent: { status: "present", encodedSha256: "a".repeat(64) },
+      futureField: true,
+    }).success,
+    false,
+  );
+  assert.equal(
+    restorePreflightResultSchema.safeParse({
+      status: "targetMissing",
+      expectedCurrent: { status: "present", encodedSha256: "a".repeat(64) },
+    }).success,
+    false,
+  );
+  assert.equal(emptyQuerySchema.safeParse({ unexpected: true }).success, false);
 });

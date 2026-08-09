@@ -225,6 +225,10 @@ The public in-place target also accepts an expected-current precondition. The
 HTTP adapter requires it so History can reject a stale or unexpectedly present
 Watched Save before backup or overwrite; the current explicit CLI confirmation
 workflow may omit it. Restore itself does not create a Raw Save Observation.
+History also exposes a read-only in-place restore preflight that reports empty
+Raw Save history separately from a missing or present Watched Save and, when
+present, supplies the latest committed observation hash for that precondition.
+The preflight is advisory; restore repeats the check under `write.lock`.
 Detailed safety decisions are recorded in
 [ADR-0007](../adr/0007-restore-requires-explicit-target-or-in-place-confirmation.md)
 and the Local History HTTP refinement in

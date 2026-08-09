@@ -14,6 +14,7 @@ const decorateOpenApi = <T extends z.ZodType>(schema: T, refId: string): T =>
 const contractSchemas = createLocalHttpWireSchemas(z, decorateOpenApi);
 const {
   localHttpErrorSchema: errorSchema,
+  emptyQuerySchema,
   saveQuerySchema,
   historyQuerySchema,
   observationsQuerySchema,
@@ -22,6 +23,7 @@ const {
   checkpointBodySchema,
   exportQuerySchema,
   restoreBodySchema,
+  restorePreflightResultSchema,
   historyResultSchema,
   rawObservationHistoryResultSchema,
   saveStateResultSchema,
@@ -189,6 +191,17 @@ export const localHttpRoutes = {
       409: internalError,
       413: invalidRequest,
       415: invalidRequest,
+      ...baseResponses,
+    },
+  }),
+  restoreInPlacePreflight: createRoute({
+    method: "get",
+    path: "/api/v1/restores/in-place/preflight",
+    summary: "Inspect the current state before an in-place restore",
+    request: { query: emptyQuerySchema },
+    responses: {
+      200: jsonSuccess(restorePreflightResultSchema),
+      503: internalError,
       ...baseResponses,
     },
   }),

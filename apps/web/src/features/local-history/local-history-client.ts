@@ -4,6 +4,7 @@ import type {
   LocalHttpErrorCode,
   LocalHttpHistoryResult,
   LocalHttpObservationHistoryResult,
+  LocalHttpRestorePreflightResult,
   LocalHttpRestoreResult,
   LocalHttpSaveState,
   LocalHttpSearchResult,
@@ -15,6 +16,7 @@ import {
   localHttpErrorSchema,
   observeSaveResultSchema,
   rawObservationHistoryResultSchema,
+  restorePreflightResultSchema,
   restoreResultSchema,
   saveStateResultSchema,
   searchResultSchema,
@@ -32,6 +34,7 @@ export type LocalHistoryClientErrorKind =
 export class LocalHistoryClientError extends Error {
   readonly code: LocalHttpErrorCode | undefined;
   readonly kind: LocalHistoryClientErrorKind;
+  readonly retryAfterMs: number | undefined;
   readonly status: number | undefined;
 
   constructor(
@@ -39,6 +42,7 @@ export class LocalHistoryClientError extends Error {
       readonly code?: LocalHttpErrorCode;
       readonly kind: LocalHistoryClientErrorKind;
       readonly message: string;
+      readonly retryAfterMs?: number;
       readonly status?: number;
     },
     options?: ErrorOptions,
@@ -47,6 +51,7 @@ export class LocalHistoryClientError extends Error {
     this.name = "LocalHistoryClientError";
     this.code = input.code;
     this.kind = input.kind;
+    this.retryAfterMs = input.retryAfterMs;
     this.status = input.status;
   }
 }
@@ -69,6 +74,7 @@ export interface LocalHistoryClient {
   readonly restoreInPlace: (
     input: RestoreInput,
   ) => Promise<LocalHttpRestoreResult>;
+  readonly getRestorePreflight: () => Promise<LocalHttpRestorePreflightResult>;
 }
 
 type SaveSelector =
@@ -302,6 +308,15 @@ export function createLocalHistoryClient(
         "Local History returned an invalid restore response.",
       );
     },
+    getRestorePreflight: async () =>
+      await getJson(
+        createLocalHistoryUrl(
+          input.endpoint,
+          "/api/v1/restores/in-place/preflight",
+        ),
+        restorePreflightResultSchema,
+        "Local History returned an invalid restore preflight response.",
+      ),
   };
 }
 
@@ -402,6 +417,7 @@ function parseFileName(disposition: string | null): string {
 async function createApiError(
   response: Response,
 ): Promise<LocalHistoryClientError> {
+  const retryAfterMs = parseRetryAfter(response.headers.get("Retry-After"));
   let payload: unknown;
   try {
     payload = await response.json();
@@ -410,6 +426,7 @@ async function createApiError(
       {
         kind: "protocol",
         message: "Local History returned an invalid error response.",
+        retryAfterMs,
         status: response.status,
       },
       { cause: error },
@@ -422,6 +439,7 @@ async function createApiError(
       {
         kind: "protocol",
         message: "Local History returned an invalid error response.",
+        retryAfterMs,
         status: response.status,
       },
       { cause: parsed.error },
@@ -432,6 +450,21 @@ async function createApiError(
     code: parsed.data.error.code,
     kind: "api",
     message: parsed.data.error.message,
+    retryAfterMs,
     status: response.status,
   });
+}
+
+function parseRetryAfter(header: string | null): number | undefined {
+  const value = header?.trim() ?? "";
+  if (value === "") {
+    return undefined;
+  }
+
+  if (/^\d+$/u.test(value)) {
+    return Number(value) * 1000;
+  }
+
+  const retryAt = Date.parse(value);
+  return Number.isNaN(retryAt) ? undefined : Math.max(0, retryAt - Date.now());
 }

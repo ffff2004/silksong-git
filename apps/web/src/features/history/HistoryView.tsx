@@ -6,6 +6,7 @@ import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
 import buttonStyles from "../../ui/Button.module.css";
 import dialogStyles from "../../ui/Dialog.module.css";
 import viewStyles from "../../ui/View.module.css";
+import type { LocalHistoryClient } from "../local-history/local-history-client.ts";
 import { LocalHistoryClientError } from "../local-history/local-history-client.ts";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
 import type { HistoryEventFilters } from "./history-events-query.ts";
@@ -437,40 +438,109 @@ function RestoreDialog(props: {
   readonly commit: string;
   readonly onClose: () => void;
 }) {
+  type RestorePreflightResult = Awaited<
+    ReturnType<LocalHistoryClient["getRestorePreflight"]>
+  >;
+  type RestorePreflightState =
+    | RestorePreflightResult
+    | { readonly status: "loading" }
+    | { readonly status: "error"; readonly message: string };
+  type RestoreExpectedCurrent =
+    | { readonly status: "present"; readonly encodedSha256: string }
+    | { readonly status: "missing" };
+
   const localHistory = useLocalHistoryStore();
   const [isSubmitting, setIsSubmitting] = createSignal(false);
   const [requiresMissingConfirmation, setRequiresMissingConfirmation] =
     createSignal(false);
   const [message, setMessage] = createSignal<string>();
+  const [preflight, setPreflight] = createSignal<RestorePreflightState>({
+    status: "loading",
+  });
+  const [retryAfterMs, setRetryAfterMs] = createSignal<number>();
+  const [isWaitingForRetry, setIsWaitingForRetry] = createSignal(false);
+  const preflightErrorMessage = () => {
+    const current = preflight();
+    return current.status === "error" ? current.message : "";
+  };
+  const invalidatePreflight = () => {
+    setRequiresMissingConfirmation(false);
+    setPreflight({
+      status: "error",
+      message: "Restore availability must be checked again before retrying.",
+    });
+  };
 
-  const restore = async (confirmMissing = false) => {
+  const loadPreflight = async (options?: {
+    readonly preserveMessage?: boolean;
+  }) => {
+    setRequiresMissingConfirmation(false);
+    setRetryAfterMs(undefined);
+    setIsWaitingForRetry(false);
+    if (options?.preserveMessage !== true) {
+      setMessage(undefined);
+    }
+    setPreflight({ status: "loading" });
+
     const connection = localHistory.connection();
     if (connection.kind !== "connected") {
+      setPreflight({
+        status: "error",
+        message: "Local History is unavailable.",
+      });
       return;
     }
+
+    try {
+      const result = await connection.session.client.getRestorePreflight();
+      setPreflight(result);
+      setRequiresMissingConfirmation(result.status === "targetMissing");
+    } catch (error) {
+      setPreflight({
+        status: "error",
+        message: getRestoreErrorMessage(error),
+      });
+      setRetryAfterMs(getRestoreRetryAfterMs(error));
+    }
+  };
+
+  const retryPreflight = async () => {
+    const delayMs = retryAfterMs();
+    setRetryAfterMs(undefined);
+    setPreflight({ status: "loading" });
+    if (delayMs !== undefined && delayMs > 0) {
+      setIsWaitingForRetry(true);
+      await new Promise<void>((resolve) => {
+        globalThis.setTimeout(
+          () => {
+            resolve(undefined);
+          },
+          delayMs,
+          undefined,
+        );
+      });
+    }
+    await loadPreflight();
+  };
+
+  onMount(() => {
+    loadPreflight().catch((error: unknown) => {
+      setPreflight({
+        status: "error",
+        message: getRestoreErrorMessage(error),
+      });
+    });
+  });
+
+  const restore = async (expectedCurrent: RestoreExpectedCurrent) => {
+    const connection = localHistory.connection();
+    if (connection.kind !== "connected") {
+      setMessage("Local History is unavailable.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      let expectedCurrent:
-        | { readonly status: "present"; readonly encodedSha256: string }
-        | { readonly status: "missing" };
-      if (confirmMissing) {
-        expectedCurrent = { status: "missing" };
-      } else {
-        const latest = await connection.session.client.getSave({
-          kind: "latest",
-        });
-        if (latest.status === "empty") {
-          setRequiresMissingConfirmation(true);
-          setMessage(
-            "The Watched Save is missing. Restoring it cannot create an original-file backup.",
-          );
-          return;
-        }
-        expectedCurrent = {
-          encodedSha256: latest.observation.encodedSha256,
-          status: "present",
-        };
-      }
       await connection.session.client.restoreInPlace({
         commitRef: props.commit,
         expectedCurrent,
@@ -479,6 +549,12 @@ function RestoreDialog(props: {
       setMessage("Restore completed. The watcher will observe the new save.");
     } catch (error) {
       setMessage(getRestoreErrorMessage(error));
+      if (isRestoreConflictError(error)) {
+        await loadPreflight({ preserveMessage: true });
+      } else {
+        setRetryAfterMs(getRestoreRetryAfterMs(error));
+        invalidatePreflight();
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -495,6 +571,29 @@ function RestoreDialog(props: {
         <div class={styles["restorePanel"]}>
           <h3>Restore {props.commit}?</h3>
           <p>This writes the selected Encoded Save to the Watched Save.</p>
+          <Show when={isWaitingForRetry()}>
+            <p role="status">Waiting before checking restore availability…</p>
+          </Show>
+          <Show when={preflight().status === "loading" && !isWaitingForRetry()}>
+            <p role="status">Checking restore availability…</p>
+          </Show>
+          <Show when={preflight().status === "error"}>
+            <p role="alert">{preflightErrorMessage()}</p>
+          </Show>
+          <Show when={preflight().status === "emptyHistory"}>
+            <p role="alert">No restore source or history is available.</p>
+          </Show>
+          <Show
+            when={
+              preflight().status === "targetMissing"
+              && requiresMissingConfirmation()
+            }
+          >
+            <p role="alert">
+              The Watched Save is missing. Restoring it cannot create an
+              original-file backup.
+            </p>
+          </Show>
           <Show when={message()}>
             {(value) => <p role="alert">{value()}</p>}
           </Show>
@@ -506,29 +605,57 @@ function RestoreDialog(props: {
             >
               Cancel
             </button>
-            <button
-              class={buttonStyles["danger"]}
-              type="button"
-              disabled={isSubmitting()}
-              onClick={() => {
-                restore().catch((error_: unknown) => {
-                  setMessage(
-                    error_ instanceof Error
-                      ? error_.message
-                      : "Restore failed.",
-                  );
-                });
-              }}
-            >
-              {isSubmitting() ? "Restoring…" : "Confirm Restore"}
-            </button>
-            <Show when={requiresMissingConfirmation()}>
+            <Show when={preflight().status === "error"}>
+              <button
+                class={buttonStyles["secondary"]}
+                type="button"
+                onClick={() => {
+                  retryPreflight().catch((error: unknown) => {
+                    setPreflight({
+                      status: "error",
+                      message: getRestoreErrorMessage(error),
+                    });
+                    setRetryAfterMs(getRestoreRetryAfterMs(error));
+                  });
+                }}
+              >
+                Retry Restore Check
+              </button>
+            </Show>
+            <Show when={preflight().status === "targetPresent"}>
               <button
                 class={buttonStyles["danger"]}
                 type="button"
                 disabled={isSubmitting()}
                 onClick={() => {
-                  restore(true).catch((error_: unknown) => {
+                  const current = preflight();
+                  if (current.status !== "targetPresent") {
+                    return;
+                  }
+                  restore(current.expectedCurrent).catch((error_: unknown) => {
+                    setMessage(getRestoreErrorMessage(error_));
+                  });
+                }}
+              >
+                {isSubmitting() ? "Restoring…" : "Confirm Restore"}
+              </button>
+            </Show>
+            <Show
+              when={
+                preflight().status === "targetMissing"
+                && requiresMissingConfirmation()
+              }
+            >
+              <button
+                class={buttonStyles["danger"]}
+                type="button"
+                disabled={isSubmitting()}
+                onClick={() => {
+                  const current = preflight();
+                  if (current.status !== "targetMissing") {
+                    return;
+                  }
+                  restore(current.expectedCurrent).catch((error_: unknown) => {
                     setMessage(getRestoreErrorMessage(error_));
                   });
                 }}
@@ -544,12 +671,25 @@ function RestoreDialog(props: {
 }
 
 function getRestoreErrorMessage(error: unknown): string {
-  if (
-    error instanceof LocalHistoryClientError
-    && error.code === "restore_conflict"
-  ) {
+  if (isRestoreConflictError(error)) {
     return `${error.message} Wait for watcher synchronization or create a Manual Checkpoint before trying again.`;
   }
 
   return error instanceof Error ? error.message : "Restore failed.";
+}
+
+function isRestoreConflictError(
+  error: unknown,
+): error is LocalHistoryClientError & { readonly message: string } {
+  return (
+    error instanceof LocalHistoryClientError
+    && error.code === "restore_conflict"
+  );
+}
+
+function getRestoreRetryAfterMs(error: unknown): number | undefined {
+  return error instanceof LocalHistoryClientError
+    && error.code === "repository_busy"
+    ? error.retryAfterMs
+    : undefined;
 }
