@@ -824,11 +824,11 @@
           "mapCategory": "void-masses",
           "mapViewer": {
             "src": "assets/ui/labelled_map_act3.png",
-            "x": 0.64,
-            "y": 0.774,
+            "x": 0.558,
+            "y": 0.695,
             "zoom": 2.0
           },
-          "scene": "Dock_03c",
+          "scene": "Bone_East_05",
           "showOnMap": true,
           "type": "sceneBool"
         },
