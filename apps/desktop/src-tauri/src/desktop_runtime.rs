@@ -25,7 +25,7 @@ use crate::managed_initialization::{
 };
 use crate::save_location::{SaveLocationPlatform, SaveLocationSystem, initial_directory};
 
-const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 9;
+const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 10;
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
 const BUNDLED_SIDECAR_NAME: &str = "silksong-git-desktop-sidecar";
 const REPLACEMENT_CONFIRMATION: &str = "archive-and-reinitialize-managed-repository";
@@ -365,6 +365,38 @@ pub enum ManagedInitializationResult {
     Busy,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ImportRepositoryResult {
+    Cancelled,
+    Imported {
+        name: String,
+        source_status: String,
+        status: String,
+        required_action: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cleanup_failure: Option<String>,
+    },
+    Rejected {
+        reason: String,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cleanup_failure: Option<String>,
+    },
+    Failed {
+        phase: String,
+        reason: String,
+        message: String,
+        source_state: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        residual_path: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cleanup_failure: Option<String>,
+    },
+}
+
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RepositoryStatus {
@@ -442,6 +474,74 @@ impl DesktopWorkflow {
             selected_path,
             managed_root(app, RepositoryLifecycle::Managed)?,
             SidecarLaunch::for_app(app)?,
+            Local::now().fixed_offset(),
+        )
+    }
+
+    pub(crate) fn import_repository<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+    ) -> Result<ImportRepositoryResult, DesktopRuntimeError> {
+        let Some(selected) = app
+            .dialog()
+            .file()
+            .set_title("Import external Save History Repository")
+            .blocking_pick_folder()
+        else {
+            return Ok(ImportRepositoryResult::Cancelled);
+        };
+        let selected_path = selected
+            .into_path()
+            .map_err(|_| DesktopRuntimeError::InvalidDirectory);
+        let selected_path = match selected_path {
+            Ok(path) => path,
+            Err(error) => {
+                return Ok(import_failure(
+                    "preflight",
+                    "invalidPath",
+                    &error.user_message(),
+                    None,
+                ));
+            }
+        };
+        let managed_root_path = match managed_root(app, RepositoryLifecycle::Managed) {
+            Ok(root) => root,
+            Err(error) => {
+                return Ok(import_failure(
+                    "placement",
+                    "managedRootUnavailable",
+                    &error.user_message(),
+                    None,
+                ));
+            }
+        };
+        let archives_root = match managed_root(app, RepositoryLifecycle::Archived) {
+            Ok(root) => root,
+            Err(error) => {
+                return Ok(import_failure(
+                    "placement",
+                    "archivesRootUnavailable",
+                    &error.user_message(),
+                    None,
+                ));
+            }
+        };
+        let launch = match SidecarLaunch::for_app(app) {
+            Ok(launch) => launch,
+            Err(error) => {
+                return Ok(import_failure(
+                    "spawn",
+                    "sidecarUnavailable",
+                    &error.user_message(),
+                    None,
+                ));
+            }
+        };
+        self.import_repository_at(
+            selected_path,
+            managed_root_path,
+            archives_root,
+            launch,
             Local::now().fixed_offset(),
         )
     }
@@ -739,6 +839,354 @@ impl DesktopWorkflow {
 
         self.finish_transition(Some(new_session));
         Ok(ManagedInitializationResult::Initialized)
+    }
+
+    fn import_repository_at(
+        &self,
+        selected_path: PathBuf,
+        managed_root: PathBuf,
+        archives_root: PathBuf,
+        launch: SidecarLaunch,
+        imported_at: chrono::DateTime<chrono::FixedOffset>,
+    ) -> Result<ImportRepositoryResult, DesktopRuntimeError> {
+        {
+            let mut state = match self.state.lock() {
+                Ok(state) => state,
+                Err(_) => {
+                    return Ok(import_failure(
+                        "state",
+                        "unavailable",
+                        "Desktop Local History is temporarily unavailable.",
+                        None,
+                    ));
+                }
+            };
+            if state.transitioning || state.pending_migration.is_some() {
+                return Ok(import_failure(
+                    "session",
+                    "busy",
+                    "Desktop Local History is already changing sessions.",
+                    None,
+                ));
+            }
+            if state.current_session.as_mut().is_some_and(|session| {
+                session.sidecar.poll().is_ok() && session.sidecar.mutation_active()
+            }) {
+                return Ok(import_failure(
+                    "mutation",
+                    "mutationActive",
+                    "Wait for the active Desktop mutation to finish before importing a repository.",
+                    None,
+                ));
+            }
+            if state
+                .current_session
+                .as_ref()
+                .is_some_and(|session| session.lifecycle == RepositoryLifecycle::External)
+            {
+                return Ok(ImportRepositoryResult::Rejected {
+                    reason: "externalSession".into(),
+                    message:
+                        "Close the current external repository before importing another repository."
+                            .into(),
+                    status: None,
+                    cleanup_failure: None,
+                });
+            }
+            state.transitioning = true;
+        }
+
+        let source_path = match canonicalize_import_source(&selected_path) {
+            Ok(path) => path,
+            Err(error) => {
+                self.finish_transition_preserving_session();
+                return Ok(import_rejected("invalidPlacement", error.user_message()));
+            }
+        };
+        let managed_root = match ensure_managed_root(&managed_root) {
+            Ok(root) => root,
+            Err(error) => {
+                self.finish_transition_preserving_session();
+                return Ok(import_failure(
+                    "placement",
+                    "managedRootUnavailable",
+                    &error.user_message(),
+                    None,
+                ));
+            }
+        };
+        let archives_root = match existing_managed_root(&archives_root) {
+            Ok(root) => root,
+            Err(error) => {
+                self.finish_transition_preserving_session();
+                return Ok(import_failure(
+                    "placement",
+                    "archivesRootUnavailable",
+                    &error.user_message(),
+                    None,
+                ));
+            }
+        };
+        if path_is_within(&managed_root, &source_path)
+            || archives_root
+                .as_ref()
+                .is_some_and(|root| path_is_within(root, &source_path))
+        {
+            self.finish_transition_preserving_session();
+            return Ok(import_rejected(
+                "invalidPlacement",
+                "Choose a repository outside the App-managed repositories and archives.".into(),
+            ));
+        }
+
+        let mut candidate = match SidecarSupervisor::spawn(launch) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                self.finish_transition_preserving_session();
+                return Ok(import_failure(
+                    "spawn",
+                    "sidecarUnavailable",
+                    &error.user_message(),
+                    None,
+                ));
+            }
+        };
+        let source_protocol_path = match repository_path_for_protocol(&source_path) {
+            Ok(path) => path,
+            Err(error) => {
+                return Ok(self.finish_import_candidate_failure(
+                    candidate,
+                    "preflight",
+                    "invalidPath",
+                    &error.user_message(),
+                    None,
+                    None,
+                ));
+            }
+        };
+
+        let inspection = match candidate
+            .command(strict_repository_inspection_command(&source_protocol_path))
+            .map_err(DesktopRuntimeError::from)
+            .and_then(|response| parse_repository_inspection_details(&response))
+        {
+            Ok(inspection) => inspection,
+            Err(error) => {
+                return Ok(self.finish_import_candidate_failure(
+                    candidate,
+                    "inspection",
+                    "inspectionFailed",
+                    &error.user_message(),
+                    None,
+                    None,
+                ));
+            }
+        };
+        if !is_import_source_status(&inspection.status) {
+            let result =
+                import_inspection_rejection(&inspection.status, &inspection.required_action);
+            self.finish_failed_candidate(candidate);
+            return Ok(result);
+        }
+
+        let duplicate = match find_duplicate_managed_repository_by_repository(
+            &managed_root,
+            &source_path,
+            &mut candidate,
+        ) {
+            Ok(duplicate) => duplicate,
+            Err(error) => {
+                return Ok(self.finish_import_candidate_failure(
+                    candidate,
+                    "duplicate",
+                    "duplicateCheckFailed",
+                    &error.user_message(),
+                    None,
+                    None,
+                ));
+            }
+        };
+        if let Some(name) = duplicate {
+            self.finish_failed_candidate(candidate);
+            return Ok(ImportRepositoryResult::Rejected {
+                reason: "duplicateWatchedSave".into(),
+                message: format!(
+                    "This repository watches the same save as the managed repository {name}."
+                ),
+                status: None,
+                cleanup_failure: None,
+            });
+        }
+
+        let source_name = source_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("repository");
+        let base_name = managed_repository_name(
+            &PathBuf::from(source_name).with_extension("dat"),
+            imported_at,
+        );
+        let target_path = match repository_path_for_protocol(&managed_root.join(base_name)) {
+            Ok(path) => path,
+            Err(error) => {
+                return Ok(self.finish_import_candidate_failure(
+                    candidate,
+                    "preflight",
+                    "invalidPath",
+                    &error.user_message(),
+                    None,
+                    None,
+                ));
+            }
+        };
+        let imported = candidate.command(json!({
+            "type": "repository.import",
+            "sourcePath": source_protocol_path,
+            "targetPath": target_path,
+        }));
+        let imported = match imported {
+            Ok(response) => parse_repository_import_result(&response),
+            Err(error) => Err(DesktopRuntimeError::from(error)),
+        };
+        let imported = match imported {
+            Ok(imported) => imported,
+            Err(error) => {
+                return Ok(self.finish_import_candidate_failure(
+                    candidate,
+                    "command",
+                    "importCommandFailed",
+                    &error.user_message(),
+                    None,
+                    None,
+                ));
+            }
+        };
+
+        let result = match imported {
+            ImportProtocolResult::Rejected {
+                reason,
+                status,
+                cleanup_failure,
+            } => {
+                self.finish_failed_candidate(candidate);
+                ImportRepositoryResult::Rejected {
+                    message: import_reason_message(&reason),
+                    reason,
+                    status,
+                    cleanup_failure,
+                }
+            }
+            ImportProtocolResult::Failed {
+                reason,
+                message,
+                retained_path,
+                source_state,
+                phase,
+                cleanup_failure,
+            } => {
+                self.finish_failed_candidate(candidate);
+                ImportRepositoryResult::Failed {
+                    phase,
+                    reason,
+                    message,
+                    source_state,
+                    residual_path: retained_path,
+                    cleanup_failure,
+                }
+            }
+            ImportProtocolResult::Copied {
+                repo_path,
+                source_status,
+                cleanup_failure,
+            } => {
+                let imported_path =
+                    match validate_published_managed_child(&managed_root, Path::new(&repo_path)) {
+                        Ok(path) => path,
+                        Err(error) => {
+                            return Ok(self.finish_import_candidate_failure(
+                                candidate,
+                                "publication",
+                                "invalidPublishedPath",
+                                &error.user_message(),
+                                None,
+                                cleanup_failure.clone(),
+                            ));
+                        }
+                    };
+                let imported_protocol_path = match repository_path_for_protocol(&imported_path) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        return Ok(self.finish_import_candidate_failure(
+                            candidate,
+                            "publication",
+                            "invalidPublishedPath",
+                            &error.user_message(),
+                            Some(imported_path.to_string_lossy().into_owned()),
+                            cleanup_failure.clone(),
+                        ));
+                    }
+                };
+                let inspection = candidate
+                    .command(strict_repository_inspection_command(
+                        &imported_protocol_path,
+                    ))
+                    .map_err(DesktopRuntimeError::from)
+                    .and_then(|response| parse_repository_inspection_details(&response));
+                let inspection = match inspection {
+                    Ok(inspection) => inspection,
+                    Err(error) => {
+                        let residual_path = imported_path.to_string_lossy().into_owned();
+                        return Ok(self.finish_import_candidate_failure(
+                            candidate,
+                            "status",
+                            "postCopyInspectionFailed",
+                            &error.user_message(),
+                            Some(residual_path),
+                            cleanup_failure.clone(),
+                        ));
+                    }
+                };
+                let name = match imported_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(str::to_owned)
+                {
+                    Some(name) => name,
+                    None => {
+                        return Ok(self.finish_import_candidate_failure(
+                            candidate,
+                            "status",
+                            "invalidPublishedPath",
+                            "The imported repository has an invalid managed name.",
+                            Some(imported_path.to_string_lossy().into_owned()),
+                            cleanup_failure.clone(),
+                        ));
+                    }
+                };
+                let result = ImportRepositoryResult::Imported {
+                    name,
+                    source_status,
+                    status: inspection.status,
+                    required_action: inspection.required_action,
+                    cleanup_failure: cleanup_failure.clone(),
+                };
+                if let Err(error) = candidate.shutdown() {
+                    self.finish_transition_preserving_session();
+                    return Ok(ImportRepositoryResult::Failed {
+                        phase: "status".into(),
+                        reason: "sidecarShutdownFailed".into(),
+                        message: error.user_message(),
+                        source_state: "unchanged".into(),
+                        residual_path: Some(imported_path.to_string_lossy().into_owned()),
+                        cleanup_failure,
+                    });
+                }
+                self.finish_transition_preserving_session();
+                return Ok(result);
+            }
+        };
+        self.finish_transition_preserving_session();
+        Ok(result)
     }
 
     pub(crate) fn archive_and_reinitialize_managed_repository<R: Runtime>(
@@ -2058,6 +2506,25 @@ impl DesktopWorkflow {
         self.finish_transition_preserving_session();
     }
 
+    fn finish_import_candidate_failure(
+        &self,
+        mut candidate: SidecarSupervisor,
+        phase: &str,
+        reason: &str,
+        message: &str,
+        residual_path: Option<String>,
+        cleanup_failure: Option<String>,
+    ) -> ImportRepositoryResult {
+        let message = match candidate.shutdown() {
+            Ok(()) => message.to_owned(),
+            Err(_) => {
+                format!("{message} The temporary import sidecar could not be cleaned up safely.")
+            }
+        };
+        self.finish_transition_preserving_session();
+        import_failure_with_cleanup(phase, reason, &message, residual_path, cleanup_failure)
+    }
+
     fn finish_claimed_initialization_failure(
         &self,
         candidate: SidecarSupervisor,
@@ -2142,6 +2609,18 @@ pub async fn desktop_initialize_managed_repository(
 
     let result = workflow
         .initialize_managed_repository(&app, selected_path)
+        .map_err(|error| error.user_message());
+    crate::update_repository_menu(&app);
+    result
+}
+
+#[tauri::command]
+pub async fn desktop_import_repository<R: Runtime>(
+    app: AppHandle<R>,
+    workflow: State<'_, DesktopWorkflow>,
+) -> Result<ImportRepositoryResult, String> {
+    let result = workflow
+        .import_repository(&app)
         .map_err(|error| error.user_message());
     crate::update_repository_menu(&app);
     result
@@ -2398,6 +2877,35 @@ fn canonicalize_repository_path(path: &Path) -> Result<PathBuf, DesktopRuntimeEr
     }
 
     Ok(canonical)
+}
+
+fn canonicalize_import_source(path: &Path) -> Result<PathBuf, DesktopRuntimeError> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| DesktopRuntimeError::InvalidDirectory)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(DesktopRuntimeError::InvalidDirectory);
+    }
+    canonicalize_repository_path(path)
+}
+
+fn validate_published_managed_child(
+    root: &Path,
+    published_path: &Path,
+) -> Result<PathBuf, DesktopRuntimeError> {
+    let metadata =
+        fs::symlink_metadata(published_path).map_err(|_| DesktopRuntimeError::InvalidDirectory)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(DesktopRuntimeError::InvalidDirectory);
+    }
+
+    let canonical = canonicalize_repository_path(published_path)?;
+    if canonical.parent() != Some(root) {
+        return Err(DesktopRuntimeError::InvalidDirectory);
+    }
+    Ok(canonical)
+}
+
+fn path_is_within(parent: &Path, child: &Path) -> bool {
+    child == parent || child.starts_with(parent)
 }
 
 fn canonicalize_readable_regular_file(path: &Path) -> Result<PathBuf, DesktopRuntimeError> {
@@ -2851,6 +3359,17 @@ fn repository_watched_save_comparison_command(repo_path: &str, save_path: &str) 
     })
 }
 
+fn repository_watched_save_repositories_comparison_command(
+    left_repo_path: &str,
+    right_repo_path: &str,
+) -> Value {
+    json!({
+        "type": "repository.compareWatchedSaveRepositories",
+        "leftRepoPath": left_repo_path,
+        "rightRepoPath": right_repo_path,
+    })
+}
+
 fn parse_repository_watched_save_comparison(response: &Value) -> Result<bool, DesktopRuntimeError> {
     if response.pointer("/result/type").and_then(Value::as_str)
         != Some("repository.watchedSaveCompared")
@@ -2865,6 +3384,27 @@ fn parse_repository_watched_save_comparison(response: &Value) -> Result<bool, De
         .ok_or_else(|| {
             DesktopRuntimeError::Protocol(
                 "The Desktop sidecar returned an invalid Watched Save comparison.".into(),
+            )
+        })
+}
+
+fn parse_repository_watched_save_repositories_comparison(
+    response: &Value,
+) -> Result<bool, DesktopRuntimeError> {
+    if response.pointer("/result/type").and_then(Value::as_str)
+        != Some("repository.watchedSaveRepositoriesCompared")
+    {
+        return Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid Watched Save repository comparison.".into(),
+        ));
+    }
+    response
+        .pointer("/result/same")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| {
+            DesktopRuntimeError::Protocol(
+                "The Desktop sidecar returned an invalid Watched Save repository comparison."
+                    .into(),
             )
         })
 }
@@ -2939,6 +3479,200 @@ fn parse_managed_initialization_result(
     }
 }
 
+enum ImportProtocolResult {
+    Copied {
+        repo_path: String,
+        source_status: String,
+        cleanup_failure: Option<String>,
+    },
+    Rejected {
+        reason: String,
+        status: Option<String>,
+        cleanup_failure: Option<String>,
+    },
+    Failed {
+        phase: String,
+        reason: String,
+        message: String,
+        source_state: String,
+        retained_path: Option<String>,
+        cleanup_failure: Option<String>,
+    },
+}
+
+fn parse_repository_import_result(
+    response: &Value,
+) -> Result<ImportProtocolResult, DesktopRuntimeError> {
+    let imported = response.pointer("/result/import").ok_or_else(|| {
+        DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an invalid repository import result.".into(),
+        )
+    })?;
+    match imported.get("status").and_then(Value::as_str) {
+        Some("copied") => {
+            let snapshot = imported.get("snapshot").ok_or_else(|| {
+                DesktopRuntimeError::Protocol(
+                    "The Desktop sidecar returned an invalid imported snapshot.".into(),
+                )
+            })?;
+            let repo_path = snapshot
+                .get("repoPath")
+                .and_then(Value::as_str)
+                .filter(|path| !path.is_empty())
+                .ok_or_else(|| {
+                    DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid imported repository path.".into(),
+                    )
+                })?;
+            let source_status = imported
+                .get("sourceStatus")
+                .and_then(Value::as_str)
+                .filter(|status| {
+                    matches!(
+                        *status,
+                        "ready" | "rebuildRequired" | "legacyConfig" | "migrationRequired"
+                    )
+                })
+                .ok_or_else(|| {
+                    DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar returned an invalid imported source status.".into(),
+                    )
+                })?;
+            Ok(ImportProtocolResult::Copied {
+                repo_path: repo_path.into(),
+                source_status: source_status.into(),
+                cleanup_failure: imported
+                    .get("cleanupFailure")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            })
+        }
+        Some("rejected") => Ok(ImportProtocolResult::Rejected {
+            reason: imported
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("invalidSource")
+                .into(),
+            status: imported
+                .get("sourceStatus")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            cleanup_failure: imported
+                .get("cleanupFailure")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        }),
+        Some("failed") => Ok(ImportProtocolResult::Failed {
+            phase: imported
+                .get("phase")
+                .and_then(Value::as_str)
+                .unwrap_or("copy")
+                .into(),
+            reason: imported
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("copyFailed")
+                .into(),
+            message: imported
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("The external repository could not be imported.")
+                .into(),
+            retained_path: imported
+                .get("retainedPath")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            source_state: imported
+                .get("sourceState")
+                .and_then(Value::as_str)
+                .unwrap_or("unchanged")
+                .into(),
+            cleanup_failure: imported
+                .get("cleanupFailure")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        }),
+        _ => Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar returned an unknown repository import status.".into(),
+        )),
+    }
+}
+
+fn is_import_source_status(status: &str) -> bool {
+    matches!(
+        status,
+        "ready" | "rebuildRequired" | "legacyConfig" | "migrationRequired"
+    )
+}
+
+fn import_inspection_rejection(status: &str, _required_action: &str) -> ImportRepositoryResult {
+    let reason = match status {
+        "newerIncompatible" => "newerIncompatible",
+        _ => "invalidSource",
+    };
+    ImportRepositoryResult::Rejected {
+        reason: reason.into(),
+        message: import_reason_message(reason),
+        status: Some(status.into()),
+        cleanup_failure: None,
+    }
+}
+
+fn import_rejected(reason: &str, message: String) -> ImportRepositoryResult {
+    ImportRepositoryResult::Rejected {
+        reason: reason.into(),
+        message,
+        status: None,
+        cleanup_failure: None,
+    }
+}
+
+fn import_failure(
+    phase: &str,
+    reason: &str,
+    message: &str,
+    residual_path: Option<String>,
+) -> ImportRepositoryResult {
+    import_failure_with_cleanup(phase, reason, message, residual_path, None)
+}
+
+fn import_failure_with_cleanup(
+    phase: &str,
+    reason: &str,
+    message: &str,
+    residual_path: Option<String>,
+    cleanup_failure: Option<String>,
+) -> ImportRepositoryResult {
+    ImportRepositoryResult::Failed {
+        phase: phase.into(),
+        reason: reason.into(),
+        message: message.into(),
+        source_state: "unchanged".into(),
+        residual_path,
+        cleanup_failure,
+    }
+}
+
+fn import_reason_message(reason: &str) -> String {
+    match reason {
+        "invalidPlacement" => {
+            "Choose an external repository outside the App-managed library.".into()
+        }
+        "duplicateWatchedSave" => {
+            "A managed repository already watches this save.".into()
+        }
+        "newerIncompatible" => {
+            "This repository was created by a newer incompatible app. Update Desktop before importing it.".into()
+        }
+        "invalidSource" => {
+            "This folder is not a compatible Save History Repository.".into()
+        }
+        "repositoryBusy" => "The external repository is busy with another write.".into(),
+        "watcherAlreadyAcquired" => "Another process is already watching the external repository.".into(),
+        _ => "The external repository could not be imported safely.".into(),
+    }
+}
+
 fn initialization_failure(
     phase: &str,
     message: &str,
@@ -3000,6 +3734,49 @@ fn find_duplicate_managed_repository(
     selected_save_path: &Path,
     inspector: &mut SidecarSupervisor,
 ) -> Result<Option<String>, DesktopRuntimeError> {
+    let selected_save_path = repository_path_for_protocol(selected_save_path)?;
+    for (name, candidate) in enumerate_direct_managed_repository_children(root)? {
+        let candidate_path = repository_path_for_protocol(&candidate)?;
+        let response = inspector
+            .command(repository_watched_save_comparison_command(
+                &candidate_path,
+                &selected_save_path,
+            ))
+            .map_err(DesktopRuntimeError::from)?;
+        if parse_repository_watched_save_comparison(&response)? {
+            return Ok(Some(name));
+        }
+    }
+
+    Ok(None)
+}
+
+fn find_duplicate_managed_repository_by_repository(
+    root: &Path,
+    source_path: &Path,
+    inspector: &mut SidecarSupervisor,
+) -> Result<Option<String>, DesktopRuntimeError> {
+    let source_path = repository_path_for_protocol(source_path)?;
+    for (name, candidate) in enumerate_direct_managed_repository_children(root)? {
+        let candidate_path = repository_path_for_protocol(&candidate)?;
+        let response = inspector
+            .command(repository_watched_save_repositories_comparison_command(
+                &candidate_path,
+                &source_path,
+            ))
+            .map_err(DesktopRuntimeError::from)?;
+        if parse_repository_watched_save_repositories_comparison(&response)? {
+            return Ok(Some(name));
+        }
+    }
+
+    Ok(None)
+}
+
+fn enumerate_direct_managed_repository_children(
+    root: &Path,
+) -> Result<Vec<(String, PathBuf)>, DesktopRuntimeError> {
+    let mut children = Vec::new();
     for entry in fs::read_dir(root).map_err(|_| DesktopRuntimeError::Unavailable)? {
         let entry = entry.map_err(|_| DesktopRuntimeError::Unavailable)?;
         let file_type = entry
@@ -3014,20 +3791,9 @@ fn find_duplicate_managed_repository(
         if candidate.parent() != Some(root) {
             continue;
         }
-        let candidate_path = repository_path_for_protocol(&candidate)?;
-        let selected_save_path = repository_path_for_protocol(selected_save_path)?;
-        let response = inspector
-            .command(repository_watched_save_comparison_command(
-                &candidate_path,
-                &selected_save_path,
-            ))
-            .map_err(DesktopRuntimeError::from)?;
-        if parse_repository_watched_save_comparison(&response)? {
-            return Ok(Some(entry.file_name().to_string_lossy().into_owned()));
-        }
+        children.push((entry.file_name().to_string_lossy().into_owned(), candidate));
     }
-
-    Ok(None)
+    Ok(children)
 }
 
 struct ReplacementSource {
@@ -3994,7 +4760,7 @@ mod tests {
 
     use super::{
         ArchivePlacementPurpose, ArchiveRepositoryResult, DEVELOPMENT_SIDECAR_ENTRY,
-        DesktopRuntime, DesktopRuntimeError, ManagedInitializationResult,
+        DesktopRuntime, DesktopRuntimeError, ImportRepositoryResult, ManagedInitializationResult,
         OpenExternalRepositoryResult, PendingRepositoryMigration, PickStaticEncodedSaveResult,
         REPLACEMENT_CONFIRMATION, RepositoryLifecycle, RepositoryOpenIntent, SaveLocationPlatform,
         SaveLocationSystem, SidecarLaunch, SidecarSupervisor, StaticSaveFileSystem,
@@ -4442,6 +5208,412 @@ mod tests {
             Ok(OpenExternalRepositoryResult::RequiresAction { .. })
         ));
         assert!(runtime.connection().is_err());
+    }
+
+    #[test]
+    fn imports_a_copy_into_managed_library_without_opening_or_watching_it() {
+        let temp = TestDirectory::new();
+        let source = temp.path().join("external-repository");
+        let managed_root = temp.path().join("repositories");
+        let archives_root = temp.path().join("archives");
+        fs::create_dir(&source).expect("create source repository");
+        fs::write(source.join("durable-file"), "source remains unchanged")
+            .expect("write source content");
+        let script = temp.path().join("import-sidecar.mjs");
+        fs::write(
+            &script,
+            import_fixture_sidecar_source(source.to_str().expect("UTF-8 source path"), false),
+        )
+        .expect("write import fixture");
+
+        let runtime = DesktopRuntime::default();
+        let timestamp = test_initialization_time();
+        let result = runtime
+            .import_repository_at(
+                source.clone(),
+                managed_root.clone(),
+                archives_root,
+                SidecarLaunch::Development {
+                    entry: script,
+                    node: PathBuf::from("node"),
+                },
+                timestamp,
+            )
+            .expect("import repository");
+
+        let name = match result {
+            ImportRepositoryResult::Imported {
+                name,
+                source_status,
+                status,
+                required_action,
+                ..
+            } => {
+                assert_eq!(source_status, "ready");
+                assert_eq!(status, "rebuildRequired");
+                assert_eq!(required_action, "rebuildReadModel");
+                name
+            }
+            _ => panic!("unexpected import result"),
+        };
+        let target = managed_root.join(name);
+        assert!(target.is_dir());
+        assert_eq!(
+            fs::read_to_string(source.join("durable-file")).expect("read source"),
+            "source remains unchanged"
+        );
+        assert_eq!(
+            fs::read_to_string(target.join("durable-file")).expect("read imported copy"),
+            "source remains unchanged"
+        );
+        assert!(runtime.connection().is_err());
+        assert!(!runtime.repository_menu_state().close_enabled);
+    }
+
+    #[test]
+    fn import_spawn_failure_is_structured_and_preserves_source() {
+        let temp = TestDirectory::new();
+        let source = temp.path().join("external-repository");
+        fs::create_dir(&source).expect("create source repository");
+        fs::write(source.join("durable-file"), "source remains").expect("write source content");
+        let runtime = DesktopRuntime::default();
+
+        let result = runtime
+            .import_repository_at(
+                source.clone(),
+                temp.path().join("repositories"),
+                temp.path().join("archives"),
+                SidecarLaunch::Development {
+                    entry: temp.path().join("missing-sidecar.mjs"),
+                    node: PathBuf::from("node"),
+                },
+                test_initialization_time(),
+            )
+            .expect("structured import failure");
+
+        assert!(matches!(
+            result,
+            ImportRepositoryResult::Failed {
+                phase,
+                reason,
+                source_state,
+                ..
+            } if phase == "spawn" && reason == "sidecarUnavailable" && source_state == "unchanged"
+        ));
+        assert_eq!(
+            fs::read_to_string(source.join("durable-file")).expect("read source"),
+            "source remains"
+        );
+    }
+
+    #[test]
+    fn import_inspection_duplicate_and_command_failures_are_structured() {
+        for failure in ["inspection", "duplicate", "command"] {
+            let temp = TestDirectory::new();
+            let source = temp.path().join(format!("external-{failure}"));
+            let managed_root = temp.path().join("repositories");
+            fs::create_dir(&source).expect("create source repository");
+            fs::write(source.join("durable-file"), "source remains").expect("write source content");
+            if failure == "duplicate" {
+                fs::create_dir_all(managed_root.join("existing-managed"))
+                    .expect("create managed duplicate candidate");
+            }
+            let script = temp.path().join("import-failure-sidecar.mjs");
+            fs::write(
+                &script,
+                import_fixture_sidecar_source_with_failure(
+                    source.to_str().expect("UTF-8 source path"),
+                    false,
+                    failure,
+                ),
+            )
+            .expect("write failure fixture");
+
+            let result = DesktopRuntime::default()
+                .import_repository_at(
+                    source,
+                    managed_root,
+                    temp.path().join("archives"),
+                    SidecarLaunch::Development {
+                        entry: script,
+                        node: PathBuf::from("node"),
+                    },
+                    test_initialization_time(),
+                )
+                .expect("structured import failure");
+
+            let expected = match failure {
+                "inspection" => ("inspection", "inspectionFailed"),
+                "duplicate" => ("duplicate", "duplicateCheckFailed"),
+                "command" => ("command", "importCommandFailed"),
+                _ => unreachable!(),
+            };
+            assert!(matches!(
+                result,
+                ImportRepositoryResult::Failed {
+                    phase,
+                    reason,
+                    source_state,
+                    ..
+                } if phase == expected.0 && reason == expected.1 && source_state == "unchanged"
+            ));
+        }
+    }
+
+    #[test]
+    fn import_retains_a_published_copy_when_status_inspection_fails() {
+        let temp = TestDirectory::new();
+        let source = temp.path().join("external-repository");
+        let managed_root = temp.path().join("repositories");
+        fs::create_dir(&source).expect("create source repository");
+        fs::write(source.join("durable-file"), "source remains").expect("write source content");
+        let script = temp.path().join("status-failure-sidecar.mjs");
+        fs::write(
+            &script,
+            import_fixture_sidecar_source_with_failure(
+                source.to_str().expect("UTF-8 source path"),
+                false,
+                "status",
+            ),
+        )
+        .expect("write status failure fixture");
+
+        let result = DesktopRuntime::default()
+            .import_repository_at(
+                source.clone(),
+                managed_root,
+                temp.path().join("archives"),
+                SidecarLaunch::Development {
+                    entry: script,
+                    node: PathBuf::from("node"),
+                },
+                test_initialization_time(),
+            )
+            .expect("structured post-copy failure");
+
+        let retained_path = match result {
+            ImportRepositoryResult::Failed {
+                phase,
+                reason,
+                source_state,
+                residual_path: Some(path),
+                ..
+            } => {
+                assert_eq!(phase, "status");
+                assert_eq!(reason, "postCopyInspectionFailed");
+                assert_eq!(source_state, "unchanged");
+                path
+            }
+            _ => panic!("expected retained import copy failure"),
+        };
+        assert!(Path::new(&retained_path).is_dir());
+        assert_eq!(
+            fs::read_to_string(source.join("durable-file")).expect("read source"),
+            "source remains"
+        );
+    }
+
+    #[test]
+    fn import_preserves_cleanup_warning_after_post_copy_failures() {
+        for failure in ["status-cleanup", "shutdown-cleanup"] {
+            let temp = TestDirectory::new();
+            let source = temp.path().join("external-repository");
+            let managed_root = temp.path().join("repositories");
+            fs::create_dir(&source).expect("create source repository");
+            fs::write(source.join("durable-file"), "source remains").expect("write source content");
+            let script = temp.path().join("post-copy-failure-sidecar.mjs");
+            fs::write(
+                &script,
+                import_fixture_sidecar_source_with_failure(
+                    source.to_str().expect("UTF-8 source path"),
+                    false,
+                    failure,
+                ),
+            )
+            .expect("write failure fixture");
+
+            let result = DesktopRuntime::default()
+                .import_repository_at(
+                    source.clone(),
+                    managed_root,
+                    temp.path().join("archives"),
+                    SidecarLaunch::Development {
+                        entry: script,
+                        node: PathBuf::from("node"),
+                    },
+                    test_initialization_time(),
+                )
+                .expect("structured post-copy failure");
+
+            match (failure, result) {
+                (
+                    "status-cleanup",
+                    ImportRepositoryResult::Failed {
+                        phase,
+                        reason,
+                        cleanup_failure: Some(cleanup_failure),
+                        residual_path: Some(residual_path),
+                        ..
+                    },
+                ) => {
+                    assert_eq!(phase, "status");
+                    assert_eq!(reason, "postCopyInspectionFailed");
+                    assert_eq!(cleanup_failure, "leaseReleaseFailed");
+                    assert!(Path::new(&residual_path).is_dir());
+                }
+                (
+                    "shutdown-cleanup",
+                    ImportRepositoryResult::Failed {
+                        phase,
+                        reason,
+                        cleanup_failure: Some(cleanup_failure),
+                        residual_path: Some(residual_path),
+                        ..
+                    },
+                ) => {
+                    assert_eq!(phase, "status");
+                    assert_eq!(reason, "sidecarShutdownFailed");
+                    assert_eq!(cleanup_failure, "leaseReleaseFailed");
+                    assert!(Path::new(&residual_path).is_dir());
+                }
+                _ => panic!("unexpected structured post-copy result"),
+            }
+            assert_eq!(
+                fs::read_to_string(source.join("durable-file")).expect("read source"),
+                "source remains"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn import_rejects_a_symlinked_managed_root_as_a_structured_failure() {
+        use std::os::unix::fs::symlink;
+
+        let temp = TestDirectory::new();
+        let source = temp.path().join("external-repository");
+        let outside = temp.path().join("outside");
+        let managed_root = temp.path().join("repositories");
+        fs::create_dir(&source).expect("create source repository");
+        fs::create_dir(&outside).expect("create outside root");
+        symlink(&outside, &managed_root).expect("create managed root symlink");
+        fs::write(source.join("durable-file"), "source remains").expect("write source content");
+
+        let result = DesktopRuntime::default()
+            .import_repository_at(
+                source.clone(),
+                managed_root,
+                temp.path().join("archives"),
+                SidecarLaunch::Development {
+                    entry: temp.path().join("unused.mjs"),
+                    node: PathBuf::from("node"),
+                },
+                test_initialization_time(),
+            )
+            .expect("structured placement failure");
+
+        assert!(matches!(
+            result,
+            ImportRepositoryResult::Failed { phase, reason, .. }
+                if phase == "placement" && reason == "managedRootUnavailable"
+        ));
+        assert!(
+            fs::read_dir(outside)
+                .expect("read outside root")
+                .next()
+                .is_none()
+        );
+        assert!(source.join("durable-file").is_file());
+    }
+
+    #[test]
+    fn import_duplicate_preflight_checks_direct_managed_children_and_preserves_source() {
+        let temp = TestDirectory::new();
+        let source = temp.path().join("external-repository");
+        let managed_root = temp.path().join("repositories");
+        let managed_child = managed_root.join("existing-managed");
+        fs::create_dir(&source).expect("create source repository");
+        fs::create_dir_all(&managed_child).expect("create managed child");
+        fs::write(source.join("durable-file"), "source remains").expect("write source content");
+        let script = temp.path().join("duplicate-sidecar.mjs");
+        fs::write(
+            &script,
+            import_fixture_sidecar_source(source.to_str().expect("UTF-8 source path"), true),
+        )
+        .expect("write duplicate fixture");
+
+        let result = DesktopRuntime::default()
+            .import_repository_at(
+                source.clone(),
+                managed_root.clone(),
+                temp.path().join("archives"),
+                SidecarLaunch::Development {
+                    entry: script,
+                    node: PathBuf::from("node"),
+                },
+                test_initialization_time(),
+            )
+            .expect("duplicate preflight");
+
+        assert!(matches!(
+            result,
+            ImportRepositoryResult::Rejected { reason, .. } if reason == "duplicateWatchedSave"
+        ));
+        assert!(managed_child.is_dir());
+        assert!(source.join("durable-file").is_file());
+        assert!(
+            fs::read_dir(&managed_root)
+                .expect("read managed root")
+                .filter_map(Result::ok)
+                .all(|entry| entry.file_name() == "existing-managed")
+        );
+    }
+
+    #[test]
+    fn import_rejects_an_active_external_session_without_changing_it() {
+        let temp = TestDirectory::new();
+        let repository = temp.path().join("external-session");
+        fs::create_dir(&repository).expect("create external repository");
+        let open_script = temp.path().join("open-sidecar.mjs");
+        fs::write(
+            &open_script,
+            fixture_sidecar_source(repository.to_str().expect("UTF-8 repository path"), "ready"),
+        )
+        .expect("write open fixture");
+        let runtime = DesktopRuntime::default();
+        runtime
+            .open_repository_path_with_launch(
+                repository,
+                SidecarLaunch::Development {
+                    entry: open_script,
+                    node: PathBuf::from("node"),
+                },
+            )
+            .expect("open external session");
+        let connection = runtime.connection().expect("external connection");
+
+        let result = runtime
+            .import_repository_at(
+                temp.path().join("not-selected-after-guard"),
+                temp.path().join("repositories"),
+                temp.path().join("archives"),
+                SidecarLaunch::Development {
+                    entry: temp.path().join("unused.mjs"),
+                    node: PathBuf::from("node"),
+                },
+                test_initialization_time(),
+            )
+            .expect("external session import rejection");
+
+        assert!(matches!(
+            result,
+            ImportRepositoryResult::Rejected { reason, .. } if reason == "externalSession"
+        ));
+        assert_eq!(
+            runtime.connection().expect("connection remains").endpoint,
+            connection.endpoint
+        );
+        runtime.shutdown().expect("shutdown external session");
     }
 
     #[test]
@@ -5221,7 +6393,7 @@ mod tests {
 import fs from "node:fs";
 import path from "node:path";
 const write = (message) => process.stdout.write(JSON.stringify(message) + "\n");
-write({ protocolVersion: 9, kind: "event", event: { type: "process.ready" } });
+write({ protocolVersion: 10, kind: "event", event: { type: "process.ready" } });
 let buffer = "";
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
@@ -5233,10 +6405,10 @@ process.stdin.on("data", (chunk) => {
     if (request.command.type === "repository.archive") {
       const destination = request.command.targetPath;
       fs.renameSync(request.command.sourcePath, destination);
-      write({ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true,
+      write({ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true,
         result: { type: "repository.archiveResult", archive: { status: "archived", repoPath: destination, name: path.basename(destination) } } });
     } else if (request.command.type === "process.shutdown") {
-      write({ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true,
+      write({ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true,
         result: { type: "process.shutdownComplete" } });
       process.exit(0);
     }
@@ -6529,13 +7701,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 9, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 10, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 9, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 10, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 
-write({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -6647,10 +7819,10 @@ function write(message) {
   process.stdout.write(JSON.stringify(message) + "\n");
 }
 function response(requestId, result) {
-  write({ protocolVersion: 9, kind: "response", requestId, ok: true, result });
+  write({ protocolVersion: 10, kind: "response", requestId, ok: true, result });
 }
 function failure(requestId) {
-  write({ protocolVersion: 9, kind: "response", requestId, ok: false, error: { code: "repository_watched_save_compare_failed", message: "uncomparable Watched Save should be skipped" } });
+  write({ protocolVersion: 10, kind: "response", requestId, ok: false, error: { code: "repository_watched_save_compare_failed", message: "uncomparable Watched Save should be skipped" } });
 }
 function inspection() {
   return { status: "ready", requiredAction: "open", capabilities: ["read", "write"] };
@@ -6659,7 +7831,7 @@ const comparisonMarker = __COMPARISON_MARKER__;
 let sourcePath;
 let archivePath;
 
-write({ protocolVersion: 9, kind: "event", event: { type: "process.ready" } });
+write({ protocolVersion: 10, kind: "event", event: { type: "process.ready" } });
 let buffer = "";
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
@@ -6727,13 +7899,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 9, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 10, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 9, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 10, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 
-write({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -6864,13 +8036,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 9, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 10, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 9, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 10, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 function mutation(status) {{
-  write({{ protocolVersion: 9, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
+  write({{ protocolVersion: 10, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
 }}
 function inspection() {{
   const ready = repositoryStatus === "ready";
@@ -6881,7 +8053,7 @@ function inspection() {{
   }};
 }}
 
-write({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -6971,7 +8143,7 @@ if (process.argv.includes(repository)) {{
   process.exitCode = 91;
   process.exit();
 }}
-process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -6990,18 +8162,106 @@ process.stdin.on("data", (chunk) => {{
       result = {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
     }} else if (request.command.type === "process.shutdown") {{
       result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }} else {{
       result = {{ type: request.command.type === "watcher.start" ? "watcher.started" : "watcher.stopped" }};
     }}
-    process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+    process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
     if (request.command.type === "session.open" && {status:?} === "mutation") {{
-      process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
     }}
   }}
 }});
 "#
+        )
+    }
+
+    fn import_fixture_sidecar_source(source: &str, duplicate: bool) -> String {
+        import_fixture_sidecar_source_with_failure(source, duplicate, "none")
+    }
+
+    fn import_fixture_sidecar_source_with_failure(
+        source: &str,
+        duplicate: bool,
+        failure: &str,
+    ) -> String {
+        let source = serde_json::to_string(source).expect("serialize source path");
+        let failure = serde_json::to_string(failure).expect("serialize import failure");
+        format!(
+            r#"
+import fs from "node:fs";
+const source = {source};
+const duplicate = {duplicate};
+const failure = {failure};
+const failureKind = failure.replace(/-cleanup$/, "");
+const cleanupFailure = failure.endsWith("-cleanup") ? "leaseReleaseFailed" : undefined;
+process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+let buffer = "";
+function response(request, result) {{
+  process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+}}
+function failureResponse(request, code, message) {{
+  process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: false, error: {{ code, message }} }}) + "\n");
+}}
+process.stdin.on("data", (chunk) => {{
+  buffer += chunk;
+  for (;;) {{
+    const newline = buffer.indexOf("\n");
+    if (newline < 0) return;
+    const request = JSON.parse(buffer.slice(0, newline));
+    buffer = buffer.slice(newline + 1);
+    const command = request.command;
+    if (command.type === "repository.inspect") {{
+      if (failureKind === "inspection" || (failureKind === "status" && command.repoPath !== source)) {{
+        failureResponse(request, "repository_inspect_failed", "fixture inspection failed");
+        continue;
+      }}
+      const status = command.repoPath === source ? "ready" : "rebuildRequired";
+      response(request, {{ type: "repository.inspected", inspection: {{
+        status,
+        requiredAction: status === "ready" ? "open" : "rebuildReadModel",
+        capabilities: ["read"]
+      }} }});
+      continue;
+    }}
+    if (command.type === "repository.compareWatchedSaveRepositories") {{
+      if (failureKind === "duplicate") {{
+        failureResponse(request, "repository_watched_save_repositories_compare_failed", "fixture duplicate check failed");
+        continue;
+      }}
+      response(request, {{ type: "repository.watchedSaveRepositoriesCompared", same: duplicate }});
+      continue;
+    }}
+    if (command.type === "repository.import") {{
+      if (failureKind === "command") {{
+        failureResponse(request, "repository_import_failed", "fixture import command failed");
+        continue;
+      }}
+      fs.cpSync(command.sourcePath, command.targetPath, {{ recursive: true }});
+      response(request, {{ type: "repository.importResult", import: {{
+        status: "copied",
+        sourceStatus: "ready",
+        snapshot: {{ repoPath: command.targetPath, directoryDigest: "a".repeat(64) }},
+        ...(cleanupFailure === undefined ? {{}} : {{ cleanupFailure }})
+      }} }});
+      continue;
+    }}
+    if (command.type === "process.shutdown") {{
+      if (failureKind === "shutdown") {{
+        failureResponse(request, "shutdown_failed", "fixture shutdown failed");
+        continue;
+      }}
+      response(request, {{ type: "process.shutdownComplete" }});
+      process.exit(0);
+    }}
+    throw new Error("unexpected import fixture command");
+  }}
+}});
+"#,
+            source = source,
+            duplicate = duplicate,
+            failure = failure,
         )
     }
 
@@ -7010,7 +8270,7 @@ process.stdin.on("data", (chunk) => {{
         format!(
             r#"
 const repository = {repository};
-process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -7022,7 +8282,7 @@ process.stdin.on("data", (chunk) => {{
     ? {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }}
     : {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
   if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) throw new Error("wrong repository");
-  process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
   if (request.command.type === "session.open") process.exit(1);
 }});
 "#
@@ -7037,7 +8297,7 @@ process.stdin.on("data", (chunk) => {{
 import fs from "node:fs";
 const repository = {repository};
 const marker = {marker};
-process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -7049,12 +8309,12 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "repository.inspect") {{
       if (request.command.repoPath !== repository) throw new Error("repository path was not sent over stdin");
       const result = {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }};
-  process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       continue;
     }}
     if (request.command.type === "session.open") {{
       const error = {{
-        protocolVersion: 9,
+        protocolVersion: 10,
         kind: "response",
         requestId: request.requestId,
         ok: false,
@@ -7069,7 +8329,7 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "process.shutdown") {{
       fs.writeFileSync(marker, "shutdown");
       const result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 9, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }}
     throw new Error("unexpected candidate command");

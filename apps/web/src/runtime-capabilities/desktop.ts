@@ -1,5 +1,6 @@
 import type {
   ArchiveRepositoryResult,
+  ImportRepositoryResult,
   ManagedInitializationResult,
   ManagedRepositoryReplacementResult,
   OpenExternalRepositoryResult,
@@ -19,6 +20,7 @@ export function createDesktopRuntimeCapabilities(input: {
     | RepoSessionConnection;
   readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
   readonly initializeManagedRepository?: () => Promise<ManagedInitializationResult>;
+  readonly importRepository?: () => Promise<ImportRepositoryResult>;
   readonly archiveAndReinitializeManagedRepository?: () => Promise<ManagedRepositoryReplacementResult>;
   readonly pickStaticEncodedSave?: () => Promise<PickStaticEncodedSaveResult>;
   readonly onStaticEncodedSavePicked?: (
@@ -54,6 +56,7 @@ export function createDesktopRuntimeCapabilities(input: {
     kind: "desktop",
     openExternalRepository: input.openExternalRepository,
     initializeManagedRepository: input.initializeManagedRepository,
+    importRepository: input.importRepository,
     archiveAndReinitializeManagedRepository:
       input.archiveAndReinitializeManagedRepository,
     pickStaticEncodedSave:

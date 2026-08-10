@@ -129,6 +129,33 @@ export type ManagedInitializationResult =
   | { readonly kind: "blockedByMutation" }
   | { readonly kind: "busy" };
 
+export type ImportRepositoryResult =
+  | { readonly kind: "cancelled" }
+  | {
+      readonly kind: "imported";
+      readonly name: string;
+      readonly sourceStatus: string;
+      readonly requiredAction: string;
+      readonly status: string;
+      readonly cleanupFailure?: "leaseReleaseFailed";
+    }
+  | {
+      readonly kind: "rejected";
+      readonly message: string;
+      readonly reason: string;
+      readonly status?: string;
+      readonly cleanupFailure?: "leaseReleaseFailed";
+    }
+  | {
+      readonly kind: "failed";
+      readonly message: string;
+      readonly phase: string;
+      readonly reason: string;
+      readonly residualPath?: string;
+      readonly sourceState: "unchanged";
+      readonly cleanupFailure?: "leaseReleaseFailed";
+    };
+
 export type ArchiveRepositoryResult =
   | { readonly kind: "archived"; readonly name: string }
   | { readonly kind: "busy" }
@@ -184,6 +211,7 @@ export type RuntimeCapabilities =
       }) => Promise<OpenExternalRepositoryResult>;
       readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
       readonly initializeManagedRepository?: () => Promise<ManagedInitializationResult>;
+      readonly importRepository?: () => Promise<ImportRepositoryResult>;
       readonly archiveAndReinitializeManagedRepository?: () => Promise<ManagedRepositoryReplacementResult>;
       /** Opens the native Encoded Save picker without exposing filesystem authority. */
       readonly pickStaticEncodedSave: () => Promise<PickStaticEncodedSaveResult>;

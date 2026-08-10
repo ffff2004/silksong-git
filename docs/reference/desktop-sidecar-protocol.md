@@ -21,7 +21,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 9,
+  "protocolVersion": 10,
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +36,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 9,
+  "protocolVersion": 10,
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,7 +49,7 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 9 accepts these commands:
+Version 10 accepts these commands:
 
 - `repository.inspect` with one absolute `repoPath` and an optional
   `gitIntegrityPolicy` of `strict` (default) or `advisory`;
@@ -62,6 +62,16 @@ Version 9 accepts these commands:
   Watched Save identity matches the candidate for current or legacy-compatible
   Project Config. An unavailable or incompatible config is a comparison
   failure, not a false match;
+- `repository.compareWatchedSaveRepositories` with two absolute repository
+  paths, returning only whether their configured Watched Save identities match;
+- `repository.import` with an absolute external `sourcePath` and an App-owned
+  absolute `targetPath`, returning a structured copied, rejected, or failed
+  result. Operational failures include a phase, reason, unchanged source
+  state, safe message, and any retained path; session or mutation busy states
+  use this result rather than a generic error envelope. Schema-invalid import
+  commands use the same successful response envelope with
+  `failed/preflight/invalidCommand/unchanged`, and do not inspect, copy, or
+  remove the source;
 - `repository.archive` with an absolute `sourcePath` and an App-generated
   absolute `targetPath`;
 - `repository.replacement.prepare` with an App-generated lifecycle
@@ -137,6 +147,17 @@ post-rebuild safe repository statusâ€”status, required action, and capabilitiesâ
 without an inspection ID or persistence details. Rebuild never rewrites
 canonical Git Raw Save Observation history.
 
+`repository.import` copies an accepted external repository without changing
+the source, rebuilding its read model, or starting a watcher. History excludes
+ephemeral read-model and lease files, verifies the source and published copy,
+and publishes to a collision-safe path. The result includes the source status
+(`ready`, `rebuildRequired`, `legacyConfig`, or `migrationRequired`) and the
+published snapshot when copying succeeds. Lease cleanup is reported as the
+structured `cleanupFailure: "leaseReleaseFailed"` warning without removing the
+source or published copy. Desktop preserves that warning if publication-path,
+post-copy status/name, or sidecar shutdown handling fails after a copy; a later
+Desktop status failure retains the published copy for inspection or recovery.
+
 `save.inspect` is a stateless Core adapter, not a History or Repo Session
 operation. It repeats regular-file/readability validation immediately before
 reading and uses Core's public Encoded Save decoder regardless of filename or
@@ -151,7 +172,7 @@ compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 9,
+  "protocolVersion": 10,
   "kind": "response",
   "requestId": "open-1",
   "ok": true,
@@ -187,7 +208,7 @@ The current event types are:
 
 `mutation.activity` projects only the mutation class (`manualCheckpoint`,
 `inPlaceRestore`, `repositoryMigration`, `managedInitialization`,
-`managedReplacement`, or `repositoryRebuild`) and
+`managedReplacement`, `repositoryImport`, or `repositoryRebuild`) and
 `started` or `finished`. It
 contains no request body, save path, commit reference, or result. Desktop uses
 it solely to reject a normal replacement or exit while the admitted mutation

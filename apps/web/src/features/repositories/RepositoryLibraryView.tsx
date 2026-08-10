@@ -54,6 +54,7 @@ export function RepositoryLibraryView() {
     createSignal<MigrationOutcome>();
   const [migrating, setMigrating] = createSignal(false);
   const [initializing, setInitializing] = createSignal(false);
+  const [importing, setImporting] = createSignal(false);
   const [replacing, setReplacing] = createSignal(false);
   const repositorySwitchingDisabled = () =>
     opening() !== undefined
@@ -62,6 +63,7 @@ export function RepositoryLibraryView() {
     || migrating()
     || migration() !== undefined
     || initializing()
+    || importing()
     || replacing()
     || localHistory.workflowState().kind === "transitioning";
   const invalidatedWorkflow = () => {
@@ -564,6 +566,74 @@ export function RepositoryLibraryView() {
     }
   };
 
+  const importRepository = async () => {
+    if (
+      runtimeCapabilities.kind !== "desktop"
+      || runtimeCapabilities.importRepository === undefined
+      || importing()
+      || repositorySwitchingDisabled()
+    ) {
+      return;
+    }
+    setImporting(true);
+    setError(undefined);
+    try {
+      const result = await localHistory.importRepository();
+      switch (result.kind) {
+        case "cancelled": {
+          break;
+        }
+
+        case "imported": {
+          if (await refresh()) {
+            if (result.cleanupFailure === "leaseReleaseFailed") {
+              setError(
+                `Imported ${result.name}, but History could not confirm lease cleanup. Restart Desktop before retrying repository work.`,
+              );
+            } else {
+              toastStore.showToast(`Imported ${result.name} successfully!`);
+            }
+          } else {
+            setError(
+              `Repository ${result.name} was imported, but the repository list could not be refreshed.`,
+            );
+          }
+          break;
+        }
+
+        case "rejected": {
+          const cleanupWarning =
+            result.cleanupFailure === "leaseReleaseFailed"
+              ? " History could not confirm lease cleanup; restart Desktop before retrying repository work."
+              : "";
+          await refresh();
+          setError(`${result.message}${cleanupWarning}`);
+          return;
+        }
+
+        case "failed": {
+          const cleanupWarning =
+            result.cleanupFailure === "leaseReleaseFailed"
+              ? " History could not confirm lease cleanup; restart Desktop before retrying repository work."
+              : "";
+          await refresh();
+          setError(
+            `${result.residualPath === undefined ? result.message : `${result.message} Retained copy: ${result.residualPath}`}${cleanupWarning}`,
+          );
+          break;
+        }
+      }
+    } catch (error_) {
+      setError(
+        error_ instanceof Error
+          ? error_.message
+          : "Could not import the external repository.",
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
   onMount(() => {
     refresh().catch(() => undefined);
   });
@@ -596,6 +666,19 @@ export function RepositoryLibraryView() {
         }}
       >
         {initializing() ? "Initializing…" : "Initialize and watch save…"}
+      </button>
+      <button
+        class={buttonStyles["primary"]}
+        id="import-repository"
+        type="button"
+        disabled={importing() || repositorySwitchingDisabled()}
+        onClick={() => {
+          importRepository().catch(() => {
+            setError("Could not import the external repository.");
+          });
+        }}
+      >
+        {importing() ? "Importing…" : "Import repository…"}
       </button>
       <button
         class={buttonStyles["primary"]}

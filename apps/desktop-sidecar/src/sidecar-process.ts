@@ -6,6 +6,7 @@ import type { Writable } from "node:stream";
 
 import { decodeEncodedSave } from "@silksong-git/core";
 import type {
+  CopyRepositorySnapshotResult,
   MigrateSaveHistoryRepositoryResult,
   PrepareSaveHistoryMigrationResult,
   PreparedSaveHistoryMigration,
@@ -17,6 +18,8 @@ import type {
 } from "@silksong-git/history";
 import {
   compareWatchedSave,
+  compareWatchedSaveRepositories,
+  copyRepositorySnapshot,
   initSaveHistory,
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
@@ -44,6 +47,8 @@ import {
   processShutdownCommandSchema,
   repositoryArchiveCommandSchema,
   repositoryCompareWatchedSaveCommandSchema,
+  repositoryCompareWatchedSaveRepositoriesCommandSchema,
+  repositoryImportCommandSchema,
   repositoryInitializeCommandSchema,
   repositoryInspectCommandSchema,
   repositoryMigrateCommandSchema,
@@ -224,9 +229,29 @@ export async function runDesktopSidecarProcess(
         };
       }
 
+      case "repository.import": {
+        return {
+          response: await importRepository(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
       case "repository.compareWatchedSave": {
         return {
           response: await compareRepositoryWatchedSave(
+            envelope.requestId,
+            envelope.command,
+          ),
+          exitAfterResponse: false,
+        };
+      }
+
+      case "repository.compareWatchedSaveRepositories": {
+        return {
+          response: await compareRepositoryWatchedSaveRepositories(
             envelope.requestId,
             envelope.command,
           ),
@@ -564,6 +589,87 @@ export async function runDesktopSidecarProcess(
     return response;
   }
 
+  async function importRepository(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult = repositoryImportCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createSuccessResponse(requestId, {
+        type: "repository.importResult",
+        import: createImportFailure(
+          "preflight",
+          "invalidCommand",
+          "The repository.import command is invalid.",
+        ),
+      });
+    }
+    const { sourcePath, targetPath } = commandResult.data;
+    if (!path.isAbsolute(sourcePath) || !path.isAbsolute(targetPath)) {
+      return createSuccessResponse(requestId, {
+        type: "repository.importResult",
+        import: createImportFailure(
+          "preflight",
+          "invalidPath",
+          "The repository import paths must be absolute.",
+        ),
+      });
+    }
+    if (session !== undefined) {
+      return createSuccessResponse(requestId, {
+        type: "repository.importResult",
+        import: createImportFailure(
+          "session",
+          "sessionBusy",
+          "The sidecar already owns a repository session.",
+        ),
+      });
+    }
+    if (preparedMigration !== undefined || pendingReplacement !== undefined) {
+      return createSuccessResponse(requestId, {
+        type: "repository.importResult",
+        import: createImportFailure(
+          "mutation",
+          "mutationBusy",
+          "The sidecar is busy with another repository mutation.",
+        ),
+      });
+    }
+    emitEvent({
+      type: "mutation.activity",
+      mutation: "repositoryImport",
+      status: "started",
+    });
+    let result: CopyRepositorySnapshotResult;
+    try {
+      result = await copyRepositorySnapshot({ sourcePath, targetPath });
+    } catch {
+      writeDiagnostic("Repository import failed.");
+      emitEvent({
+        type: "mutation.activity",
+        mutation: "repositoryImport",
+        status: "finished",
+      });
+      return createSuccessResponse(requestId, {
+        type: "repository.importResult",
+        import: createImportFailure(
+          "copy",
+          "copyFailed",
+          "The external repository could not be imported.",
+        ),
+      });
+    }
+    emitEvent({
+      type: "mutation.activity",
+      mutation: "repositoryImport",
+      status: "finished",
+    });
+    return createSuccessResponse(requestId, {
+      type: "repository.importResult",
+      import: toProtocolImportResult(result),
+    });
+  }
+
   async function compareRepositoryWatchedSave(
     requestId: string,
     command: unknown,
@@ -601,6 +707,45 @@ export async function runDesktopSidecarProcess(
         requestId,
         "repository_watched_save_compare_failed",
         "The repository's Watched Save could not be compared.",
+      );
+    }
+  }
+
+  async function compareRepositoryWatchedSaveRepositories(
+    requestId: string,
+    command: unknown,
+  ): Promise<DesktopSidecarResponse> {
+    const commandResult =
+      repositoryCompareWatchedSaveRepositoriesCommandSchema.safeParse(command);
+    if (!commandResult.success) {
+      return createFailureResponse(
+        requestId,
+        "invalid_command",
+        "The repository.compareWatchedSaveRepositories command is invalid.",
+      );
+    }
+    const { leftRepoPath, rightRepoPath } = commandResult.data;
+    if (!path.isAbsolute(leftRepoPath) || !path.isAbsolute(rightRepoPath)) {
+      return createFailureResponse(
+        requestId,
+        "invalid_repo_path",
+        "The repository comparison paths must be absolute.",
+      );
+    }
+    try {
+      return createSuccessResponse(requestId, {
+        type: "repository.watchedSaveRepositoriesCompared",
+        same: await compareWatchedSaveRepositories({
+          leftRepoPath,
+          rightRepoPath,
+        }),
+      });
+    } catch {
+      writeDiagnostic("Watched Save repository comparison failed.");
+      return createFailureResponse(
+        requestId,
+        "repository_watched_save_repositories_compare_failed",
+        "The repositories' Watched Saves could not be compared.",
       );
     }
   }
@@ -1308,6 +1453,33 @@ function toProtocolInspection(inspection: SaveHistoryRepositoryInspection) {
     ...inspection,
     capabilities: [...inspection.capabilities],
   };
+}
+
+function createImportFailure(
+  phase: "preflight" | "session" | "mutation" | "copy",
+  reason:
+    | "invalidCommand"
+    | "invalidPath"
+    | "sessionBusy"
+    | "mutationBusy"
+    | "copyFailed",
+  message: string,
+) {
+  return {
+    status: "failed" as const,
+    phase,
+    reason,
+    sourceState: "unchanged" as const,
+    message,
+  };
+}
+
+function toProtocolImportResult(result: CopyRepositorySnapshotResult) {
+  if (result.status !== "failed") {
+    return result;
+  }
+
+  return { ...result, phase: "copy" as const };
 }
 
 function toProtocolArchiveResult(result: RelocateRepositoryResult) {

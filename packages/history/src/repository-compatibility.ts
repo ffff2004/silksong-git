@@ -4,6 +4,7 @@ import {
   copyFile,
   lstat,
   mkdir,
+  mkdtemp,
   open,
   readFile,
   readdir,
@@ -40,6 +41,10 @@ import { getRepositoryLayout } from "./layout.ts";
 import { isSemanticReadModelCurrent } from "./read-model.ts";
 import type {
   CompareWatchedSaveInput,
+  CompareWatchedSaveRepositoriesInput,
+  CopyRepositorySnapshotInput,
+  CopyRepositorySnapshotResult,
+  CopyRepositorySnapshotSourceStatus,
   GitIntegrityPolicy,
   InspectSaveHistoryRepositoryInput,
   MigrateSaveHistoryRepositoryInput,
@@ -99,6 +104,15 @@ interface RepositorySnapshotFileSystem {
 
 const repositorySnapshotFileSystemState: {
   override: RepositorySnapshotFileSystem | undefined;
+} = { override: undefined };
+
+interface RepositoryLeaseReleaseFailures {
+  readonly watcher: boolean;
+  readonly writer: boolean;
+}
+
+const repositoryLeaseReleaseFailureState: {
+  override: RepositoryLeaseReleaseFailures | undefined;
 } = { override: undefined };
 
 export async function inspectSaveHistoryRepository(
@@ -323,15 +337,140 @@ export async function compareWatchedSave(
   input: CompareWatchedSaveInput,
 ): Promise<boolean> {
   const watchedSavePath = await readConfiguredWatchedSavePath(input.repoPath);
-  const [configured, candidate] = await Promise.all([
-    canonicalFileIdentity(watchedSavePath),
-    canonicalFileIdentity(input.savePath),
+  return await compareWatchedSaveIdentity(watchedSavePath, input.savePath);
+}
+
+/**
+ * Compares the Watched Save identities configured by two repositories. Project Config remains an
+ * internal History concern: callers receive only the comparison result, never either configured
+ * path.
+ */
+export async function compareWatchedSaveRepositories(
+  input: CompareWatchedSaveRepositoriesInput,
+): Promise<boolean> {
+  const [leftPath, rightPath] = await Promise.all([
+    readConfiguredWatchedSavePath(input.leftRepoPath),
+    readConfiguredWatchedSavePath(input.rightRepoPath),
+  ]);
+  return await compareWatchedSaveIdentity(leftPath, rightPath);
+}
+
+async function compareWatchedSaveIdentity(
+  leftPath: string,
+  rightPath: string,
+): Promise<boolean> {
+  const [left, right] = await Promise.all([
+    canonicalFileIdentity(leftPath),
+    canonicalFileIdentity(rightPath),
   ]);
   return (
-    configured.canonicalPath === candidate.canonicalPath
-    || (configured.device === candidate.device
-      && configured.inode === candidate.inode)
+    left.canonicalPath === right.canonicalPath
+    || (left.device === right.device && left.inode === right.inode)
   );
+}
+
+/**
+ * Copies a compatible external repository into a caller-selected destination without modifying the
+ * source. This workflow deliberately does not consume an inspection token or expose migration's
+ * two-phase commit operation.
+ */
+export async function copyRepositorySnapshot(
+  input: CopyRepositorySnapshotInput,
+): Promise<CopyRepositorySnapshotResult> {
+  const placement = await validateCopyPlacement(input);
+  if (placement === undefined) {
+    return {
+      status: "rejected",
+      reason: "invalidPlacement",
+    };
+  }
+
+  const initialInspection = await inspectRepository(
+    placement.sourcePath,
+    "strict",
+  );
+  if (initialInspection.inspection.status === "newerIncompatible") {
+    return {
+      status: "rejected",
+      reason: "newerIncompatible",
+      sourceStatus: initialInspection.inspection.status,
+    };
+  }
+  if (!isCopySourceStatus(initialInspection.inspection.status)) {
+    return {
+      status: "rejected",
+      reason: "invalidSource",
+      sourceStatus: initialInspection.inspection.status,
+    };
+  }
+
+  let writer: Awaited<ReturnType<typeof acquireHistoryWriteLease>>;
+
+  // eslint-disable-next-line unicorn/try-complexity
+  try {
+    writer = withLeaseReleaseFailure(
+      await acquireHistoryWriteLease(placement.sourcePath),
+      repositoryLeaseReleaseFailureState.override?.writer === true,
+    );
+  } catch (error) {
+    return copyPreparationFailure(error);
+  }
+
+  let watcher: Awaited<ReturnType<typeof acquireRepositoryWatchExclusion>>;
+
+  // eslint-disable-next-line unicorn/try-complexity
+  try {
+    watcher = withLeaseReleaseFailure(
+      await acquireRepositoryWatchExclusion({
+        repoPath: placement.sourcePath,
+      }),
+      repositoryLeaseReleaseFailureState.override?.watcher === true,
+    );
+  } catch (error) {
+    const cleanupFailure = await releaseCopyLeases(undefined, writer);
+    return withCopyCleanupFailure(
+      copyPreparationFailure(error),
+      cleanupFailure,
+    );
+  }
+
+  // The lock-held workflow intentionally combines reinspection, copy, and cleanup in one
+  // transaction so a source cannot change between the status check and publication.
+  let result!: CopyRepositorySnapshotResult;
+  // eslint-disable-next-line unicorn/try-complexity
+  try {
+    const underLock = await inspectRepository(placement.sourcePath, "strict");
+    if (underLock.inspection.status === "newerIncompatible") {
+      result = {
+        status: "rejected",
+        reason: "newerIncompatible",
+        sourceStatus: underLock.inspection.status,
+      };
+    } else if (isCopySourceStatus(underLock.inspection.status)) {
+      const snapshot = await createVerifiedSnapshotUnderLocks(
+        placement.sourcePath,
+        placement.targetPath,
+      );
+      result = {
+        status: "copied",
+        snapshot,
+        sourceStatus: underLock.inspection.status,
+      };
+    } else {
+      result = {
+        status: "rejected",
+        reason: "invalidSource",
+        sourceStatus: underLock.inspection.status,
+      };
+    }
+  } catch (error) {
+    result = copyPreparationFailure(error);
+  } finally {
+    const cleanupFailure = await releaseCopyLeases(watcher, writer);
+    result = withCopyCleanupFailure(result, cleanupFailure);
+  }
+
+  return result;
 }
 
 /**
@@ -715,7 +854,10 @@ export async function prepareSaveHistoryMigration(
   let watcherLease: Awaited<ReturnType<typeof acquireWatchLock>> | undefined;
   try {
     watcherLease = await acquireMigrationWatcherExclusion(input.repoPath);
-    const snapshot = await createRepositorySnapshot(input);
+    const snapshot = await createVerifiedSnapshotUnderLocks(
+      input.repoPath,
+      input.snapshotPath,
+    );
     let completed = false;
     let leasesReleased = false;
     const operation: PreparedSaveHistoryMigration = Object.freeze({
@@ -766,7 +908,10 @@ export async function prepareSaveHistoryMigration(
     if (error instanceof SaveHistoryWatcherAlreadyAcquiredError) {
       return { status: "failed", reason: "watcherAlreadyAcquired" };
     }
-    if (error instanceof SnapshotDirectoryDigestMismatchError) {
+    if (
+      error instanceof SnapshotError
+      && error.kind === "directoryDigestMismatch"
+    ) {
       return {
         status: "failed",
         reason: "directoryDigestMismatch",
@@ -802,40 +947,75 @@ async function acquireMigrationWatcherExclusion(
   });
 }
 
-class SnapshotDirectoryDigestMismatchError extends Error {
-  override name = "SnapshotDirectoryDigestMismatchError";
+class SnapshotError extends Error {
+  readonly kind: "directoryDigestMismatch" | "copyFailed" | "publishFailed";
+
+  constructor(
+    message: string,
+    options: ErrorOptions | undefined,
+    kind: "directoryDigestMismatch" | "copyFailed" | "publishFailed",
+  ) {
+    super(message, options);
+    this.kind = kind;
+    this.name = "SnapshotError";
+  }
 }
 
-async function createRepositorySnapshot(
-  input: PrepareSaveHistoryMigrationInput,
+async function createVerifiedSnapshotUnderLocks(
+  sourcePath: string,
+  targetPath: string,
 ): Promise<RepositorySnapshot> {
-  if (
-    !path.isAbsolute(input.repoPath)
-    || !path.isAbsolute(input.snapshotPath)
-  ) {
+  if (!path.isAbsolute(sourcePath) || !path.isAbsolute(targetPath)) {
     throw new Error("Snapshot source and destination must be absolute paths.");
   }
 
-  const sourcePath = path.resolve(input.repoPath);
-  const targetPath = path.resolve(input.snapshotPath);
-  if (isPathWithin(sourcePath, targetPath)) {
+  const resolvedSourcePath = path.resolve(sourcePath);
+  const resolvedTargetPath = path.resolve(targetPath);
+  const targetParentPath = path.dirname(resolvedTargetPath);
+  if (isPathWithin(resolvedSourcePath, resolvedTargetPath)) {
     throw new Error(
       "The repository snapshot destination cannot be inside its source.",
     );
   }
 
-  const sourceDigestBefore = await calculateDirectoryDigest(sourcePath);
-  const stagingPath = path.join(
-    path.dirname(targetPath),
-    `.${path.basename(targetPath)}.staging-${createOpaqueId(12)}`,
-  );
+  const sourceDigestBefore = await calculateDirectoryDigest(resolvedSourcePath);
+  let stagingDirectory: string | undefined;
+  let stagingPath: string | undefined;
   const snapshotFileSystem = getRepositorySnapshotFileSystem();
 
+  // Cleanup must run for copy, digest, integrity, and publication failures alike.
+  // eslint-disable-next-line unicorn/try-complexity
   try {
-    await mkdir(path.dirname(targetPath), { recursive: true });
-    await snapshotFileSystem.copyRepository(sourcePath, stagingPath);
+    try {
+      await ensureRealCopyTargetParent(targetParentPath);
+      stagingDirectory = await mkdtemp(
+        path.join(tmpdir(), "silksong-history-snapshot-"),
+      );
+      stagingPath = path.join(
+        stagingDirectory,
+        `.${path.basename(resolvedTargetPath)}.staging-${createOpaqueId(12)}`,
+      );
+    } catch (error) {
+      throw new SnapshotError(
+        "The repository snapshot destination is not a stable real directory.",
+        { cause: error },
+        "publishFailed",
+      );
+    }
 
-    const sourceDigestAfter = await calculateDirectoryDigest(sourcePath);
+    await requireRealCopyTargetParent(targetParentPath);
+    try {
+      await snapshotFileSystem.copyRepository(resolvedSourcePath, stagingPath);
+    } catch {
+      throw new SnapshotError(
+        "The repository contents could not be copied.",
+        undefined,
+        "copyFailed",
+      );
+    }
+
+    const sourceDigestAfter =
+      await calculateDirectoryDigest(resolvedSourcePath);
     const stagedDigest = await calculateDirectoryDigest(stagingPath);
     assertSnapshotDigestsMatch(
       sourceDigestBefore,
@@ -844,10 +1024,22 @@ async function createRepositorySnapshot(
     );
 
     const gitIntegrityWarning = await validateGitIntegrity(stagingPath);
-    const publishedPath = await publishSnapshotNoReplace(
-      stagingPath,
-      targetPath,
-    );
+    let publishedPath: string;
+    try {
+      publishedPath = await publishSnapshotNoReplace(
+        stagingPath,
+        resolvedTargetPath,
+      );
+    } catch (error) {
+      if (error instanceof SaveHistoryRepositoryBusyError) {
+        throw error;
+      }
+      throw new SnapshotError(
+        "The verified repository copy could not be published.",
+        undefined,
+        "publishFailed",
+      );
+    }
 
     return withGitIntegrityWarning(
       {
@@ -856,10 +1048,190 @@ async function createRepositorySnapshot(
       },
       gitIntegrityWarning,
     );
-  } catch (error) {
-    await rm(stagingPath, { recursive: true, force: true });
-    throw error;
+  } finally {
+    if (stagingDirectory !== undefined) {
+      await rm(stagingDirectory, { recursive: true, force: true });
+    }
   }
+}
+
+interface CopyTargetDirectoryBoundary {
+  readonly path: string;
+  readonly device: bigint;
+  readonly inode: bigint;
+}
+
+async function inspectCopyTargetParent(
+  directoryPath: string,
+  allowMissing: boolean,
+): Promise<CopyTargetDirectoryBoundary | undefined> {
+  let currentPath = path.resolve(directoryPath);
+  for (;;) {
+    // eslint-disable-next-line unicorn/try-complexity
+    try {
+      const metadata = await lstat(currentPath);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+        return undefined;
+      }
+
+      const canonicalPath = await realpath(currentPath);
+      if (canonicalPath !== currentPath) {
+        return undefined;
+      }
+
+      const identity = await stat(canonicalPath, { bigint: true });
+      return {
+        path: canonicalPath,
+        device: identity.dev,
+        inode: identity.ino,
+      };
+    } catch (error) {
+      if (!allowMissing || !isMissingPathError(error)) {
+        return undefined;
+      }
+
+      const parentPath = path.dirname(currentPath);
+      if (parentPath === currentPath) {
+        return undefined;
+      }
+      currentPath = parentPath;
+    }
+  }
+}
+
+async function ensureRealCopyTargetParent(
+  directoryPath: string,
+): Promise<CopyTargetDirectoryBoundary> {
+  if ((await inspectCopyTargetParent(directoryPath, true)) === undefined) {
+    throw new Error("The destination parent contains a symlink or junction.");
+  }
+
+  await mkdir(directoryPath, { recursive: true });
+  return await requireRealCopyTargetParent(directoryPath);
+}
+
+async function requireRealCopyTargetParent(
+  directoryPath: string,
+): Promise<CopyTargetDirectoryBoundary> {
+  const boundary = await inspectCopyTargetParent(directoryPath, false);
+  if (boundary === undefined) {
+    throw new Error("The destination parent is not a real directory.");
+  }
+  return boundary;
+}
+
+async function validateCopyPlacement(
+  input: CopyRepositorySnapshotInput,
+): Promise<
+  | {
+      readonly sourcePath: string;
+      readonly targetPath: string;
+    }
+  | undefined
+> {
+  if (
+    !path.isAbsolute(input.sourcePath)
+    || !path.isAbsolute(input.targetPath)
+  ) {
+    return undefined;
+  }
+
+  const sourceInputPath = path.resolve(input.sourcePath);
+  const targetPath = path.resolve(input.targetPath);
+  const targetName = path.basename(targetPath);
+  if (
+    targetName === ""
+    || targetName === "."
+    || targetName === ".."
+    || targetName.startsWith(".")
+  ) {
+    return undefined;
+  }
+
+  let sourceMetadata: Awaited<ReturnType<typeof lstat>>;
+  try {
+    sourceMetadata = await lstat(sourceInputPath);
+  } catch {
+    return undefined;
+  }
+  if (!sourceMetadata.isDirectory() || sourceMetadata.isSymbolicLink()) {
+    return undefined;
+  }
+
+  const sourcePath = await realpath(sourceInputPath).catch(() => undefined);
+  if (sourcePath === undefined) {
+    return undefined;
+  }
+  const targetParent = path.dirname(targetPath);
+  if ((await inspectCopyTargetParent(targetParent, true)) === undefined) {
+    return undefined;
+  }
+  if (isPathWithin(sourcePath, targetParent)) {
+    return undefined;
+  }
+
+  return { sourcePath, targetPath };
+}
+
+function isCopySourceStatus(
+  status: SaveHistoryRepositoryStatus,
+): status is CopyRepositorySnapshotSourceStatus {
+  return (
+    status === "ready"
+    || status === "rebuildRequired"
+    || status === "legacyConfig"
+    || status === "migrationRequired"
+  );
+}
+
+function copyPreparationFailure(error: unknown): CopyRepositorySnapshotResult {
+  if (error instanceof SaveHistoryWatcherAlreadyAcquiredError) {
+    return {
+      status: "failed",
+      reason: "watcherAlreadyAcquired",
+      sourceState: "unchanged",
+    };
+  }
+  if (error instanceof SaveHistoryRepositoryBusyError) {
+    return {
+      status: "failed",
+      reason: "repositoryBusy",
+      sourceState: "unchanged",
+    };
+  }
+  if (
+    error instanceof SnapshotError
+    && error.kind === "directoryDigestMismatch"
+  ) {
+    return {
+      status: "failed",
+      reason: "directoryDigestMismatch",
+      sourceState: "unchanged",
+      message: error.message,
+    };
+  }
+  if (error instanceof SnapshotError && error.kind === "publishFailed") {
+    return {
+      status: "failed",
+      reason: "publishFailed",
+      sourceState: "unchanged",
+      message: error.message,
+    };
+  }
+  if (error instanceof SnapshotError && error.kind === "copyFailed") {
+    return {
+      status: "failed",
+      reason: "copyFailed",
+      sourceState: "unchanged",
+      message: error.message,
+    };
+  }
+  return {
+    status: "failed",
+    reason: "copyFailed",
+    sourceState: "unchanged",
+    message: "The repository copy could not be verified.",
+  };
 }
 
 function withGitIntegrityWarning(
@@ -891,9 +1263,9 @@ function getRepositorySnapshotFileSystem(): RepositorySnapshotFileSystem {
 }
 
 /**
- * Test-only fault injection. The public migration preparation Interface remains the only entry
- * point exercised by the behavior tests; this private adapter hook cannot be imported from the
- * package root or supplied by external callers.
+ * Test-only fault injection. Public copy and migration Interfaces remain the only entry points
+ * exercised by behavior tests; this private adapter hook cannot be imported from the package root
+ * or supplied by external callers.
  */
 export async function withRepositorySnapshotFileSystemForTests<T>(
   configure: (
@@ -910,6 +1282,36 @@ export async function withRepositorySnapshotFileSystemForTests<T>(
   } finally {
     repositorySnapshotFileSystemState.override = previous;
   }
+}
+
+/** Test-only lease fault injection; callers still exercise the public copy Interface. */
+export async function withRepositoryLeaseReleaseFailuresForTests<T>(
+  failures: RepositoryLeaseReleaseFailures,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = repositoryLeaseReleaseFailureState.override;
+  repositoryLeaseReleaseFailureState.override = failures;
+  try {
+    return await operation();
+  } finally {
+    repositoryLeaseReleaseFailureState.override = previous;
+  }
+}
+
+function withLeaseReleaseFailure<
+  T extends { readonly release: () => Promise<void> },
+>(lease: T, shouldFail: boolean): T {
+  if (!shouldFail) {
+    return lease;
+  }
+
+  return {
+    ...lease,
+    async release() {
+      await lease.release();
+      throw new Error("Injected lease release failure.");
+    },
+  };
 }
 
 async function copyDurableEntry(
@@ -1027,8 +1429,10 @@ function assertSnapshotDigestsMatch(
     sourceDigestBefore !== sourceDigestAfter
     || sourceDigestBefore !== stagedDigest
   ) {
-    throw new SnapshotDirectoryDigestMismatchError(
+    throw new SnapshotError(
       "The source changed while the repository snapshot was being copied.",
+      undefined,
+      "directoryDigestMismatch",
     );
   }
 }
@@ -1037,10 +1441,22 @@ async function publishSnapshotNoReplace(
   stagingPath: string,
   targetPath: string,
 ): Promise<string> {
-  return await withPublicationLock(path.dirname(targetPath), async () => {
+  const parentPath = path.dirname(targetPath);
+  const initialBoundary = await requireRealCopyTargetParent(parentPath);
+  return await withPublicationLock(parentPath, async () => {
+    const boundary = await requireRealCopyTargetParent(parentPath);
+    if (
+      boundary.device !== initialBoundary.device
+      || boundary.inode !== initialBoundary.inode
+    ) {
+      throw new Error("The repository snapshot destination parent changed.");
+    }
+    const targetName = path.basename(targetPath);
     for (let collision = 0; collision < 10_000; collision++) {
-      const candidate =
-        collision === 0 ? targetPath : `${targetPath}-${collision}`;
+      const candidate = path.join(
+        boundary.path,
+        collision === 0 ? targetName : `${targetName}-${collision}`,
+      );
       if (await pathExists(candidate)) {
         continue;
       }
@@ -1064,9 +1480,8 @@ async function withPublicationLock<T>(
   parentPath: string,
   operation: () => Promise<T>,
 ): Promise<T> {
-  const lockName = createHash("sha256")
-    .update(path.resolve(parentPath))
-    .digest("hex");
+  const boundary = await requireRealCopyTargetParent(parentPath);
+  const lockName = createHash("sha256").update(boundary.path).digest("hex");
   const lockPath = path.join(
     tmpdir(),
     `silksong-history-publication-${lockName}.lock`,
@@ -1253,6 +1668,34 @@ function withCleanupFailure(
   }
 
   return { ...result, cleanupFailure };
+}
+
+function withCopyCleanupFailure(
+  result: CopyRepositorySnapshotResult,
+  cleanupFailure: MigrationCleanupFailure | undefined,
+): CopyRepositorySnapshotResult {
+  if (cleanupFailure === undefined) {
+    return result;
+  }
+
+  return { ...result, cleanupFailure };
+}
+
+async function releaseCopyLeases(
+  watcherLease:
+    | Awaited<ReturnType<typeof acquireRepositoryWatchExclusion>>
+    | undefined,
+  writeLease: Awaited<ReturnType<typeof acquireHistoryWriteLease>> | undefined,
+): Promise<MigrationCleanupFailure | undefined> {
+  const releaseResults = await Promise.allSettled([
+    watcherLease?.release() ?? Promise.resolve(),
+    writeLease?.release() ?? Promise.resolve(),
+  ]);
+  return releaseResults.some(
+    (releaseResult) => releaseResult.status === "rejected",
+  )
+    ? "leaseReleaseFailed"
+    : undefined;
 }
 
 async function releaseMigrationLeases(

@@ -481,6 +481,58 @@ describe("Solid Web app routing", () => {
     ).toBeNull();
   });
 
+  it("imports an external repository through the Desktop capability and refreshes the library", async () => {
+    const importRepository = vi.fn(async () => ({
+      kind: "imported" as const,
+      name: "imported-repository",
+      requiredAction: "rebuildReadModel",
+      sourceStatus: "rebuildRequired",
+      status: "rebuildRequired",
+    }));
+    const getRepositoryLibrary = vi
+      .fn()
+      .mockResolvedValueOnce(desktopTestRepositoryLibrary)
+      .mockResolvedValue({
+        ...desktopTestRepositoryLibrary,
+        managed: [
+          ...desktopTestRepositoryLibrary.managed,
+          {
+            current: false,
+            lifecycle: "managed" as const,
+            name: "imported-repository",
+            requiredAction: "rebuildReadModel",
+            status: "rebuildRequired",
+            watching: false,
+          },
+        ],
+      });
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "session-token",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      importRepository,
+      getRepositoryLibrary,
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+
+    globalThis.location.hash = "#/repositories";
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Import repository…" }),
+    );
+
+    expect(
+      await screen.findByText("Imported imported-repository successfully!"),
+    ).toBeDefined();
+    expect(importRepository).toHaveBeenCalledTimes(1);
+    expect(getRepositoryLibrary).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("imported-repository")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Rebuild" })).toBeDefined();
+  });
+
   it("does not let an in-flight library refresh reconnect over a selected Static Save", async () => {
     const watcherDeferred = Promise.withResolvers<Response>();
     const getRepoSessionConnection = vi.fn(() => ({

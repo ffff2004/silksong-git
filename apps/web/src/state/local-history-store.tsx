@@ -12,6 +12,7 @@ import {
 } from "../features/local-history/local-history-client.ts";
 import type {
   ArchiveRepositoryResult,
+  ImportRepositoryResult,
   ManagedInitializationResult,
   ManagedRepositoryReplacementResult,
   OpenExternalRepositoryResult,
@@ -70,6 +71,7 @@ interface LocalHistoryStore {
   readonly isSupported: boolean;
   readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
   readonly initializeManagedRepository: () => Promise<ManagedInitializationResult>;
+  readonly importRepository: () => Promise<ImportRepositoryResult>;
   readonly archiveAndReinitializeManagedRepository: () => Promise<ManagedRepositoryReplacementResult>;
   readonly openLibraryEntry: (input: {
     readonly lifecycle: Exclude<RepositoryLifecycle, "external">;
@@ -254,6 +256,23 @@ export function LocalHistoryProvider(props: {
       setWorkflowState({ kind: "transitioning" });
       try {
         return await props.runtimeCapabilities.initializeManagedRepository();
+      } finally {
+        setWorkflowState({ kind: "active" });
+      }
+    },
+    async importRepository() {
+      if (
+        props.runtimeCapabilities.kind !== "desktop"
+        || props.runtimeCapabilities.importRepository === undefined
+      ) {
+        throw new Error(
+          "Repository import is unavailable in this Desktop version.",
+        );
+      }
+      ensureWorkflowActive(workflowState());
+      setWorkflowState({ kind: "transitioning" });
+      try {
+        return await props.runtimeCapabilities.importRepository();
       } finally {
         setWorkflowState({ kind: "active" });
       }

@@ -29,6 +29,8 @@ export {
 } from "./history-interface.ts";
 export {
   compareWatchedSave,
+  compareWatchedSaveRepositories,
+  copyRepositorySnapshot,
   inspectSaveHistoryRepository,
   migrateSaveHistoryRepository,
   prepareRepositoryReplacement,
@@ -60,6 +62,10 @@ export { restoreEncodedSave } from "./restore.ts";
 export type {
   AcquireSaveHistoryWatcherInput,
   CompareWatchedSaveInput,
+  CompareWatchedSaveRepositoriesInput,
+  CopyRepositorySnapshotInput,
+  CopyRepositorySnapshotResult,
+  CopyRepositorySnapshotSourceStatus,
   DiffCommitsInput,
   DiffCommitsResult,
   GetSaveStateInput,

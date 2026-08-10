@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const desktopSidecarProtocolVersion = 9 as const;
+export const desktopSidecarProtocolVersion = 10 as const;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -10,8 +10,10 @@ export const desktopSidecarErrorCodes = [
   "invalid_repo_path",
   "repository_inspect_failed",
   "repository_initialize_failed",
+  "repository_import_failed",
   "repository_archive_failed",
   "repository_watched_save_compare_failed",
+  "repository_watched_save_repositories_compare_failed",
   "repository_replacement_prepare_failed",
   "repository_replacement_not_prepared",
   "repository_replacement_resolve_failed",
@@ -68,11 +70,27 @@ export const repositoryInitializeCommandSchema = z
   })
   .strict();
 
+export const repositoryImportCommandSchema = z
+  .object({
+    type: z.literal("repository.import"),
+    sourcePath: z.string().min(1).max(4096),
+    targetPath: z.string().min(1).max(4096),
+  })
+  .strict();
+
 export const repositoryCompareWatchedSaveCommandSchema = z
   .object({
     type: z.literal("repository.compareWatchedSave"),
     repoPath: z.string().min(1).max(4096),
     savePath: z.string().min(1).max(4096),
+  })
+  .strict();
+
+export const repositoryCompareWatchedSaveRepositoriesCommandSchema = z
+  .object({
+    type: z.literal("repository.compareWatchedSaveRepositories"),
+    leftRepoPath: z.string().min(1).max(4096),
+    rightRepoPath: z.string().min(1).max(4096),
   })
   .strict();
 
@@ -240,6 +258,7 @@ const replacementPreparationSchema = z.discriminatedUnion("status", [
         "differentWatchedSave",
       ]),
       sourceStatus: repositoryStatusSchema.shape.status.optional(),
+      cleanupFailure: z.literal("leaseReleaseFailed").optional(),
     })
     .strict(),
   z
@@ -371,6 +390,57 @@ const repositorySnapshotSchema = z
   })
   .strict();
 
+const repositoryImportSourceStatusSchema = z.enum([
+  "ready",
+  "rebuildRequired",
+  "legacyConfig",
+  "migrationRequired",
+]);
+
+const repositoryImportResultSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("copied"),
+      snapshot: repositorySnapshotSchema,
+      sourceStatus: repositoryImportSourceStatusSchema,
+      cleanupFailure: z.literal("leaseReleaseFailed").optional(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("rejected"),
+      reason: z.enum([
+        "invalidPlacement",
+        "invalidSource",
+        "newerIncompatible",
+      ]),
+      sourceStatus: repositoryStatusSchema.shape.status.optional(),
+      cleanupFailure: z.literal("leaseReleaseFailed").optional(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      phase: z.enum(["preflight", "session", "mutation", "copy"]),
+      reason: z.enum([
+        "invalidCommand",
+        "invalidPath",
+        "sessionBusy",
+        "mutationBusy",
+        "repositoryBusy",
+        "watcherAlreadyAcquired",
+        "copyFailed",
+        "directoryDigestMismatch",
+        "publishFailed",
+      ]),
+      sourceState: z.literal("unchanged"),
+      retainedPath: z.string().min(1).max(4096).optional(),
+      message: z.string().optional(),
+      cleanupFailure: z.literal("leaseReleaseFailed").optional(),
+    })
+    .strict(),
+]);
+
 const repositoryMigrationPreparationSchema = z.discriminatedUnion("status", [
   z
     .object({
@@ -432,7 +502,19 @@ const successResultSchema = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("repository.importResult"),
+      import: repositoryImportResultSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("repository.watchedSaveCompared"),
+      same: repositoryWatchedSaveComparisonSchema.shape.same,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("repository.watchedSaveRepositoriesCompared"),
       same: repositoryWatchedSaveComparisonSchema.shape.same,
     })
     .strict(),
@@ -555,6 +637,7 @@ const producedEventSchema = z.union([
       mutation: z.enum([
         "manualCheckpoint",
         "inPlaceRestore",
+        "repositoryImport",
         "repositoryMigration",
         "managedInitialization",
         "managedReplacement",
@@ -612,7 +695,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 9;
+    readonly protocolVersion: 10;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },

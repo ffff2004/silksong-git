@@ -46,8 +46,9 @@ authentication rules belong to the
 Capabilities into [`App.tsx`](../../apps/web/src/app/App.tsx).
 `desktop-main.tsx` explicitly injects Desktop Runtime Capabilities backed by
 narrow Tauri intent commands for repository library refresh/open/close,
-managed initialization/migration/archive, temporary external opening, current
-in-memory Repo Session connection, and watcher control. Desktop starts at `/`,
+managed initialization/migration/archive, temporary external opening, import
+into the managed library, current in-memory Repo Session connection, and
+watcher control. Desktop starts at `/`,
 its repository library; Browser keeps
 its existing Static progress start. `App.tsx` composes four
 application-wide providers around the router:

@@ -6,6 +6,7 @@ import { App } from "./app/App.tsx";
 import { createDesktopRuntimeCapabilities } from "./runtime-capabilities/desktop.ts";
 import type {
   ArchiveRepositoryResult,
+  ImportRepositoryResult,
   ManagedInitializationResult,
   ManagedRepositoryReplacementResult,
   OpenExternalRepositoryResult,
@@ -35,6 +36,8 @@ const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
     await invoke<ManagedInitializationResult>(
       "desktop_initialize_managed_repository",
     ),
+  importRepository: async () =>
+    await invoke<ImportRepositoryResult>("desktop_import_repository"),
   archiveAndReinitializeManagedRepository: async () =>
     await invoke<ManagedRepositoryReplacementResult>(
       "desktop_archive_and_reinitialize_managed_repository",

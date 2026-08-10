@@ -79,6 +79,20 @@ collision-safe destination. Existing watcher ownership is refused, failures
 before rename leave the source unchanged, and an uninspectable source is still
 accepted when it is a valid real directory.
 
+External repository import uses the separate
+`copyRepositorySnapshot({ sourcePath, targetPath })` Interface and therefore
+keeps copy semantics distinct from migration and relocation. History accepts
+`ready`, `rebuildRequired`, `legacyConfig`, and `migrationRequired` sources,
+holds writer and watcher exclusions while copying, omits ephemeral read-model
+and lease files, verifies source/copy directory digests and Git integrity, and
+publishes the copy collision-safely only beneath a verified real destination
+parent. The source remains unchanged; the copy is not rebuilt or watched
+automatically. Lease cleanup is reported as a structured `cleanupFailure`
+warning without discarding the copied result or removing the source. History
+also exposes
+`compareWatchedSaveRepositories` so callers can perform duplicate preflight
+without receiving Project Config or Watched Save paths.
+
 Explicit repository replacement uses the separate generic
 `prepareRepositoryReplacement({ sourcePath, targetPath,
 expectedWatchedSavePath })` Interface. It revalidates the source, accepts only

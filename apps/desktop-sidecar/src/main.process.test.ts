@@ -17,7 +17,9 @@ import type { TestContext } from "node:test";
 import test from "node:test";
 
 import {
+  acquireSaveHistoryWatcher,
   initSaveHistory,
+  inspectSaveHistoryRepository,
   observeSave,
   queryRawObservations,
 } from "@silksong-git/history";
@@ -321,7 +323,13 @@ test("uses strict JSONL framing and structured command failures", async (t) => {
     },
   });
 
-  sidecar.send(command("future-version", { type: "watcher.start" }, 10));
+  sidecar.send(
+    command(
+      "future-version",
+      { type: "watcher.start" },
+      desktopSidecarProtocolVersion + 1,
+    ),
+  );
   assert.deepEqual(await sidecar.readMessage(), {
     protocolVersion: desktopSidecarProtocolVersion,
     kind: "response",
@@ -787,6 +795,193 @@ test("compares Watched Saves through legacy and migration-compatible configs", a
 
     await shutDown(sidecar);
   }
+});
+
+test("imports an external repository through the versioned copy protocol without starting a watcher", async (t) => {
+  const source = await createHistoryRepo(t);
+  const managedRoot = path.join(path.dirname(source.repoPath), "managed");
+  await mkdir(managedRoot);
+  const targetPath = path.join(managedRoot, "imported-repository");
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  sidecar.send(
+    command("import", {
+      type: "repository.import",
+      sourcePath: source.repoPath,
+      targetPath,
+    }),
+  );
+  const response = parseSuccessfulResponse(
+    await readResponse(sidecar, "import"),
+  );
+  assert.equal(response.result.type, "repository.importResult");
+  assert.equal(response.result.import.status, "copied");
+  assert.equal(response.result.import.sourceStatus, "ready");
+  assert.equal(response.result.import.snapshot.repoPath, targetPath);
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "repositoryImport",
+      status: "started",
+    },
+  });
+  assert.deepEqual(await sidecar.readMessage(), {
+    protocolVersion: desktopSidecarProtocolVersion,
+    kind: "event",
+    event: {
+      type: "mutation.activity",
+      mutation: "repositoryImport",
+      status: "finished",
+    },
+  });
+  const importedInspection = await inspectSaveHistoryRepository({
+    repoPath: targetPath,
+  });
+  assert.equal(importedInspection.status, "rebuildRequired");
+  await shutDown(sidecar);
+});
+
+test("returns a structured Import failure for a malformed command without touching the source", async (t) => {
+  const source = await createHistoryRepo(t);
+  const sourceBefore = await readFile(source.watchedSavePath);
+  const targetPath = path.join(
+    path.dirname(source.repoPath),
+    "malformed-import",
+  );
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  sidecar.send(
+    command("malformed-import", {
+      type: "repository.import",
+      sourcePath: source.repoPath,
+    }),
+  );
+  const response = parseSuccessfulResponse(
+    await readResponse(sidecar, "malformed-import"),
+  );
+  assert.deepEqual(response.result, {
+    type: "repository.importResult",
+    import: {
+      status: "failed",
+      phase: "preflight",
+      reason: "invalidCommand",
+      sourceState: "unchanged",
+      message: "The repository.import command is invalid.",
+    },
+  });
+  assert.equal(await stat(targetPath).catch(() => undefined), undefined);
+  assert.deepEqual(await readFile(source.watchedSavePath), sourceBefore);
+  await shutDown(sidecar);
+});
+
+test("returns a structured Import failure when a session is already open", async (t) => {
+  const source = await createHistoryRepo(t);
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  sidecar.send(
+    command("open-for-import", {
+      type: "session.open",
+      repoPath: source.repoPath,
+    }),
+  );
+  assert.equal(
+    parseSuccessfulResponse(await readResponse(sidecar, "open-for-import"))
+      .result.type,
+    "session.opened",
+  );
+  const busyTargetPath = path.join(
+    path.dirname(source.repoPath),
+    "busy-import",
+  );
+  sidecar.send(
+    command("busy-import", {
+      type: "repository.import",
+      sourcePath: source.repoPath,
+      targetPath: busyTargetPath,
+    }),
+  );
+
+  const response = parseSuccessfulResponse(
+    await readResponse(sidecar, "busy-import"),
+  );
+  assert.deepEqual(response.result, {
+    type: "repository.importResult",
+    import: {
+      status: "failed",
+      phase: "session",
+      reason: "sessionBusy",
+      sourceState: "unchanged",
+      message: "The sidecar already owns a repository session.",
+    },
+  });
+  await shutDown(sidecar);
+});
+
+test("returns a structured Import failure when History rejects source ownership", async (t) => {
+  const source = await createHistoryRepo(t);
+  const watcher = await acquireSaveHistoryWatcher({
+    repoPath: source.repoPath,
+  });
+  t.after(async () => {
+    await watcher.release();
+  });
+  const targetPath = path.join(path.dirname(source.repoPath), "watcher-import");
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  sidecar.send(
+    command("watcher-import", {
+      type: "repository.import",
+      sourcePath: source.repoPath,
+      targetPath,
+    }),
+  );
+  const response = parseSuccessfulResponse(
+    await readResponse(sidecar, "watcher-import"),
+  );
+  assert.deepEqual(response.result, {
+    type: "repository.importResult",
+    import: {
+      status: "failed",
+      phase: "copy",
+      reason: "watcherAlreadyAcquired",
+      sourceState: "unchanged",
+    },
+  });
+  assert.equal(await stat(targetPath).catch(() => undefined), undefined);
+  await shutDown(sidecar);
+});
+
+test("compares two repositories through the sidecar's public History comparison", async (t) => {
+  const source = await createHistoryRepo(t);
+  const sameRepo = path.join(path.dirname(source.repoPath), "same-repository");
+  await initSaveHistory({
+    repoPath: sameRepo,
+    watchedSavePath: source.watchedSavePath,
+  });
+  const sidecar = spawnSidecar(t);
+  await readReady(sidecar);
+
+  sidecar.send(
+    command("compare-repositories", {
+      type: "repository.compareWatchedSaveRepositories",
+      leftRepoPath: source.repoPath,
+      rightRepoPath: sameRepo,
+    }),
+  );
+  const response = parseSuccessfulResponse(
+    await readResponse(sidecar, "compare-repositories"),
+  );
+  assert.deepEqual(response.result, {
+    type: "repository.watchedSaveRepositoriesCompared",
+    same: true,
+  });
+  await shutDown(sidecar);
 });
 
 test("archives an uninspectable managed child through the narrow sidecar command", async (t) => {

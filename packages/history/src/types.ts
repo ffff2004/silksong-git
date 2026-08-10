@@ -107,6 +107,17 @@ export interface CompareWatchedSaveInput {
   readonly savePath: string;
 }
 
+export interface CompareWatchedSaveRepositoriesInput {
+  readonly leftRepoPath: string;
+  readonly rightRepoPath: string;
+}
+
+export interface CopyRepositorySnapshotInput {
+  readonly sourcePath: string;
+  /** Desired destination base path; History may append -1, -2, ... */
+  readonly targetPath: string;
+}
+
 export type GitIntegrityPolicy = "strict" | "advisory";
 
 export interface MigrateSaveHistoryRepositoryInput {
@@ -125,6 +136,41 @@ export interface RepositorySnapshot {
   readonly directoryDigest: string;
   readonly gitIntegrityWarning?: string;
 }
+
+export type CopyRepositorySnapshotSourceStatus = Extract<
+  SaveHistoryRepositoryStatus,
+  "ready" | "rebuildRequired" | "legacyConfig" | "migrationRequired"
+>;
+
+export type CopyRepositorySnapshotResult =
+  | {
+      readonly status: "copied";
+      readonly snapshot: RepositorySnapshot;
+      readonly sourceStatus: CopyRepositorySnapshotSourceStatus;
+      readonly cleanupFailure?: MigrationCleanupFailure;
+    }
+  | {
+      readonly status: "rejected";
+      readonly reason:
+        | "invalidPlacement"
+        | "invalidSource"
+        | "newerIncompatible";
+      readonly sourceStatus?: SaveHistoryRepositoryStatus;
+      readonly cleanupFailure?: MigrationCleanupFailure;
+    }
+  | {
+      readonly status: "failed";
+      readonly reason:
+        | "repositoryBusy"
+        | "watcherAlreadyAcquired"
+        | "copyFailed"
+        | "directoryDigestMismatch"
+        | "publishFailed";
+      readonly sourceState: "unchanged";
+      readonly retainedPath?: string;
+      readonly message?: string;
+      readonly cleanupFailure?: MigrationCleanupFailure;
+    };
 
 export interface RelocateRepositoryInput {
   /** The existing real repository directory to move. */

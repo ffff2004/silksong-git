@@ -75,7 +75,8 @@ The global Tauri object is disabled. The unique `main` capability allows only
 narrow application intent commands: inspect one local Encoded Save, prepare
 and commit one confirmed managed-repository migration, archive one confirmed
 direct managed child, run one explicit archive-and-reinitialize managed-
-repository workflow, open an external
+repository workflow, import one external repository into the managed library,
+open an external
 repository, explicitly reopen an invalidated in-memory selection, obtain the
 current Repo Session connection, and start or stop watching for that current
 session. It grants no
@@ -129,6 +130,15 @@ target paths through `repository.archive`. History holds writer and watcher
 exclusion continuously through the atomic rename; external watcher ownership
 causes a safe refusal.
 
+External import is a copy workflow owned by the Desktop shell. The native
+folder picker selects a source outside the managed and archive roots; Desktop
+checks only direct Managed children for duplicates through History's public
+repository-to-repository Watched Save comparison, then asks the sidecar to copy
+the accepted source into `repositories/`. The source is never moved or
+registered as an external session. A copied `rebuildRequired` or migration
+candidate remains in that state until the user explicitly chooses its existing
+action, and a later status or shutdown failure retains the published copy.
+
 Archive-and-reinitialize is one Desktop Workflow. Desktop validates the selected
 save as a readable, decodable regular file, discovers the managed source by
 History Watched Save identity, claims the exact replacement child, transitions
@@ -161,8 +171,10 @@ reports success only after the baseline observation commits, opens the new Repo
 Session, and starts watching. A failed initialization cleans up only the
 atomically claimed child or reports its residual path. These are the explicit
 direct-History ownership exceptions for initialization: the sidecar exposes
-only the versioned `repository.compareWatchedSave` and `repository.initialize`
-commands, while the exact request/result/event contract remains in the
+only the versioned `repository.compareWatchedSave`,
+`repository.compareWatchedSaveRepositories`, `repository.import`, and
+`repository.initialize` commands, while the exact request/result/event contract
+remains in the
 [Desktop Sidecar Process Protocol Reference](../reference/desktop-sidecar-protocol.md).
 
 Managed legacy and lower-format candidates that History reports as requiring
