@@ -1,21 +1,28 @@
 {
   "name": "@silksong-git/history",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsup",
     "format": "tsx ../../scripts/format.ts packages/history",
     "lint": "tsx ../../scripts/lint.ts packages/history",
+    "prepack": "pnpm run build",
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@silksong-git/core": "workspace:*",
+    "@silksong-git/core": "^0.1.0",
     "complete-common": "2.29.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1"
   }
 }

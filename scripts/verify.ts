@@ -8,11 +8,13 @@ const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const VERIFY_ROOT = path.join(REPO_ROOT, ".cache", "verify");
 
 const verifySteps = [
+  { id: "build", command: ["pnpm", "build"] },
   { id: "lint", command: ["pnpm", "lint"] },
   { id: "test", command: ["pnpm", "test"] },
-  { id: "build-web", command: ["pnpm", "build-web"] },
-  { id: "build-desktop", command: ["pnpm", "build-desktop"] },
-  { id: "verify-cli-pack", command: ["pnpm", "verify-cli-pack"] },
+  {
+    id: "verify-cli-pack",
+    command: ["pnpm", "verify-cli-pack:built"],
+  },
 ] as const;
 
 type Reporter = "agent" | "human";

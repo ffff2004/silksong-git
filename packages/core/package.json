@@ -1,18 +1,22 @@
 {
   "name": "@silksong-git/core",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsup",
     "fixtures:generate": "tsx src/decode/fixtures/generate-fixtures.ts",
     "format": "tsx ../../scripts/format.ts packages/core",
     "lint": "tsx ../../scripts/lint.ts packages/core",
+    "prepack": "pnpm run build",
     "smoke:local-saves": "tsx src/decode/smoke-local-saves.ts",
     "test": "tsx --test src/**/*.test.ts"
   },
@@ -22,6 +26,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/crypto-js": "4.2.2"
+    "@types/crypto-js": "4.2.2",
+    "tsup": "^8.5.1"
   }
 }

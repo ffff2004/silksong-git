@@ -1,6 +1,6 @@
 {
   "name": "@silksong-git/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "bin": {
     "silksong-git": "./dist/main.js",
@@ -20,12 +20,12 @@
     "verify-pack": "tsx scripts/verify-pack.ts"
   },
   "dependencies": {
+    "@silksong-git/core": "^0.1.0",
+    "@silksong-git/history": "^0.1.0",
+    "@silksong-git/repo-session": "^0.1.0",
     "commander": "^14.0.3"
   },
   "devDependencies": {
-    "@silksong-git/core": "workspace:*",
-    "@silksong-git/history": "workspace:*",
-    "@silksong-git/repo-session": "workspace:*",
     "tsup": "^8.5.1"
   }
 }

@@ -3,9 +3,11 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   bundle: true,
   clean: true,
-  entry: ["src/main.ts"],
+  dts: {
+    compilerOptions: { ignoreDeprecations: "6.0", rootDir: "." },
+  },
+  entry: ["src/index.ts"],
   format: ["esm"],
-  noExternal: [/^@hono\//v, "complete-common", "crypto-js", "hono", "zod"],
   outDir: "dist",
   platform: "node",
   splitting: false,

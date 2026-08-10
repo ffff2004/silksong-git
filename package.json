@@ -16,11 +16,13 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "pnpm build-cli && pnpm build-web",
-    "build-cli": "pnpm --filter @silksong-git/cli build",
+    "build": "pnpm --filter @silksong-git/cli... --filter @silksong-git/web... run build && pnpm build-desktop",
+    "build:release-packages": "pnpm --filter @silksong-git/cli... run build",
+    "build-cli": "pnpm --filter @silksong-git/cli... run build",
     "build-desktop": "pnpm --filter @silksong-git/desktop build",
     "build-desktop-sidecar": "pnpm --filter @silksong-git/desktop-sidecar build",
-    "build-web": "pnpm --filter @silksong-git/web build",
+    "build-web": "pnpm --filter @silksong-git/web... run build",
+    "check:release-packages": "tsx ./scripts/check-release-packages.ts",
     "dev-cli": "pnpm --filter @silksong-git/cli dev",
     "dev-desktop": "pnpm --filter @silksong-git/desktop dev",
     "dev-desktop-sidecar": "pnpm --filter @silksong-git/desktop-sidecar dev",
@@ -28,13 +30,15 @@
     "format": "tsx ./scripts/format.ts && pnpm --filter @silksong-git/desktop format",
     "generate:openapi": "pnpm --filter @silksong-git/repo-session generate:openapi",
     "lint": "tsx ./scripts/lint.ts && pnpm --filter @silksong-git/desktop lint",
+    "local-release": "pnpm verify-cli-pack",
     "pack-cli": "pnpm --filter @silksong-git/cli pack",
     "preview-cli": "pnpm --filter @silksong-git/cli preview",
     "preview-web": "pnpm --filter @silksong-git/web preview",
     "test": "pnpm --recursive --if-present run test",
     "verify": "tsx ./scripts/verify.ts --reporter=human",
     "verify:agent": "tsx ./scripts/verify.ts --reporter=agent",
-    "verify-cli-pack": "pnpm --filter @silksong-git/cli verify-pack"
+    "verify-cli-pack": "pnpm build:release-packages && pnpm verify-cli-pack:built",
+    "verify-cli-pack:built": "pnpm check:release-packages && pnpm --filter @silksong-git/cli verify-pack"
   },
   "devDependencies": {
     "@eslint/json": "2.0.0",

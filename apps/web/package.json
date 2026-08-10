@@ -16,8 +16,8 @@
     "test:unit": "vitest run"
   },
   "dependencies": {
-    "@silksong-git/core": "workspace:*",
-    "@silksong-git/repo-session": "workspace:*",
+    "@silksong-git/core": "^0.1.0",
+    "@silksong-git/repo-session": "^0.1.0",
     "@solidjs/router": "^0.16.1",
     "@tauri-apps/api": "2.11.1",
     "complete-common": "2.29.0",

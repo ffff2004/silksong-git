@@ -71,19 +71,19 @@ importers:
 
   apps/cli:
     dependencies:
+      '@silksong-git/core':
+        specifier: ^0.1.0
+        version: link:../../packages/core
+      '@silksong-git/history':
+        specifier: ^0.1.0
+        version: link:../../packages/history
+      '@silksong-git/repo-session':
+        specifier: ^0.1.0
+        version: link:../../packages/repo-session
       commander:
         specifier: ^14.0.3
         version: 14.0.3
     devDependencies:
-      '@silksong-git/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@silksong-git/history':
-        specifier: workspace:*
-        version: link:../../packages/history
-      '@silksong-git/repo-session':
-        specifier: workspace:*
-        version: link:../../packages/repo-session
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.15)(tsx@4.22.4)(typescript@6.0.3)(yaml@2.9.0)
@@ -100,13 +100,13 @@ importers:
   apps/desktop-sidecar:
     dependencies:
       '@silksong-git/core':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../../packages/core
       '@silksong-git/history':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../../packages/history
       '@silksong-git/repo-session':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../../packages/repo-session
       zod:
         specifier: 4.4.3
@@ -119,10 +119,10 @@ importers:
   apps/web:
     dependencies:
       '@silksong-git/core':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../../packages/core
       '@silksong-git/repo-session':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../../packages/repo-session
       '@solidjs/router':
         specifier: ^0.16.1
@@ -177,15 +177,22 @@ importers:
       '@types/crypto-js':
         specifier: 4.2.2
         version: 4.2.2
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.15)(tsx@4.22.4)(typescript@6.0.3)(yaml@2.9.0)
 
   packages/history:
     dependencies:
       '@silksong-git/core':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../core
       complete-common:
         specifier: 2.29.0
         version: 2.29.0
+    devDependencies:
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.15)(tsx@4.22.4)(typescript@6.0.3)(yaml@2.9.0)
 
   packages/repo-session:
     dependencies:
@@ -196,10 +203,10 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0(hono@4.12.29)(zod@4.4.3)
       '@silksong-git/core':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../core
       '@silksong-git/history':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../history
       hono:
         specifier: ^4.12.29
@@ -211,6 +218,9 @@ importers:
       prettier:
         specifier: 3.8.4
         version: 3.8.4
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.15)(tsx@4.22.4)(typescript@6.0.3)(yaml@2.9.0)
 
 packages:
 
@@ -1495,6 +1505,7 @@ packages:
     resolution: {integrity: sha512-mQqqAV8QaoSgr9I2fKDLY2BAVvmKjWoGiu/cSYQonsLvtqwEn1E4QYfnCOcp5zoEqNhsDYin1s6jx/VJmrxlZg==}
     cpu: [loong64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-loong64-musl@4.62.2':
     resolution: {integrity: sha512-IxKLoxCQ2IWi6bT2akyDUBGsOImDKB+sPp4EsTmwFQ/fMwpCKm8uLSSgP/Kx/QYUgKis6SEZ5/Nlhup0DIA0PQ==}
@@ -2277,6 +2288,7 @@ packages:
 
   crypto-js@4.2.0:
     resolution: {integrity: sha512-KALDyEYgpY+Rlob/iriUtjV6d5Eq+Y191A5g4UqLAi8CyGP9N1+FdVbkc1SxKc2r4YAYqG8JzO2KGL+AizD70Q==}
+    deprecated: Active development of CryptoJS has been discontinued. This library is no longer maintained.
 
   cspell-check-unused-words@1.6.3:
     resolution: {integrity: sha512-ozvZQRdqNHaSjMcYWNXcNxAB+KHt0lteMBdNLGWNW9eXyRebyynzWpIb7stmysLQWKeh6d1xvPiD/Xm1tPQRLA==}
@@ -2750,7 +2762,7 @@ packages:
 
   glob@7.2.3:
     resolution: {integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==}
-    deprecated: Glob versions prior to v9 are no longer supported
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   global-directory@5.0.0:
     resolution: {integrity: sha512-1pgFdhK3J2LeM+dVf2Pd424yHx2ou338lC0ErNP2hPx4j8eW1Sp0XqSjNxtk6Tc4Kr5wlWtSvz8cn2yb7/SG/w==}

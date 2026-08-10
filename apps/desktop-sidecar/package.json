@@ -14,9 +14,9 @@
     "test": "pnpm run build && tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@silksong-git/core": "workspace:*",
-    "@silksong-git/history": "workspace:*",
-    "@silksong-git/repo-session": "workspace:*",
+    "@silksong-git/core": "^0.1.0",
+    "@silksong-git/history": "^0.1.0",
+    "@silksong-git/repo-session": "^0.1.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

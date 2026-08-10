@@ -1,37 +1,42 @@
 {
   "name": "@silksong-git/repo-session",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./http-contract": {
-      "types": "./src/http-contract.ts",
-      "default": "./src/http-contract.ts"
+      "types": "./dist/http-contract.d.ts",
+      "default": "./dist/http-contract.js"
     },
     "./http-wire": {
-      "types": "./src/http-wire.ts",
-      "default": "./src/http-wire.ts"
+      "types": "./dist/http-wire.d.ts",
+      "default": "./dist/http-wire.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsup",
     "format": "tsx ../../scripts/format.ts packages/repo-session",
     "generate:openapi": "tsx src/scripts/generate-openapi.ts",
     "lint": "tsx ../../scripts/lint.ts packages/repo-session",
+    "prepack": "pnpm run build",
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.8",
     "@hono/zod-openapi": "^1.4.0",
-    "@silksong-git/core": "workspace:*",
-    "@silksong-git/history": "workspace:*",
+    "@silksong-git/core": "^0.1.0",
+    "@silksong-git/history": "^0.1.0",
     "hono": "^4.12.29",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "prettier": "3.8.4"
+    "prettier": "3.8.4",
+    "tsup": "^8.5.1"
   }
 }
