@@ -646,33 +646,14 @@ describe("Solid Web app routing", () => {
     });
   });
 
-  it("refreshes an existing initialization refusal and exposes an explicit rebuild retry", async () => {
-    const rebuildRequired = {
-      action: "rebuildReadModel" as const,
-      kind: "requiresAction" as const,
-      status: "rebuildRequired" as const,
-    };
+  it("confirms replacement when initialization finds an existing Watched Save", async () => {
     const initializeManagedRepository = vi.fn(async () => ({
       kind: "existingRepository" as const,
       name: "test-repository",
     }));
-    const openLibraryEntry = vi
-      .fn()
-      .mockResolvedValueOnce(rebuildRequired)
-      .mockResolvedValue(rebuildRequired);
-    const getRepositoryLibrary = vi
-      .fn()
-      .mockResolvedValueOnce(desktopTestRepositoryLibrary)
-      .mockResolvedValue({
-        ...desktopTestRepositoryLibrary,
-        managed: [
-          {
-            ...desktopTestRepositoryLibrary.managed[0],
-            requiredAction: "rebuildReadModel",
-            status: "rebuildRequired",
-          },
-        ],
-      });
+    const archiveAndReinitializeManagedRepository = vi.fn(async () => ({
+      kind: "cancelled" as const,
+    }));
     const runtimeCapabilities = createDesktopRuntimeCapabilities({
       getRepoSessionConnection: () => ({
         endpoint: "http://127.0.0.1:4312",
@@ -680,11 +661,12 @@ describe("Solid Web app routing", () => {
       }),
       openExternalRepository: async () => ({ kind: "opened" }),
       initializeManagedRepository,
-      getRepositoryLibrary,
-      openLibraryEntry,
+      archiveAndReinitializeManagedRepository,
       startWatching: async () => undefined,
       stopWatching: async () => undefined,
     });
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
 
     globalThis.location.hash = "#/repositories";
     render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
@@ -693,25 +675,17 @@ describe("Solid Web app routing", () => {
         name: "Initialize and watch save…",
       }),
     );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Open test-repository" }),
-    );
-
-    expect(
-      await screen.findByText(
-        "This repository needs its Semantic Read Model rebuilt before it can be opened. Rebuild it with a compatible current version, then try again. Click Rebuild to try again.",
-      ),
-    ).toBeDefined();
-    expect(getRepositoryLibrary).toHaveBeenCalledTimes(2);
-    fireEvent.click(await screen.findByRole("button", { name: "Rebuild" }));
     await waitFor(() => {
-      expect(openLibraryEntry).toHaveBeenCalledTimes(2);
+      expect(archiveAndReinitializeManagedRepository).toHaveBeenCalledTimes(1);
     });
-    expect(openLibraryEntry).toHaveBeenLastCalledWith({
-      lifecycle: "managed",
-      intent: "rebuild",
-      name: "test-repository",
-    });
+    expect(confirm).toHaveBeenCalledWith(
+      "Archive the current managed repository, then initialize the selected save as its replacement? The archive is retained for recovery.",
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: "Archive and reinitialize managed repository…",
+      }),
+    ).toBeNull();
   });
 
   it("runs an explicitly clicked managed rebuild through the normal open flow", async () => {

@@ -55,8 +55,6 @@ export function RepositoryLibraryView() {
   const [migrating, setMigrating] = createSignal(false);
   const [initializing, setInitializing] = createSignal(false);
   const [replacing, setReplacing] = createSignal(false);
-  const [existingInitialization, setExistingInitialization] =
-    createSignal<string>();
   const repositorySwitchingDisabled = () =>
     opening() !== undefined
     || archiving() !== undefined
@@ -425,7 +423,6 @@ export function RepositoryLibraryView() {
     }
     setInitializing(true);
     setError(undefined);
-    setExistingInitialization(undefined);
     try {
       const result = await localHistory.initializeManagedRepository();
       switch (result.kind) {
@@ -439,7 +436,16 @@ export function RepositoryLibraryView() {
         }
 
         case "existingRepository": {
-          setExistingInitialization(result.name);
+          if (
+            // eslint-disable-next-line no-alert
+            !globalThis.confirm(
+              "Archive the current managed repository, then initialize the selected save as its replacement? The archive is retained for recovery.",
+            )
+          ) {
+            break;
+          }
+          setInitializing(false);
+          await archiveAndReinitializeManagedRepository();
           break;
         }
 
@@ -488,14 +494,6 @@ export function RepositoryLibraryView() {
       || runtimeCapabilities.kind !== "desktop"
       || runtimeCapabilities.archiveAndReinitializeManagedRepository
         === undefined
-    ) {
-      return;
-    }
-    if (
-      // eslint-disable-next-line no-alert
-      !globalThis.confirm(
-        "Archive the current managed repository, then initialize the selected save as its replacement? The archive is retained for recovery.",
-      )
     ) {
       return;
     }
@@ -566,47 +564,6 @@ export function RepositoryLibraryView() {
     }
   };
 
-  const openExistingInitialization = async () => {
-    const name = existingInitialization();
-    if (name === undefined) {
-      return;
-    }
-    const entry = library()?.managed.find(
-      (candidate) => candidate.name === name,
-    ) ?? {
-      current: false,
-      lifecycle: "managed" as const,
-      name,
-      requiredAction: "open",
-      status: "ready",
-      watching: false,
-    };
-    setOpening(`managed:${name}`);
-    try {
-      const result = await localHistory.openLibraryEntry({
-        lifecycle: "managed",
-        name,
-        intent: "open",
-      });
-      if (result.kind !== "opened") {
-        await reportFailedOpen(
-          entry,
-          formatOpenResult(result),
-          result.kind === "requiresAction"
-            && result.status === "rebuildRequired",
-        );
-        return;
-      }
-      localHistory.disconnect();
-      saveStore.clear();
-      if (await localHistory.connect()) {
-        navigate("/progress");
-      }
-    } finally {
-      setOpening(undefined);
-    }
-  };
-
   onMount(() => {
     refresh().catch(() => undefined);
   });
@@ -641,21 +598,6 @@ export function RepositoryLibraryView() {
         {initializing() ? "Initializing…" : "Initialize and watch save…"}
       </button>
       <button
-        class={buttonStyles["secondary"]}
-        id="archive-and-reinitialize-managed-repository"
-        type="button"
-        disabled={replacing() || repositorySwitchingDisabled()}
-        onClick={() => {
-          archiveAndReinitializeManagedRepository().catch(() => {
-            setError("Could not replace the managed repository.");
-          });
-        }}
-      >
-        {replacing()
-          ? "Replacing managed repository…"
-          : "Archive and reinitialize managed repository…"}
-      </button>
-      <button
         class={buttonStyles["primary"]}
         type="button"
         disabled={loading()}
@@ -666,27 +608,6 @@ export function RepositoryLibraryView() {
         {loading() ? "Refreshing…" : "Refresh"}
       </button>
       <Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
-      <Show when={existingInitialization()}>
-        {(name) => (
-          <div role="status">
-            <p>A managed repository already tracks this Watched Save.</p>
-            <button
-              class={buttonStyles["secondary"]}
-              type="button"
-              disabled={
-                opening() !== undefined || repositorySwitchingDisabled()
-              }
-              onClick={() => {
-                openExistingInitialization().catch(() => {
-                  setError("Could not open the existing managed repository.");
-                });
-              }}
-            >
-              Open {name()}
-            </button>
-          </div>
-        )}
-      </Show>
       <Show when={migration()}>
         {(pending) => (
           <div role="status">
