@@ -1,5 +1,14 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -17,17 +26,10 @@ try {
   const packedArchives = {
     cli: await findPackedArchive(packDirectory, "silksong-git-cli-"),
     core: await findPackedArchive(packDirectory, "silksong-git-core-"),
-    history: await findPackedArchive(packDirectory, "silksong-git-history-"),
-    repoSession: await findPackedArchive(
-      packDirectory,
-      "silksong-git-repo-session-",
-    ),
   };
   const localPackages = {
     "@silksong-git/cli": `file:${packedArchives.cli}`,
     "@silksong-git/core": `file:${packedArchives.core}`,
-    "@silksong-git/history": `file:${packedArchives.history}`,
-    "@silksong-git/repo-session": `file:${packedArchives.repoSession}`,
   };
 
   await Promise.all(
@@ -58,7 +60,13 @@ try {
     ].join("\n"),
   );
   await run("pnpm", ["--dir", installDirectory, "install"]);
-  await run("pnpm", ["--dir", installDirectory, "exec", "ssgit", "--help"]);
+  const installedCliPath = path.join(
+    installDirectory,
+    "node_modules/@silksong-git/cli/dist/main.js",
+  );
+
+  await verifyInstalledCliExecutable(installedCliPath);
+  await run(installedCliPath, ["--help"]);
   const historyRepo = path.join(tempDirectory, "history-repo");
   const fixtureSave = path.join(
     REPO_ROOT,
@@ -78,7 +86,7 @@ try {
     historyRepo,
   ]);
   await verifyPackedHttpRuntime({
-    cliPath: path.join(installDirectory, "node_modules/.bin/ssgit"),
+    cliPath: installedCliPath,
     historyRepo,
   });
 } finally {
@@ -104,12 +112,7 @@ async function verifyPackedHttpRuntime(input: {
 }
 
 async function packWorkspacePackages(packDirectory: string) {
-  for (const packageName of [
-    "@silksong-git/core",
-    "@silksong-git/history",
-    "@silksong-git/repo-session",
-    "@silksong-git/cli",
-  ]) {
+  for (const packageName of ["@silksong-git/core", "@silksong-git/cli"]) {
     await run("pnpm", [
       "--filter",
       packageName,
@@ -118,6 +121,16 @@ async function packWorkspacePackages(packDirectory: string) {
       "--pack-destination",
       packDirectory,
     ]);
+  }
+}
+
+async function verifyInstalledCliExecutable(cliPath: string) {
+  await access(cliPath, constants.X_OK);
+  const contents = await readFile(cliPath, "utf8");
+  const firstLine = contents.split("\n", 1)[0];
+
+  if (firstLine !== "#!/usr/bin/env node") {
+    throw new Error(`Installed CLI has invalid shebang: ${firstLine}`);
   }
 }
 

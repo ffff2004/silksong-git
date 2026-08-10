@@ -4,12 +4,15 @@ import path from "node:path";
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const publishablePackagePaths = [
   "packages/core/package.json",
+  "apps/cli/package.json",
+] as const;
+const privatePackagePaths = [
   "packages/history/package.json",
   "packages/repo-session/package.json",
-  "apps/cli/package.json",
 ] as const;
 const workspacePackagePaths = [
   ...publishablePackagePaths,
+  ...privatePackagePaths,
   "apps/desktop/package.json",
   "apps/desktop-sidecar/package.json",
   "apps/web/package.json",
@@ -53,6 +56,16 @@ const publishablePackageNames = new Set(
 for (const { manifest, relativePath } of publishablePackages) {
   if (manifest.name === undefined || manifest.private === true) {
     throw new Error(`${relativePath} must describe a public named package.`);
+  }
+}
+
+const privatePackages = await Promise.all(
+  privatePackagePaths.map(readPackageManifest),
+);
+
+for (const { manifest, relativePath } of privatePackages) {
+  if (manifest.private !== true) {
+    throw new Error(`${relativePath} must remain private.`);
   }
 }
 

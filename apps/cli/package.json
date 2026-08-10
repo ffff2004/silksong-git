@@ -21,11 +21,11 @@
   },
   "dependencies": {
     "@silksong-git/core": "^0.1.0",
-    "@silksong-git/history": "^0.1.0",
-    "@silksong-git/repo-session": "^0.1.0",
     "commander": "^14.0.3"
   },
   "devDependencies": {
+    "@silksong-git/history": "^0.1.0",
+    "@silksong-git/repo-session": "^0.1.0",
     "tsup": "^8.5.1"
   }
 }
