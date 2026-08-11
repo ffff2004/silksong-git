@@ -100,6 +100,10 @@ interface RepositorySnapshotFileSystem {
     configPath: string,
     contents: string,
   ) => Promise<void>;
+  readonly renameSnapshot: (
+    sourcePath: string,
+    targetPath: string,
+  ) => Promise<void>;
 }
 
 const repositorySnapshotFileSystemState: {
@@ -450,6 +454,7 @@ export async function copyRepositorySnapshot(
       const snapshot = await createVerifiedSnapshotUnderLocks(
         placement.sourcePath,
         placement.targetPath,
+        placement.stagingRootPath,
       );
       result = {
         status: "copied",
@@ -857,6 +862,7 @@ export async function prepareSaveHistoryMigration(
     const snapshot = await createVerifiedSnapshotUnderLocks(
       input.repoPath,
       input.snapshotPath,
+      input.stagingRootPath,
     );
     let completed = false;
     let leasesReleased = false;
@@ -964,21 +970,32 @@ class SnapshotError extends Error {
 async function createVerifiedSnapshotUnderLocks(
   sourcePath: string,
   targetPath: string,
+  stagingRootPath: string,
 ): Promise<RepositorySnapshot> {
-  if (!path.isAbsolute(sourcePath) || !path.isAbsolute(targetPath)) {
-    throw new Error("Snapshot source and destination must be absolute paths.");
+  if (
+    !path.isAbsolute(sourcePath)
+    || !path.isAbsolute(targetPath)
+    || !path.isAbsolute(stagingRootPath)
+  ) {
+    throw new SnapshotError(
+      "The repository snapshot paths must be absolute.",
+      undefined,
+      "publishFailed",
+    );
   }
 
   const resolvedSourcePath = path.resolve(sourcePath);
   const resolvedTargetPath = path.resolve(targetPath);
+  const resolvedStagingRootPath = path.resolve(stagingRootPath);
   const targetParentPath = path.dirname(resolvedTargetPath);
   if (isPathWithin(resolvedSourcePath, resolvedTargetPath)) {
-    throw new Error(
+    throw new SnapshotError(
       "The repository snapshot destination cannot be inside its source.",
+      undefined,
+      "publishFailed",
     );
   }
 
-  const sourceDigestBefore = await calculateDirectoryDigest(resolvedSourcePath);
   let stagingDirectory: string | undefined;
   let stagingPath: string | undefined;
   const snapshotFileSystem = getRepositorySnapshotFileSystem();
@@ -986,23 +1003,46 @@ async function createVerifiedSnapshotUnderLocks(
   // Cleanup must run for copy, digest, integrity, and publication failures alike.
   // eslint-disable-next-line unicorn/try-complexity
   try {
+    // eslint-disable-next-line unicorn/try-complexity
     try {
-      await ensureRealCopyTargetParent(targetParentPath);
+      const initialTargetBoundary =
+        await ensureRealCopyTargetParent(targetParentPath);
+      const stagingBoundary = await requireRealSnapshotStagingRoot(
+        resolvedStagingRootPath,
+      );
+      if (initialTargetBoundary.device !== stagingBoundary.device) {
+        throw new Error(
+          "The repository snapshot staging root and destination parent must be on the same filesystem.",
+        );
+      }
+
+      const targetBoundaryBeforeCopy =
+        await requireRealCopyTargetParent(targetParentPath);
+      if (targetBoundaryBeforeCopy.device !== stagingBoundary.device) {
+        throw new Error(
+          "The repository snapshot staging root and destination parent must be on the same filesystem.",
+        );
+      }
+      if (isPathWithin(resolvedSourcePath, resolvedStagingRootPath)) {
+        throw new Error(
+          "The repository snapshot staging root cannot be inside its source.",
+        );
+      }
+
       stagingDirectory = await mkdtemp(
-        path.join(tmpdir(), "silksong-history-snapshot-"),
+        path.join(resolvedStagingRootPath, ".silksong-history-snapshot-"),
       );
-      stagingPath = path.join(
-        stagingDirectory,
-        `.${path.basename(resolvedTargetPath)}.staging-${createOpaqueId(12)}`,
-      );
+      stagingPath = stagingDirectory;
     } catch (error) {
       throw new SnapshotError(
-        "The repository snapshot destination is not a stable real directory.",
+        "The repository snapshot staging root or destination parent is not stable.",
         { cause: error },
         "publishFailed",
       );
     }
 
+    const sourceDigestBefore =
+      await calculateDirectoryDigest(resolvedSourcePath);
     await requireRealCopyTargetParent(targetParentPath);
     try {
       await snapshotFileSystem.copyRepository(resolvedSourcePath, stagingPath);
@@ -1120,24 +1160,53 @@ async function requireRealCopyTargetParent(
   return boundary;
 }
 
+async function requireRealSnapshotStagingRoot(
+  directoryPath: string,
+): Promise<CopyTargetDirectoryBoundary> {
+  if (!path.isAbsolute(directoryPath)) {
+    throw new Error("The snapshot staging root must be absolute.");
+  }
+
+  const resolvedPath = path.resolve(directoryPath);
+  const metadata = await lstat(resolvedPath);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error("The snapshot staging root must be a real directory.");
+  }
+
+  const canonicalPath = await realpath(resolvedPath);
+  if (canonicalPath !== resolvedPath) {
+    throw new Error("The snapshot staging root must not contain a symlink.");
+  }
+
+  const identity = await stat(canonicalPath, { bigint: true });
+  return {
+    path: canonicalPath,
+    device: identity.dev,
+    inode: identity.ino,
+  };
+}
+
 async function validateCopyPlacement(
   input: CopyRepositorySnapshotInput,
 ): Promise<
   | {
       readonly sourcePath: string;
       readonly targetPath: string;
+      readonly stagingRootPath: string;
     }
   | undefined
 > {
   if (
     !path.isAbsolute(input.sourcePath)
     || !path.isAbsolute(input.targetPath)
+    || !path.isAbsolute(input.stagingRootPath)
   ) {
     return undefined;
   }
 
   const sourceInputPath = path.resolve(input.sourcePath);
   const targetPath = path.resolve(input.targetPath);
+  const stagingRootPath = path.resolve(input.stagingRootPath);
   const targetName = path.basename(targetPath);
   if (
     targetName === ""
@@ -1162,6 +1231,15 @@ async function validateCopyPlacement(
   if (sourcePath === undefined) {
     return undefined;
   }
+  const stagingBoundary = await requireRealSnapshotStagingRoot(
+    stagingRootPath,
+  ).catch(() => undefined);
+  if (
+    stagingBoundary === undefined
+    || isPathWithin(sourcePath, stagingBoundary.path)
+  ) {
+    return undefined;
+  }
   const targetParent = path.dirname(targetPath);
   if ((await inspectCopyTargetParent(targetParent, true)) === undefined) {
     return undefined;
@@ -1170,7 +1248,7 @@ async function validateCopyPlacement(
     return undefined;
   }
 
-  return { sourcePath, targetPath };
+  return { sourcePath, targetPath, stagingRootPath: stagingBoundary.path };
 }
 
 function isCopySourceStatus(
@@ -1253,6 +1331,7 @@ const nodeRepositorySnapshotFileSystem: RepositorySnapshotFileSystem =
   Object.freeze({
     copyRepository: copyDurableRepository,
     writeConfigAtomically,
+    renameSnapshot: rename,
   });
 
 function getRepositorySnapshotFileSystem(): RepositorySnapshotFileSystem {
@@ -1462,7 +1541,10 @@ async function publishSnapshotNoReplace(
       }
 
       try {
-        await rename(stagingPath, candidate);
+        await getRepositorySnapshotFileSystem().renameSnapshot(
+          stagingPath,
+          candidate,
+        );
         return candidate;
       } catch (error) {
         if (isExistingPathError(error)) {

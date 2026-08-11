@@ -21,7 +21,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 10,
+  "protocolVersion": 11,
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +36,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 10,
+  "protocolVersion": 11,
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,7 +49,7 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 10 accepts these commands:
+Version 11 accepts these commands:
 
 - `repository.inspect` with one absolute `repoPath` and an optional
   `gitIntegrityPolicy` of `strict` (default) or `advisory`;
@@ -64,8 +64,8 @@ Version 10 accepts these commands:
   failure, not a false match;
 - `repository.compareWatchedSaveRepositories` with two absolute repository
   paths, returning only whether their configured Watched Save identities match;
-- `repository.import` with an absolute external `sourcePath` and an App-owned
-  absolute `targetPath`, returning a structured copied, rejected, or failed
+- `repository.import` with an absolute external `sourcePath`, an App-owned
+  absolute `targetPath`, and an App-owned absolute `stagingRootPath`, returning a structured copied, rejected, or failed
   result. Operational failures include a phase, reason, unchanged source
   state, safe message, and any retained path; session or mutation busy states
   use this result rather than a generic error envelope. Schema-invalid import
@@ -82,8 +82,8 @@ Version 10 accepts these commands:
 - `repository.migrate` with one absolute `repoPath`, a prior opaque inspection
   ID, and the literal migration confirmation;
 - `repository.migration.prepare` with one absolute source `repoPath`, a prior
-  opaque inspection ID, the literal migration confirmation, and one absolute
-  opaque `snapshotPath`;
+  opaque inspection ID, the literal migration confirmation, one absolute
+  opaque `snapshotPath`, and one App-owned absolute `stagingRootPath`;
 - `repository.migration.commit` with no arguments, committing the currently
   prepared non-cancelable migration operation;
 - `repository.rebuild` with one absolute `repoPath`;
@@ -172,7 +172,7 @@ compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 10,
+  "protocolVersion": 11,
   "kind": "response",
   "requestId": "open-1",
   "ok": true,

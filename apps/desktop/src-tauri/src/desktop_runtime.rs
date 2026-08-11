@@ -25,7 +25,7 @@ use crate::managed_initialization::{
 };
 use crate::save_location::{SaveLocationPlatform, SaveLocationSystem, initial_directory};
 
-const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 10;
+const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 11;
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
 const BUNDLED_SIDECAR_NAME: &str = "silksong-git-desktop-sidecar";
 const REPLACEMENT_CONFIRMATION: &str = "archive-and-reinitialize-managed-repository";
@@ -526,6 +526,17 @@ impl DesktopWorkflow {
                 ));
             }
         };
+        let staging_root = match staging_root(app) {
+            Ok(root) => root,
+            Err(error) => {
+                return Ok(import_failure(
+                    "placement",
+                    "stagingRootUnavailable",
+                    &error.user_message(),
+                    None,
+                ));
+            }
+        };
         let launch = match SidecarLaunch::for_app(app) {
             Ok(launch) => launch,
             Err(error) => {
@@ -541,6 +552,7 @@ impl DesktopWorkflow {
             selected_path,
             managed_root_path,
             archives_root,
+            staging_root,
             launch,
             Local::now().fixed_offset(),
         )
@@ -846,6 +858,7 @@ impl DesktopWorkflow {
         selected_path: PathBuf,
         managed_root: PathBuf,
         archives_root: PathBuf,
+        staging_root: PathBuf,
         launch: SidecarLaunch,
         imported_at: chrono::DateTime<chrono::FixedOffset>,
     ) -> Result<ImportRepositoryResult, DesktopRuntimeError> {
@@ -922,6 +935,18 @@ impl DesktopWorkflow {
                 return Ok(import_failure(
                     "placement",
                     "archivesRootUnavailable",
+                    &error.user_message(),
+                    None,
+                ));
+            }
+        };
+        let staging_root = match ensure_managed_root(&staging_root) {
+            Ok(root) => root,
+            Err(error) => {
+                self.finish_transition_preserving_session();
+                return Ok(import_failure(
+                    "placement",
+                    "stagingRootUnavailable",
                     &error.user_message(),
                     None,
                 ));
@@ -1039,11 +1064,11 @@ impl DesktopWorkflow {
                 ));
             }
         };
-        let imported = candidate.command(json!({
-            "type": "repository.import",
-            "sourcePath": source_protocol_path,
-            "targetPath": target_path,
-        }));
+        let imported = candidate.command(repository_import_command(
+            &source_protocol_path,
+            &target_path,
+            &repository_path_for_protocol(&staging_root)?,
+        ));
         let imported = match imported {
             Ok(response) => parse_repository_import_result(&response),
             Err(error) => Err(DesktopRuntimeError::from(error)),
@@ -2124,6 +2149,7 @@ impl DesktopWorkflow {
         let path = resolve_library_child(app, RepositoryLifecycle::Managed, &input.name)?;
         let repo_path = repository_path_for_protocol(&path)?;
         let snapshot_root = managed_root(app, RepositoryLifecycle::Archived)?;
+        let staging_root = staging_root(app)?;
         let snapshot_name = archive_placement_name(
             &input.name,
             ArchivePlacementPurpose::PreMigration,
@@ -2180,13 +2206,12 @@ impl DesktopWorkflow {
             state.transitioning = true;
         }
 
-        let response = candidate.command(json!({
-            "type": "repository.migration.prepare",
-            "repoPath": repo_path,
-            "inspectionId": inspection_id,
-            "confirmation": "migrate-save-history-repository",
-            "snapshotPath": snapshot_path,
-        }));
+        let response = candidate.command(repository_migration_prepare_command(
+            &repo_path,
+            &inspection_id,
+            &snapshot_path,
+            &repository_path_for_protocol(&staging_root)?,
+        ));
         let response = match response {
             Ok(response) => response,
             Err(error) => {
@@ -3034,6 +3059,15 @@ fn managed_root<R: Runtime>(
     Ok(root)
 }
 
+fn staging_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, DesktopRuntimeError> {
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| DesktopRuntimeError::Unavailable)?
+        .join("staging");
+    ensure_managed_root(&root)
+}
+
 fn existing_managed_root(root: &Path) -> Result<Option<PathBuf>, DesktopRuntimeError> {
     match fs::symlink_metadata(root) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
@@ -3249,6 +3283,35 @@ fn archive_placement_name(
 
 fn advisory_repository_inspection_command(repo_path: &str) -> Value {
     repository_inspection_command(repo_path, "advisory")
+}
+
+fn repository_import_command(
+    source_path: &str,
+    target_path: &str,
+    staging_root_path: &str,
+) -> Value {
+    json!({
+        "type": "repository.import",
+        "sourcePath": source_path,
+        "targetPath": target_path,
+        "stagingRootPath": staging_root_path,
+    })
+}
+
+fn repository_migration_prepare_command(
+    repo_path: &str,
+    inspection_id: &str,
+    snapshot_path: &str,
+    staging_root_path: &str,
+) -> Value {
+    json!({
+        "type": "repository.migration.prepare",
+        "repoPath": repo_path,
+        "inspectionId": inspection_id,
+        "confirmation": "migrate-save-history-repository",
+        "snapshotPath": snapshot_path,
+        "stagingRootPath": staging_root_path,
+    })
 }
 
 fn strict_repository_inspection_command(repo_path: &str) -> Value {
@@ -5088,6 +5151,35 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_commands_forward_the_desktop_staging_root() {
+        assert_eq!(
+            super::repository_import_command("/source", "/target", "/staging"),
+            json!({
+                "type": "repository.import",
+                "sourcePath": "/source",
+                "targetPath": "/target",
+                "stagingRootPath": "/staging",
+            })
+        );
+        assert_eq!(
+            super::repository_migration_prepare_command(
+                "/repository",
+                "inspection",
+                "/snapshot",
+                "/staging",
+            ),
+            json!({
+                "type": "repository.migration.prepare",
+                "repoPath": "/repository",
+                "inspectionId": "inspection",
+                "confirmation": "migrate-save-history-repository",
+                "snapshotPath": "/snapshot",
+                "stagingRootPath": "/staging",
+            })
+        );
+    }
+
+    #[test]
     fn only_managed_rebuild_required_entries_are_landing_candidates() {
         assert!(super::is_managed_rebuild_candidate(
             RepositoryLifecycle::Managed,
@@ -5233,6 +5325,7 @@ mod tests {
                 source.clone(),
                 managed_root.clone(),
                 archives_root,
+                temp.path().join("staging"),
                 SidecarLaunch::Development {
                     entry: script,
                     node: PathBuf::from("node"),
@@ -5283,6 +5376,7 @@ mod tests {
                 source.clone(),
                 temp.path().join("repositories"),
                 temp.path().join("archives"),
+                temp.path().join("staging"),
                 SidecarLaunch::Development {
                     entry: temp.path().join("missing-sidecar.mjs"),
                     node: PathBuf::from("node"),
@@ -5334,6 +5428,7 @@ mod tests {
                     source,
                     managed_root,
                     temp.path().join("archives"),
+                    temp.path().join("staging"),
                     SidecarLaunch::Development {
                         entry: script,
                         node: PathBuf::from("node"),
@@ -5383,6 +5478,7 @@ mod tests {
                 source.clone(),
                 managed_root,
                 temp.path().join("archives"),
+                temp.path().join("staging"),
                 SidecarLaunch::Development {
                     entry: script,
                     node: PathBuf::from("node"),
@@ -5437,6 +5533,7 @@ mod tests {
                     source.clone(),
                     managed_root,
                     temp.path().join("archives"),
+                    temp.path().join("staging"),
                     SidecarLaunch::Development {
                         entry: script,
                         node: PathBuf::from("node"),
@@ -5504,6 +5601,7 @@ mod tests {
                 source.clone(),
                 managed_root,
                 temp.path().join("archives"),
+                temp.path().join("staging"),
                 SidecarLaunch::Development {
                     entry: temp.path().join("unused.mjs"),
                     node: PathBuf::from("node"),
@@ -5547,6 +5645,7 @@ mod tests {
                 source.clone(),
                 managed_root.clone(),
                 temp.path().join("archives"),
+                temp.path().join("staging"),
                 SidecarLaunch::Development {
                     entry: script,
                     node: PathBuf::from("node"),
@@ -5597,6 +5696,7 @@ mod tests {
                 temp.path().join("not-selected-after-guard"),
                 temp.path().join("repositories"),
                 temp.path().join("archives"),
+                temp.path().join("staging"),
                 SidecarLaunch::Development {
                     entry: temp.path().join("unused.mjs"),
                     node: PathBuf::from("node"),
@@ -6393,7 +6493,7 @@ mod tests {
 import fs from "node:fs";
 import path from "node:path";
 const write = (message) => process.stdout.write(JSON.stringify(message) + "\n");
-write({ protocolVersion: 10, kind: "event", event: { type: "process.ready" } });
+write({ protocolVersion: 11, kind: "event", event: { type: "process.ready" } });
 let buffer = "";
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
@@ -6405,10 +6505,10 @@ process.stdin.on("data", (chunk) => {
     if (request.command.type === "repository.archive") {
       const destination = request.command.targetPath;
       fs.renameSync(request.command.sourcePath, destination);
-      write({ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true,
+      write({ protocolVersion: 11, kind: "response", requestId: request.requestId, ok: true,
         result: { type: "repository.archiveResult", archive: { status: "archived", repoPath: destination, name: path.basename(destination) } } });
     } else if (request.command.type === "process.shutdown") {
-      write({ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true,
+      write({ protocolVersion: 11, kind: "response", requestId: request.requestId, ok: true,
         result: { type: "process.shutdownComplete" } });
       process.exit(0);
     }
@@ -7701,13 +7801,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 10, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 11, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 10, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 11, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 
-write({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 11, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -7819,10 +7919,10 @@ function write(message) {
   process.stdout.write(JSON.stringify(message) + "\n");
 }
 function response(requestId, result) {
-  write({ protocolVersion: 10, kind: "response", requestId, ok: true, result });
+  write({ protocolVersion: 11, kind: "response", requestId, ok: true, result });
 }
 function failure(requestId) {
-  write({ protocolVersion: 10, kind: "response", requestId, ok: false, error: { code: "repository_watched_save_compare_failed", message: "uncomparable Watched Save should be skipped" } });
+  write({ protocolVersion: 11, kind: "response", requestId, ok: false, error: { code: "repository_watched_save_compare_failed", message: "uncomparable Watched Save should be skipped" } });
 }
 function inspection() {
   return { status: "ready", requiredAction: "open", capabilities: ["read", "write"] };
@@ -7831,7 +7931,7 @@ const comparisonMarker = __COMPARISON_MARKER__;
 let sourcePath;
 let archivePath;
 
-write({ protocolVersion: 10, kind: "event", event: { type: "process.ready" } });
+write({ protocolVersion: 11, kind: "event", event: { type: "process.ready" } });
 let buffer = "";
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
@@ -7899,13 +7999,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 10, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 11, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 10, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 11, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 
-write({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 11, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -8036,13 +8136,13 @@ function write(message) {{
   process.stdout.write(JSON.stringify(message) + "\n");
 }}
 function response(requestId, result) {{
-  write({{ protocolVersion: 10, kind: "response", requestId, ok: true, result }});
+  write({{ protocolVersion: 11, kind: "response", requestId, ok: true, result }});
 }}
 function failure(requestId, code, message) {{
-  write({{ protocolVersion: 10, kind: "response", requestId, ok: false, error: {{ code, message }} }});
+  write({{ protocolVersion: 11, kind: "response", requestId, ok: false, error: {{ code, message }} }});
 }}
 function mutation(status) {{
-  write({{ protocolVersion: 10, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
+  write({{ protocolVersion: 11, kind: "event", event: {{ type: "mutation.activity", mutation: "repositoryRebuild", status }} }});
 }}
 function inspection() {{
   const ready = repositoryStatus === "ready";
@@ -8053,7 +8153,7 @@ function inspection() {{
   }};
 }}
 
-write({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }});
+write({{ protocolVersion: 11, kind: "event", event: {{ type: "process.ready" }} }});
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -8143,7 +8243,7 @@ if (process.argv.includes(repository)) {{
   process.exitCode = 91;
   process.exit();
 }}
-process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -8162,14 +8262,14 @@ process.stdin.on("data", (chunk) => {{
       result = {{ type: "session.opened", access: request.command.access, connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
     }} else if (request.command.type === "process.shutdown") {{
       result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }} else {{
       result = {{ type: request.command.type === "watcher.start" ? "watcher.started" : "watcher.stopped" }};
     }}
-    process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+    process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
     if (request.command.type === "session.open" && {status:?} === "mutation") {{
-      process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "event", event: {{ type: "mutation.activity", mutation: "manualCheckpoint", status: "started" }} }}) + "\n");
     }}
   }}
 }});
@@ -8196,13 +8296,13 @@ const duplicate = {duplicate};
 const failure = {failure};
 const failureKind = failure.replace(/-cleanup$/, "");
 const cleanupFailure = failure.endsWith("-cleanup") ? "leaseReleaseFailed" : undefined;
-process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 function response(request, result) {{
-  process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
 }}
 function failureResponse(request, code, message) {{
-  process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: false, error: {{ code, message }} }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "response", requestId: request.requestId, ok: false, error: {{ code, message }} }}) + "\n");
 }}
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -8270,7 +8370,7 @@ process.stdin.on("data", (chunk) => {{
         format!(
             r#"
 const repository = {repository};
-process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -8282,7 +8382,7 @@ process.stdin.on("data", (chunk) => {{
     ? {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }}
     : {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }} }};
   if (request.command.type === "repository.inspect" && request.command.repoPath !== repository) throw new Error("wrong repository");
-  process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
   if (request.command.type === "session.open") process.exit(1);
 }});
 "#
@@ -8297,7 +8397,7 @@ process.stdin.on("data", (chunk) => {{
 import fs from "node:fs";
 const repository = {repository};
 const marker = {marker};
-process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
+process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "event", event: {{ type: "process.ready" }} }}) + "\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {{
   buffer += chunk;
@@ -8309,12 +8409,12 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "repository.inspect") {{
       if (request.command.repoPath !== repository) throw new Error("repository path was not sent over stdin");
       const result = {{ type: "repository.inspected", inspection: {{ status: "ready", requiredAction: "open", capabilities: ["read"] }} }};
-  process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+  process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       continue;
     }}
     if (request.command.type === "session.open") {{
       const error = {{
-        protocolVersion: 10,
+        protocolVersion: 11,
         kind: "response",
         requestId: request.requestId,
         ok: false,
@@ -8329,7 +8429,7 @@ process.stdin.on("data", (chunk) => {{
     if (request.command.type === "process.shutdown") {{
       fs.writeFileSync(marker, "shutdown");
       const result = {{ type: "process.shutdownComplete" }};
-      process.stdout.write(JSON.stringify({{ protocolVersion: 10, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
+      process.stdout.write(JSON.stringify({{ protocolVersion: 11, kind: "response", requestId: request.requestId, ok: true, result }}) + "\n");
       process.exit(0);
     }}
     throw new Error("unexpected candidate command");

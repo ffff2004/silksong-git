@@ -54,9 +54,10 @@ repository.
 Desktop's migration workflow uses the two-phase
 `prepareSaveHistoryMigration` Interface. Desktop supplies the canonical source
 repository path, an opaque target snapshot path, the inspection ID, and the
-literal confirmation; History does not own caller roots or parse placement
-names. Preparation holds repository serialization and watcher
-exclusion, copies the complete durable repository to a staging directory,
+literal confirmation, and an opaque staging root path; History does not own
+caller placement roots or parse placement names. Preparation holds repository
+serialization and watcher exclusion, creates one unique operation directory
+under the supplied staging root, and copies the complete durable repository,
 compares canonical SHA-256 Merkle directory digests before and after the copy,
 advises on Git integrity, and atomically publishes the collision-adjusted
 snapshot path. It returns a non-cancelable in-memory operation lease. Desktop
@@ -80,8 +81,9 @@ before rename leave the source unchanged, and an uninspectable source is still
 accepted when it is a valid real directory.
 
 External repository import uses the separate
-`copyRepositorySnapshot({ sourcePath, targetPath })` Interface and therefore
-keeps copy semantics distinct from migration and relocation. History accepts
+`copyRepositorySnapshot({ sourcePath, targetPath, stagingRootPath })` Interface
+and therefore keeps copy semantics distinct from migration and relocation.
+History accepts
 `ready`, `rebuildRequired`, `legacyConfig`, and `migrationRequired` sources,
 holds writer and watcher exclusions while copying, omits ephemeral read-model
 and lease files, verifies source/copy directory digests and Git integrity, and

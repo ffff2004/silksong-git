@@ -97,6 +97,7 @@ interface HistoryRepoFixture {
   readonly repoPath: string;
   readonly watchedSavePath: string;
   readonly configPath: string;
+  readonly stagingRootPath: string;
 }
 
 interface ObservedFixtureSequence extends HistoryRepoFixture {
@@ -111,6 +112,7 @@ async function createHistoryRepo(
   const tempDirectory = await createTempDirectory(t);
   const repoPath = path.join(tempDirectory, "history-repo");
   const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const stagingRootPath = path.join(tempDirectory, "staging");
 
   await copyFile(initialSavePath, watchedSavePath);
   const initialized = await initSaveHistory({
@@ -118,13 +120,50 @@ async function createHistoryRepo(
     watchedSavePath,
     config,
   });
+  await mkdir(stagingRootPath);
 
   return {
     tempDirectory,
     repoPath,
     watchedSavePath,
     configPath: initialized.configPath,
+    stagingRootPath,
   };
+}
+
+async function createDifferentFilesystemDirectory(
+  t: TestContext,
+  referencePath: string,
+): Promise<string> {
+  const referenceMetadata = await stat(referencePath, { bigint: true });
+  const referenceDevice = referenceMetadata.dev;
+  for (const candidateRoot of ["/dev/shm", "/var/tmp", "/tmp"]) {
+    const candidateMetadata = await stat(candidateRoot, { bigint: true }).catch(
+      () => undefined,
+    );
+    if (
+      candidateMetadata === undefined
+      || candidateMetadata.dev === referenceDevice
+    ) {
+      continue;
+    }
+
+    const directory = await mkdtemp(
+      path.join(candidateRoot, "silksong-history-cross-filesystem-"),
+    ).catch(() => undefined);
+    if (directory === undefined) {
+      continue;
+    }
+    t.after(async () => {
+      await rm(directory, { recursive: true, force: true });
+    });
+    return directory;
+  }
+
+  t.skip("No writable second filesystem is available for this regression.");
+  throw new Error(
+    "No writable second filesystem is available for this regression.",
+  );
 }
 
 async function setRepositoryFormatVersion(
@@ -417,6 +456,7 @@ test("copyRepositorySnapshot publishes a verified durable copy without changing 
   const result = await copyRepositorySnapshot({
     sourcePath: repo.repoPath,
     targetPath,
+    stagingRootPath: repo.stagingRootPath,
   });
 
   assert.equal(result.status, "copied");
@@ -434,6 +474,170 @@ test("copyRepositorySnapshot publishes a verified durable copy without changing 
     repoPath: targetPath,
   });
   assert.equal(importedInspection.status, "rebuildRequired");
+  assert.deepEqual(await readdir(repo.stagingRootPath), []);
+});
+
+test("copyRepositorySnapshot publishes when the source is on a different filesystem", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const otherFilesystem = await createDifferentFilesystemDirectory(
+    t,
+    repo.tempDirectory,
+  );
+  const stagingRootPath = path.join(otherFilesystem, "staging");
+  const targetPath = path.join(
+    otherFilesystem,
+    "managed",
+    "imported-repository",
+  );
+  const configBefore = await readFile(repo.configPath);
+  await mkdir(stagingRootPath);
+
+  const result = await copyRepositorySnapshot({
+    sourcePath: repo.repoPath,
+    targetPath,
+    stagingRootPath,
+  });
+
+  assert.equal(result.status, "copied");
+  assert.equal(result.snapshot.repoPath, targetPath);
+  assert.deepEqual(await readdir(stagingRootPath), []);
+  assert.deepEqual(await readFile(repo.configPath), configBefore);
+  await assert.doesNotReject(stat(repo.repoPath));
+});
+
+test("migration preparation publishes when the source is on a different filesystem", async (t) => {
+  const repo = await createHistoryRepo(t);
+  await setRepositoryFormatVersion(repo, undefined);
+  const otherFilesystem = await createDifferentFilesystemDirectory(
+    t,
+    repo.tempDirectory,
+  );
+  const stagingRootPath = path.join(otherFilesystem, "staging");
+  const snapshotPath = path.join(otherFilesystem, "archives", "migration-copy");
+  await mkdir(stagingRootPath);
+  const inspection = await inspectSaveHistoryRepository({
+    repoPath: repo.repoPath,
+  });
+
+  const result = await prepareSaveHistoryMigration({
+    snapshotPath,
+    stagingRootPath,
+    repoPath: repo.repoPath,
+    inspectionId: inspection.inspectionId,
+    confirmation: "migrate-save-history-repository",
+  });
+
+  assert.equal(result.status, "prepared");
+  assert.equal(result.operation.snapshot.repoPath, snapshotPath);
+  assert.deepEqual(await readdir(stagingRootPath), []);
+  await assert.doesNotReject(stat(snapshotPath));
+  const migration = await result.operation.commit();
+  assert.equal(migration.status, "migrated");
+  await assert.doesNotReject(stat(repo.repoPath));
+});
+
+test("copyRepositorySnapshot rejects an initial staging filesystem mismatch before copying", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const otherFilesystem = await createDifferentFilesystemDirectory(
+    t,
+    repo.tempDirectory,
+  );
+  const targetPath = path.join(otherFilesystem, "managed", "mismatched");
+  let copied = false;
+
+  const result = await withRepositorySnapshotFileSystemForTests(
+    (fileSystem) => ({
+      ...fileSystem,
+      async copyRepository(sourcePath, stagingPath) {
+        copied = true;
+        await fileSystem.copyRepository(sourcePath, stagingPath);
+      },
+    }),
+    async () =>
+      await copyRepositorySnapshot({
+        sourcePath: repo.repoPath,
+        targetPath,
+        stagingRootPath: repo.stagingRootPath,
+      }),
+  );
+
+  assert.deepEqual(result, {
+    status: "failed",
+    reason: "publishFailed",
+    sourceState: "unchanged",
+    message:
+      "The repository snapshot staging root or destination parent is not stable.",
+  });
+  assert.equal(copied, false);
+  await assert.rejects(stat(targetPath));
+  assert.deepEqual(await readdir(repo.stagingRootPath), []);
+  await assert.doesNotReject(stat(repo.repoPath));
+});
+
+test("copyRepositorySnapshot rejects relative, missing, and symlinked staging roots", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const targetRoot = path.join(
+    repo.tempDirectory,
+    "staging-validation-targets",
+  );
+  await mkdir(targetRoot);
+  const outsideStagingRoot = path.join(repo.tempDirectory, "outside-staging");
+  const symlinkedStagingRoot = path.join(repo.tempDirectory, "staging-link");
+  await mkdir(outsideStagingRoot);
+  await symlink(outsideStagingRoot, symlinkedStagingRoot, "dir");
+
+  for (const [name, stagingRootPath] of [
+    ["relative", path.relative(process.cwd(), repo.stagingRootPath)],
+    ["missing", path.join(repo.tempDirectory, "missing-staging")],
+    ["symlink", symlinkedStagingRoot],
+  ] as const) {
+    const result = await copyRepositorySnapshot({
+      sourcePath: repo.repoPath,
+      targetPath: path.join(targetRoot, name),
+      stagingRootPath,
+    });
+    assert.deepEqual(result, {
+      status: "rejected",
+      reason: "invalidPlacement",
+    });
+  }
+});
+
+test("copyRepositorySnapshot cleans the operation directory after a final rename failure without retrying", async (t) => {
+  const repo = await createHistoryRepo(t);
+  const targetPath = path.join(repo.tempDirectory, "rename-failure");
+  let renameAttempts = 0;
+  const result = await withRepositorySnapshotFileSystemForTests(
+    (fileSystem) => ({
+      ...fileSystem,
+      async renameSnapshot() {
+        renameAttempts++;
+        const error = new Error("cross-device rename");
+        Object.assign(error, { code: "EXDEV" });
+        throw error;
+      },
+    }),
+    async () =>
+      await copyRepositorySnapshot({
+        sourcePath: repo.repoPath,
+        targetPath,
+        stagingRootPath: repo.stagingRootPath,
+      }),
+  );
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reason, "publishFailed");
+  assert.equal(renameAttempts, 1);
+  await assert.rejects(stat(targetPath));
+  assert.deepEqual(await readdir(repo.stagingRootPath), []);
+  await assert.doesNotReject(stat(repo.repoPath));
+
+  const retry = await copyRepositorySnapshot({
+    sourcePath: repo.repoPath,
+    targetPath,
+    stagingRootPath: repo.stagingRootPath,
+  });
+  assert.equal(retry.status, "copied");
 });
 
 test("copyRepositorySnapshot rejects a symlinked target parent before publication", async (t) => {
@@ -446,6 +650,7 @@ test("copyRepositorySnapshot rejects a symlinked target parent before publicatio
   const result = await copyRepositorySnapshot({
     sourcePath: repo.repoPath,
     targetPath: path.join(managedRoot, "imported-repository"),
+    stagingRootPath: repo.stagingRootPath,
   });
 
   assert.deepEqual(result, {
@@ -462,10 +667,12 @@ test("copyRepositorySnapshot publishes collisions under the same real target par
   const first = await copyRepositorySnapshot({
     sourcePath: repo.repoPath,
     targetPath,
+    stagingRootPath: repo.stagingRootPath,
   });
   const second = await copyRepositorySnapshot({
     sourcePath: repo.repoPath,
     targetPath,
+    stagingRootPath: repo.stagingRootPath,
   });
 
   assert.equal(first.status, "copied");
@@ -490,6 +697,7 @@ test("copyRepositorySnapshot reports lease cleanup failures without removing sou
       await copyRepositorySnapshot({
         sourcePath: repo.repoPath,
         targetPath,
+        stagingRootPath: repo.stagingRootPath,
       }),
   );
 
@@ -526,6 +734,7 @@ test("copyRepositorySnapshot retains source state when the verified copy digest 
         await copyRepositorySnapshot({
           sourcePath: repo.repoPath,
           targetPath,
+          stagingRootPath: repo.stagingRootPath,
         }),
     );
   } finally {
@@ -554,6 +763,7 @@ test("copyRepositorySnapshot accepts legacy and migration-required sources but r
   const legacy = await copyRepositorySnapshot({
     sourcePath: repo.repoPath,
     targetPath: path.join(repo.tempDirectory, "legacy-copy"),
+    stagingRootPath: repo.stagingRootPath,
   });
   assert.equal(legacy.status, "copied");
   assert.equal(legacy.sourceStatus, "legacyConfig");
@@ -562,6 +772,7 @@ test("copyRepositorySnapshot accepts legacy and migration-required sources but r
   const migrationCandidate = await copyRepositorySnapshot({
     sourcePath: repo.repoPath,
     targetPath: path.join(repo.tempDirectory, "migration-copy"),
+    stagingRootPath: repo.stagingRootPath,
   });
   assert.equal(migrationCandidate.status, "copied");
   assert.equal(migrationCandidate.sourceStatus, "migrationRequired");
@@ -570,6 +781,7 @@ test("copyRepositorySnapshot accepts legacy and migration-required sources but r
   const newer = await copyRepositorySnapshot({
     sourcePath: repo.repoPath,
     targetPath: path.join(repo.tempDirectory, "newer-copy"),
+    stagingRootPath: repo.stagingRootPath,
   });
   assert.deepEqual(newer, {
     status: "rejected",
@@ -586,6 +798,7 @@ test("copyRepositorySnapshot accepts legacy and migration-required sources but r
   const invalid = await copyRepositorySnapshot({
     sourcePath: invalidRepositoryPath,
     targetPath: path.join(repo.tempDirectory, "invalid-copy"),
+    stagingRootPath: repo.stagingRootPath,
   });
   assert.deepEqual(invalid, {
     status: "rejected",
@@ -653,6 +866,7 @@ test("copyRepositorySnapshot respects an externally acquired watcher", async (t)
   const result = await copyRepositorySnapshot({
     sourcePath: repo.repoPath,
     targetPath: path.join(repo.tempDirectory, "watcher-copy"),
+    stagingRootPath: repo.stagingRootPath,
   });
 
   assert.deepEqual(result, {
@@ -731,6 +945,7 @@ test("migration preparation publishes a collision-safe verified snapshot before 
 
   const first = await prepareSaveHistoryMigration({
     snapshotPath: snapshotBase,
+    stagingRootPath: repo.stagingRootPath,
     repoPath: repo.repoPath,
     inspectionId: inspection.inspectionId,
     confirmation: "migrate-save-history-repository",
@@ -751,6 +966,7 @@ test("migration preparation publishes a collision-safe verified snapshot before 
   });
   const second = await prepareSaveHistoryMigration({
     snapshotPath: snapshotBase,
+    stagingRootPath: repo.stagingRootPath,
     repoPath: repo.repoPath,
     inspectionId: collisionInspection.inspectionId,
     confirmation: "migrate-save-history-repository",
@@ -1051,6 +1267,7 @@ test("Git integrity warnings do not block a verified repository snapshot or migr
   assert.equal(inspection.status, "legacyConfig");
   const prepared = await prepareSaveHistoryMigration({
     snapshotPath: path.join(repo.tempDirectory, "snapshots", "corrupt-git"),
+    stagingRootPath: repo.stagingRootPath,
     repoPath: repo.repoPath,
     inspectionId: inspection.inspectionId,
     confirmation: "migrate-save-history-repository",
@@ -1084,6 +1301,7 @@ test("migration preparation copies durable content and retains a published snaps
   );
   const prepared = await prepareSaveHistoryMigration({
     snapshotPath,
+    stagingRootPath: repo.stagingRootPath,
     repoPath: repo.repoPath,
     inspectionId: inspection.inspectionId,
     confirmation: "migrate-save-history-repository",
@@ -1122,6 +1340,7 @@ test("migration preparation failure does not change the source", async (t) => {
   });
   const result = await prepareSaveHistoryMigration({
     snapshotPath: path.join(repo.repoPath, "snapshot-inside-source"),
+    stagingRootPath: repo.stagingRootPath,
     repoPath: repo.repoPath,
     inspectionId: inspection.inspectionId,
     confirmation: "migrate-save-history-repository",
@@ -1139,6 +1358,7 @@ test("migration preparation failure does not change the source", async (t) => {
   });
   const retry = await prepareSaveHistoryMigration({
     snapshotPath: path.join(repo.tempDirectory, "snapshot-after-failure"),
+    stagingRootPath: repo.stagingRootPath,
     repoPath: repo.repoPath,
     inspectionId: retryInspection.inspectionId,
     confirmation: "migrate-save-history-repository",
@@ -1160,6 +1380,7 @@ test("migration preparation refuses an externally owned watcher without changing
 
   const result = await prepareSaveHistoryMigration({
     snapshotPath: path.join(repo.tempDirectory, "snapshot"),
+    stagingRootPath: repo.stagingRootPath,
     repoPath: repo.repoPath,
     inspectionId: inspection.inspectionId,
     confirmation: "migrate-save-history-repository",

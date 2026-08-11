@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const desktopSidecarProtocolVersion = 10 as const;
+export const desktopSidecarProtocolVersion = 11 as const;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -75,6 +75,7 @@ export const repositoryImportCommandSchema = z
     type: z.literal("repository.import"),
     sourcePath: z.string().min(1).max(4096),
     targetPath: z.string().min(1).max(4096),
+    stagingRootPath: z.string().min(1).max(4096),
   })
   .strict();
 
@@ -136,6 +137,7 @@ export const repositoryMigrationPrepareCommandSchema = z
     inspectionId: z.string().min(1).max(128),
     confirmation: z.literal("migrate-save-history-repository"),
     snapshotPath: z.string().min(1).max(4096),
+    stagingRootPath: z.string().min(1).max(4096),
   })
   .strict();
 
@@ -695,7 +697,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 10;
+    readonly protocolVersion: 11;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },

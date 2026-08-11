@@ -116,6 +116,8 @@ export interface CopyRepositorySnapshotInput {
   readonly sourcePath: string;
   /** Desired destination base path; History may append -1, -2, ... */
   readonly targetPath: string;
+  /** Existing real directory under which History creates one operation directory. */
+  readonly stagingRootPath: string;
 }
 
 export type GitIntegrityPolicy = "strict" | "advisory";
@@ -129,6 +131,8 @@ export interface MigrateSaveHistoryRepositoryInput {
 export interface PrepareSaveHistoryMigrationInput extends MigrateSaveHistoryRepositoryInput {
   /** An opaque, canonical destination selected by the caller. */
   readonly snapshotPath: string;
+  /** Existing real directory under which History creates one operation directory. */
+  readonly stagingRootPath: string;
 }
 
 export interface RepositorySnapshot {

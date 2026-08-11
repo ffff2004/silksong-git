@@ -604,8 +604,12 @@ export async function runDesktopSidecarProcess(
         ),
       });
     }
-    const { sourcePath, targetPath } = commandResult.data;
-    if (!path.isAbsolute(sourcePath) || !path.isAbsolute(targetPath)) {
+    const { sourcePath, targetPath, stagingRootPath } = commandResult.data;
+    if (
+      !path.isAbsolute(sourcePath)
+      || !path.isAbsolute(targetPath)
+      || !path.isAbsolute(stagingRootPath)
+    ) {
       return createSuccessResponse(requestId, {
         type: "repository.importResult",
         import: createImportFailure(
@@ -642,7 +646,11 @@ export async function runDesktopSidecarProcess(
     });
     let result: CopyRepositorySnapshotResult;
     try {
-      result = await copyRepositorySnapshot({ sourcePath, targetPath });
+      result = await copyRepositorySnapshot({
+        sourcePath,
+        targetPath,
+        stagingRootPath,
+      });
     } catch {
       writeDiagnostic("Repository import failed.");
       emitEvent({
@@ -859,6 +867,7 @@ export async function runDesktopSidecarProcess(
     if (
       !path.isAbsolute(commandResult.data.repoPath)
       || !path.isAbsolute(commandResult.data.snapshotPath)
+      || !path.isAbsolute(commandResult.data.stagingRootPath)
     ) {
       return createFailureResponse(
         requestId,

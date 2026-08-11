@@ -51,6 +51,7 @@ const maskShard2CollectedEncodedSavePath = path.join(
 interface HistoryRepoFixture {
   readonly repoPath: string;
   readonly watchedSavePath: string;
+  readonly stagingRootPath: string;
 }
 
 interface SpawnedSidecar {
@@ -81,6 +82,7 @@ async function createHistoryRepo(
   );
   const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
   const repoPath = path.join(tempDirectory, "history-repo");
+  const stagingRootPath = path.join(tempDirectory, "staging");
 
   t.after(async () => {
     await rm(tempDirectory, { recursive: true, force: true });
@@ -92,8 +94,9 @@ async function createHistoryRepo(
     watchedSavePath,
     ...(config !== undefined && { config }),
   });
+  await mkdir(stagingRootPath);
 
-  return { repoPath, watchedSavePath };
+  return { repoPath, watchedSavePath, stagingRootPath };
 }
 
 async function setRepositoryFormatVersionFixture(
@@ -810,6 +813,7 @@ test("imports an external repository through the versioned copy protocol without
       type: "repository.import",
       sourcePath: source.repoPath,
       targetPath,
+      stagingRootPath: source.stagingRootPath,
     }),
   );
   const response = parseSuccessfulResponse(
@@ -903,6 +907,7 @@ test("returns a structured Import failure when a session is already open", async
       type: "repository.import",
       sourcePath: source.repoPath,
       targetPath: busyTargetPath,
+      stagingRootPath: source.stagingRootPath,
     }),
   );
 
@@ -939,6 +944,7 @@ test("returns a structured Import failure when History rejects source ownership"
       type: "repository.import",
       sourcePath: source.repoPath,
       targetPath,
+      stagingRootPath: source.stagingRootPath,
     }),
   );
   const response = parseSuccessfulResponse(
@@ -1206,6 +1212,7 @@ test("holds the Desktop migration operation between verified snapshot publicatio
       inspectionId: inspection.result.inspection.inspectionId,
       confirmation: "migrate-save-history-repository",
       snapshotPath: archivePath,
+      stagingRootPath: repo.stagingRootPath,
     }),
   );
   const prepared = parseSuccessfulResponse(
@@ -1302,6 +1309,7 @@ test("abnormal sidecar cleanup releases a prepared migration lease", async (t) =
       inspectionId: inspection.result.inspection.inspectionId,
       confirmation: "migrate-save-history-repository",
       snapshotPath: archivePath,
+      stagingRootPath: repo.stagingRootPath,
     }),
   );
   const prepared = parseSuccessfulResponse(
@@ -1342,6 +1350,7 @@ test("abnormal sidecar cleanup releases a prepared migration lease", async (t) =
       inspectionId: replacementInspection.result.inspection.inspectionId,
       confirmation: "migrate-save-history-repository",
       snapshotPath: archivePath,
+      stagingRootPath: repo.stagingRootPath,
     }),
   );
   const replacementPrepared = parseSuccessfulResponse(
