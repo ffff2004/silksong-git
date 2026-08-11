@@ -7,12 +7,13 @@ import { exitCodes } from "./exit-codes.ts";
 import { registerHistoryCommands } from "./history-commands.ts";
 import { registerRepoCommands } from "./repo-commands.ts";
 import { registerSaveCommands } from "./save-commands.ts";
+import { cliVersion } from "./version.ts";
 import { registerWatchCommands } from "./watch-commands.ts";
 
 function createCliProgram(runtime: CliRuntime = processCliRuntime): Command {
   const program = new Command();
 
-  program.name("silksong-git");
+  program.name("silksong-git").version(cliVersion);
 
   registerRepoCommands(program, runtime);
   registerSaveCommands(program, runtime);

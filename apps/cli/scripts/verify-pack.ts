@@ -18,10 +18,8 @@ const tempDirectory = await mkdtemp(path.join(tmpdir(), "silksong-cli-pack-"));
 
 try {
   const packDirectory = path.join(tempDirectory, "pack");
-  const installDirectory = path.join(tempDirectory, "install");
 
   await mkdir(packDirectory);
-  await mkdir(installDirectory);
   await packWorkspacePackages(packDirectory);
   const packedArchives = {
     cli: await findPackedArchive(packDirectory, "silksong-git-cli-"),
@@ -31,53 +29,46 @@ try {
     "@silksong-git/cli": `file:${packedArchives.cli}`,
     "@silksong-git/core": `file:${packedArchives.core}`,
   };
+  const packedCliManifest = await readPackedManifest(packedArchives.cli);
 
   await Promise.all(
-    Object.values(packedArchives).map(verifyPackedManifestDependencies),
+    Object.values(packedArchives).map(async (archivePath) => {
+      await verifyPackedManifestDependencies(archivePath);
+    }),
   );
+  await Promise.all([
+    verifyPackedFiles(packedArchives.core, [
+      "LICENSE",
+      "README.md",
+      "dist/index.d.ts",
+      "dist/index.js",
+      "package.json",
+    ]),
+    verifyPackedFiles(packedArchives.cli, [
+      "LICENSE",
+      "README.md",
+      "dist/main.js",
+      "package.json",
+    ]),
+  ]);
 
-  await writeFile(
-    path.join(installDirectory, "package.json"),
-    `${JSON.stringify(
-      {
-        private: true,
-        dependencies: localPackages,
-      },
-      undefined,
-      2,
-    )}\n`,
-  );
-  await writeFile(
-    path.join(installDirectory, "pnpm-workspace.yaml"),
-    [
-      "packages: []",
-      "overrides:",
-      ...Object.entries(localPackages).map(
-        ([packageName, archive]) =>
-          `  ${JSON.stringify(packageName)}: ${JSON.stringify(archive)}`,
-      ),
-      "",
-    ].join("\n"),
-  );
-  await run("pnpm", ["--dir", installDirectory, "install"]);
-  const installedCliPath = path.join(
-    installDirectory,
-    "node_modules/@silksong-git/cli/dist/main.js",
-  );
-
-  await verifyInstalledCliExecutable(installedCliPath);
-  await run(installedCliPath, ["--help"]);
+  await installAndVerifyWithPackageManager({
+    expectedVersion: packedCliManifest.version,
+    localPackages,
+    manager: "npm",
+  });
+  const installedPnpmCliPath = await installAndVerifyWithPackageManager({
+    expectedVersion: packedCliManifest.version,
+    localPackages,
+    manager: "pnpm",
+  });
   const historyRepo = path.join(tempDirectory, "history-repo");
   const fixtureSave = path.join(
     REPO_ROOT,
     "packages/core/src/decode/fixtures/minimal-valid-save.dat",
   );
 
-  await run("pnpm", [
-    "--dir",
-    installDirectory,
-    "exec",
-    "ssgit",
+  await run(installedPnpmCliPath, [
     "repo",
     "init",
     "--save",
@@ -86,11 +77,76 @@ try {
     historyRepo,
   ]);
   await verifyPackedHttpRuntime({
-    cliPath: installedCliPath,
+    cliPath: installedPnpmCliPath,
     historyRepo,
   });
 } finally {
   await rm(tempDirectory, { recursive: true, force: true });
+}
+
+async function installAndVerifyWithPackageManager(input: {
+  readonly expectedVersion?: string;
+  readonly localPackages: Readonly<Record<string, string>>;
+  readonly manager: "npm" | "pnpm";
+}): Promise<string> {
+  if (input.expectedVersion === undefined) {
+    throw new Error("Packed CLI manifest has no version.");
+  }
+
+  const installDirectory = path.join(tempDirectory, `${input.manager}-install`);
+
+  await mkdir(installDirectory);
+  await writeFile(
+    path.join(installDirectory, "package.json"),
+    `${JSON.stringify(
+      {
+        private: true,
+        dependencies: input.localPackages,
+      },
+      undefined,
+      2,
+    )}\n`,
+  );
+
+  if (input.manager === "pnpm") {
+    await writeFile(
+      path.join(installDirectory, "pnpm-workspace.yaml"),
+      [
+        "packages: []",
+        "overrides:",
+        ...Object.entries(input.localPackages).map(
+          ([packageName, archive]) =>
+            `  ${JSON.stringify(packageName)}: ${JSON.stringify(archive)}`,
+        ),
+        "",
+      ].join("\n"),
+    );
+    await run("pnpm", [
+      "--dir",
+      installDirectory,
+      "install",
+      "--ignore-scripts",
+    ]);
+  } else {
+    await run(
+      "npm",
+      ["install", "--ignore-scripts", "--no-audit", "--no-fund"],
+      installDirectory,
+    );
+  }
+
+  const installedCliPath = path.join(
+    installDirectory,
+    "node_modules/@silksong-git/cli/dist/main.js",
+  );
+
+  await verifyInstalledCliExecutable(installedCliPath);
+  await run(installedCliPath, ["--help"], installDirectory);
+  await run(installedCliPath, ["--version"], installDirectory, {
+    expectedStdout: `${input.expectedVersion}\n`,
+  });
+
+  return installedCliPath;
 }
 
 async function verifyPackedHttpRuntime(input: {
@@ -134,7 +190,17 @@ async function verifyInstalledCliExecutable(cliPath: string) {
   }
 }
 
-async function verifyPackedManifestDependencies(archivePath: string) {
+interface PackedManifest {
+  readonly dependencies?: Readonly<Record<string, string>>;
+  readonly devDependencies?: Readonly<Record<string, string>>;
+  readonly optionalDependencies?: Readonly<Record<string, string>>;
+  readonly peerDependencies?: Readonly<Record<string, string>>;
+  readonly version?: string;
+}
+
+async function readPackedManifest(
+  archivePath: string,
+): Promise<PackedManifest> {
   const child = spawn("tar", ["-xOf", archivePath, "package/package.json"], {
     stdio: ["ignore", "pipe", "inherit"],
   });
@@ -159,12 +225,11 @@ async function verifyPackedManifestDependencies(archivePath: string) {
     );
   }
 
-  const manifest = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-    readonly dependencies?: Readonly<Record<string, string>>;
-    readonly devDependencies?: Readonly<Record<string, string>>;
-    readonly optionalDependencies?: Readonly<Record<string, string>>;
-    readonly peerDependencies?: Readonly<Record<string, string>>;
-  };
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as PackedManifest;
+}
+
+async function verifyPackedManifestDependencies(archivePath: string) {
+  const manifest = await readPackedManifest(archivePath);
   const dependencyRanges = [
     ...Object.values(manifest.dependencies ?? {}),
     ...Object.values(manifest.devDependencies ?? {}),
@@ -178,6 +243,25 @@ async function verifyPackedManifestDependencies(archivePath: string) {
   if (localRange !== undefined) {
     throw new Error(
       `Packed manifest ${archivePath} contains local dependency range ${localRange}`,
+    );
+  }
+}
+
+async function verifyPackedFiles(
+  archivePath: string,
+  expectedFiles: readonly string[],
+) {
+  const output = await runAndCapture("tar", ["-tzf", archivePath]);
+  const actualFiles = output
+    .split("\n")
+    .map((entry) => entry.replace(/^package\//v, ""))
+    .filter((entry) => entry !== "" && !entry.endsWith("/"))
+    .toSorted();
+  const expected = [...expectedFiles].toSorted();
+
+  if (JSON.stringify(actualFiles) !== JSON.stringify(expected)) {
+    throw new Error(
+      `Packed files for ${archivePath} differ:\nexpected ${expected.join(", ")}\nactual ${actualFiles.join(", ")}`,
     );
   }
 }
@@ -266,12 +350,77 @@ async function findPackedArchive(
   return path.join(packDirectory, archive);
 }
 
-async function run(command: string, args: readonly string[]) {
+async function runAndCapture(
+  command: string,
+  args: readonly string[],
+  cwd = REPO_ROOT,
+): Promise<string> {
   const child = spawn(command, [...args], {
-    stdio: "inherit",
-    cwd: REPO_ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+    cwd,
   });
-  const exit = await new Promise<{
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+
+  child.stdout.on("data", (chunk: Buffer) => {
+    stdout.push(chunk);
+  });
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderr.push(chunk);
+  });
+  const exit = await waitForExit(child);
+
+  if (exit.code !== 0) {
+    throw new Error(
+      `${command} ${args.join(" ")} failed with ${formatExitStatus(exit)}: ${Buffer.concat(stderr).toString("utf8")}`,
+    );
+  }
+
+  return Buffer.concat(stdout).toString("utf8");
+}
+
+async function run(
+  command: string,
+  args: readonly string[],
+  cwd = REPO_ROOT,
+  options: { readonly expectedStdout?: string } = {},
+) {
+  const child = spawn(command, [...args], {
+    stdio:
+      options.expectedStdout === undefined
+        ? "inherit"
+        : ["ignore", "pipe", "inherit"],
+    cwd,
+  });
+  const stdout: Buffer[] = [];
+
+  child.stdout?.on("data", (chunk: Buffer) => {
+    stdout.push(chunk);
+  });
+  const exit = await waitForExit(child);
+
+  if (exit.code === 0) {
+    const actualStdout = Buffer.concat(stdout).toString("utf8");
+
+    if (
+      options.expectedStdout !== undefined
+      && actualStdout !== options.expectedStdout
+    ) {
+      throw new Error(
+        `${command} ${args.join(" ")} wrote ${JSON.stringify(actualStdout)}, expected ${JSON.stringify(options.expectedStdout)}`,
+      );
+    }
+
+    return;
+  }
+
+  throw new Error(
+    `${command} ${args.join(" ")} failed with ${formatExitStatus(exit)}`,
+  );
+}
+
+async function waitForExit(child: ReturnType<typeof spawn>) {
+  return await new Promise<{
     readonly code: number | null;
     readonly signal: NodeJS.Signals | null;
   }>((resolve, reject) => {
@@ -280,14 +429,6 @@ async function run(command: string, args: readonly string[]) {
       resolve({ code, signal });
     });
   });
-
-  if (exit.code === 0) {
-    return;
-  }
-
-  throw new Error(
-    `${command} ${args.join(" ")} failed with ${formatExitStatus(exit)}`,
-  );
 }
 
 function formatExitStatus(exit: {

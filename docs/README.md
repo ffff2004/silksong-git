@@ -18,6 +18,7 @@ delivery state, and preserved legacy behavior.
 | Local HTTP protocol                           | Runtime schemas, generated OpenAPI, and the [Local HTTP API Reference](reference/local-http-api.md)                                                                                                                                   | Wire behavior or its executable contract changes.               |
 | Intended outcomes and changing delivery state | GitHub specs and tickets, governed by the [issue tracker rules](agents/issue-tracker.md)                                                                                                                                              | Scope, acceptance, dependencies, claims, or state changes.      |
 | Explicitly rejected project enhancements      | `.out-of-scope/`, governed by the [issue tracker rules](agents/issue-tracker.md#project-level-rejected-enhancements)                                                                                                                  | A rejection is accepted, clarified, or reconsidered.            |
+| Manual npm release procedure                  | [Release checklist](release.md)                                                                                                                                                                                                       | Public package policy or the manual release process changes.    |
 | Implementation and verification history       | Commits, pull requests, and CI                                                                                                                                                                                                        | A change is implemented or verified.                            |
 | Preserved pre-Solid Web behavior              | [Legacy Web references](legacy/web-before-solid/overview.md)                                                                                                                                                                          | Historical evidence is clarified or reclassified.               |
 | Agent tracker and domain-consumption rules    | [`agents/`](agents/)                                                                                                                                                                                                                  | Agent workflow, tracker, triage, or domain-consumption changes. |
@@ -55,6 +56,7 @@ its generated OpenAPI artifact.
 - [Issue tracker rules](agents/issue-tracker.md) — how specs, tickets,
   dependencies, claims, completion, and Wayfinder artifacts are represented.
 - [Triage labels](agents/triage-labels.md) — category and state vocabulary.
+- [Release checklist](release.md) — manual Core and CLI npm release procedure.
 
 GitHub is the canonical source for changing delivery state. Repository
 documentation links to tracker queries without copying task status or logs.

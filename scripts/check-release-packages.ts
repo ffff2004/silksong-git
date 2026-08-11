@@ -1,5 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import semverSatisfies from "semver/functions/satisfies.js";
+import semverValid from "semver/functions/valid.js";
+import semverValidRange from "semver/ranges/valid.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const publishablePackagePaths = [
@@ -20,42 +23,101 @@ const workspacePackagePaths = [
 const forbiddenDependencyPrefixes = ["file:", "link:", "workspace:"];
 
 interface PackageManifest {
+  readonly bugs?: { readonly url?: string };
+  readonly description?: string;
   readonly dependencies?: Readonly<Record<string, string>>;
   readonly devDependencies?: Readonly<Record<string, string>>;
+  readonly engines?: { readonly node?: string };
+  readonly files?: readonly string[];
+  readonly homepage?: string;
+  readonly license?: string;
   readonly name?: string;
   readonly optionalDependencies?: Readonly<Record<string, string>>;
   readonly peerDependencies?: Readonly<Record<string, string>>;
   readonly private?: boolean;
+  readonly publishConfig?: {
+    readonly access?: string;
+    readonly registry?: string;
+  };
+  readonly repository?: {
+    readonly directory?: string;
+    readonly type?: string;
+    readonly url?: string;
+  };
   readonly version?: string;
 }
 
 const publishablePackages = await Promise.all(
   publishablePackagePaths.map(readPackageManifest),
 );
-const versions = new Set(
-  publishablePackages.map(({ manifest }) => manifest.version),
-);
-
-if (versions.size !== 1 || versions.has(undefined)) {
-  throw new Error(
-    `Publishable packages must share one version, found: ${[...versions].join(", ")}`,
-  );
-}
-
-const [version] = versions;
-
-if (version === undefined) {
-  throw new Error("Expected a publishable package version.");
-}
-
-const expectedInternalRange = `^${version}`;
 const publishablePackageNames = new Set(
   publishablePackages.map(({ manifest }) => manifest.name),
+);
+const publishablePackageVersions = new Map(
+  publishablePackages.map(({ manifest }) => [manifest.name, manifest.version]),
 );
 
 for (const { manifest, relativePath } of publishablePackages) {
   if (manifest.name === undefined || manifest.private === true) {
     throw new Error(`${relativePath} must describe a public named package.`);
+  }
+
+  if (
+    manifest.version === undefined
+    || semverValid(manifest.version) === null
+  ) {
+    throw new Error(`${relativePath} must have a valid semver version.`);
+  }
+
+  const packageDirectory = path.posix.dirname(relativePath);
+
+  assertEqual(manifest.license, "MIT", `${relativePath} license`);
+  assertEqual(manifest.engines?.node, ">=24", `${relativePath} Node engine`);
+  assertEqual(
+    manifest.publishConfig?.access,
+    "public",
+    `${relativePath} publish access`,
+  );
+  assertEqual(
+    manifest.publishConfig?.registry,
+    "https://registry.npmjs.org/",
+    `${relativePath} publish registry`,
+  );
+  assertEqual(
+    manifest.repository?.type,
+    "git",
+    `${relativePath} repository type`,
+  );
+  assertEqual(
+    manifest.repository?.url,
+    "git+https://github.com/ffff2004/silksong-git.git",
+    `${relativePath} repository URL`,
+  );
+  assertEqual(
+    manifest.repository?.directory,
+    packageDirectory,
+    `${relativePath} repository directory`,
+  );
+  assertEqual(
+    manifest.homepage,
+    `https://github.com/ffff2004/silksong-git/tree/main/${packageDirectory}#readme`,
+    `${relativePath} homepage`,
+  );
+  assertEqual(
+    manifest.bugs?.url,
+    "https://github.com/ffff2004/silksong-git/issues",
+    `${relativePath} bugs URL`,
+  );
+
+  if (
+    manifest.description === undefined
+    || manifest.description.trim() === ""
+  ) {
+    throw new Error(`${relativePath} must have a description.`);
+  }
+
+  if (manifest.files?.length !== 1 || manifest.files[0] !== "dist") {
+    throw new Error(`${relativePath} must publish only its dist directory.`);
   }
 }
 
@@ -87,20 +149,53 @@ for (const { manifest, relativePath } of workspacePackages) {
       );
     }
 
+    if (!publishablePackageNames.has(dependencyName)) {
+      continue;
+    }
+
+    const dependencyVersion = publishablePackageVersions.get(dependencyName);
+
     if (
-      publishablePackageNames.has(dependencyName)
-      && dependencyRange !== expectedInternalRange
+      dependencyVersion === undefined
+      || semverValidRange(dependencyRange) === null
+      || !semverSatisfies(dependencyVersion, dependencyRange)
     ) {
       throw new Error(
-        `${relativePath} must depend on ${dependencyName} using ${expectedInternalRange}, found ${dependencyRange}`,
+        `${relativePath} dependency ${dependencyName}@${dependencyRange} must accept the current ${dependencyName}@${dependencyVersion ?? "unknown"}`,
       );
     }
   }
 }
 
-console.log(
-  `release package manifests are consistent at ${version} (${expectedInternalRange})`,
+const cliPackage = publishablePackages.find(
+  ({ manifest }) => manifest.name === "@silksong-git/cli",
 );
+const cliInternalRuntimeDependencies = Object.keys(
+  cliPackage?.manifest.dependencies ?? {},
+).filter((dependencyName) => dependencyName.startsWith("@silksong-git/"));
+
+if (
+  cliInternalRuntimeDependencies.length !== 1
+  || cliInternalRuntimeDependencies[0] !== "@silksong-git/core"
+) {
+  throw new Error(
+    `CLI must have Core as its only internal runtime dependency, found: ${cliInternalRuntimeDependencies.join(", ")}`,
+  );
+}
+
+console.log(
+  `release package manifests are valid: ${publishablePackages
+    .map(({ manifest }) => `${manifest.name}@${manifest.version}`)
+    .join(", ")}`,
+);
+
+function assertEqual(actual: unknown, expected: unknown, description: string) {
+  if (actual !== expected) {
+    throw new Error(
+      `${description} must be ${JSON.stringify(expected)}, found ${JSON.stringify(actual)}`,
+    );
+  }
+}
 
 async function readPackageManifest(relativePath: string) {
   const packagePath = path.join(REPO_ROOT, relativePath);

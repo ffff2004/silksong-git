@@ -15,6 +15,8 @@ commands, SQLite tables, repository layout helpers, or internal handlers.
 ## Command Summary
 
 ```txt
+silksong-git --version
+
 silksong-git repo init --save <save.dat> --repo <history-repo> [--json]
 silksong-git repo inspect --repo <history-repo> [--json]
 silksong-git repo migrate --repo <history-repo> --confirm-migration [--json]
@@ -33,6 +35,9 @@ silksong-git watch start [--repo <history-repo>] [--jsonl] [--http] [--port <por
 ```
 
 Commander also supplies `-h, --help` on the program, groups, and commands.
+`-V` is an alias for `--version`; both print the CLI package version injected
+into the executable during its build, without reading a workspace manifest at
+runtime.
 There is currently no `ui open` command or CLI export command.
 
 ## Repository Context

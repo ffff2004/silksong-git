@@ -1,6 +1,17 @@
 {
   "name": "@silksong-git/core",
   "version": "0.1.0",
+  "description": "Browser-safe semantic decoding, mapping, snapshots, and diffs for Hollow Knight: Silksong saves",
+  "homepage": "https://github.com/ffff2004/silksong-git/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/ffff2004/silksong-git/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ffff2004/silksong-git.git",
+    "directory": "packages/core"
+  },
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -28,5 +39,12 @@
   "devDependencies": {
     "@types/crypto-js": "4.2.2",
     "tsup": "^8.5.1"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

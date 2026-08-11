@@ -52,6 +52,20 @@ interface SpawnedCli {
   }>;
 }
 
+test("built CLI reports the package version", async () => {
+  const packageManifest = JSON.parse(
+    await readFile(path.join(repoRoot, "apps/cli/package.json"), "utf8"),
+  ) as { readonly version: string };
+
+  for (const versionFlag of ["--version", "-V"]) {
+    const result = await runBuiltCli([versionFlag]);
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stdout, `${packageManifest.version}\n`);
+    assert.equal(result.stderr, "");
+  }
+});
+
 async function runBuiltCli(args: readonly string[]): Promise<CliResult> {
   return await new Promise((resolve) => {
     execFile(

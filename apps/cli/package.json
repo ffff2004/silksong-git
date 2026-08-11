@@ -1,6 +1,17 @@
 {
   "name": "@silksong-git/cli",
   "version": "0.1.0",
+  "description": "Local save history, semantic inspection, and restore tools for Hollow Knight: Silksong",
+  "homepage": "https://github.com/ffff2004/silksong-git/tree/main/apps/cli#readme",
+  "bugs": {
+    "url": "https://github.com/ffff2004/silksong-git/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ffff2004/silksong-git.git",
+    "directory": "apps/cli"
+  },
+  "license": "MIT",
   "type": "module",
   "bin": {
     "silksong-git": "./dist/main.js",
@@ -27,5 +38,12 @@
     "@silksong-git/history": "^0.1.0",
     "@silksong-git/repo-session": "^0.1.0",
     "tsup": "^8.5.1"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
