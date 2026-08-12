@@ -124,7 +124,7 @@ pnpm format
 pnpm verify:agent
 ```
 
-`pnpm format` applies formatting and lint fixes, taking about 40s. `pnpm verify:agent` then runs linting, tests, builds, and custom verifications, taking more than 60s.
+`pnpm format` applies formatting and lint fixes, taking about 55s. `pnpm verify:agent` then runs linting, tests, builds, and custom verifications, taking more than 150s.
 
 If satisfying the linter would conflict with the design or degrade code quality, pause the work and report.
 
