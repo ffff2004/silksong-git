@@ -27,7 +27,7 @@
     "dev-desktop": "pnpm --filter @silksong-git/desktop dev",
     "dev-desktop-sidecar": "pnpm --filter @silksong-git/desktop-sidecar dev",
     "dev-web": "pnpm --filter @silksong-git/web dev",
-    "format": "tsx ./scripts/format.ts && pnpm --filter @silksong-git/desktop format",
+    "format": "tsx ./scripts/format.ts",
     "generate:openapi": "pnpm --filter @silksong-git/repo-session generate:openapi",
     "lint": "tsx ./scripts/lint.ts && pnpm --filter @silksong-git/desktop lint",
     "local-release": "pnpm verify-cli-pack",

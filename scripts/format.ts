@@ -144,6 +144,8 @@ async function main() {
   const beforeContents = await snapshotFileContents(candidateFilePaths);
   let formatError: Error | undefined;
 
+  // Keep all formatter failures in one cleanup-and-reporting boundary.
+  // eslint-disable-next-line unicorn/try-complexity
   try {
     await runPnpmExec("eslint", ["--fix", ...formatTargets], {
       cwd: REPO_ROOT,
@@ -157,6 +159,14 @@ async function main() {
         stdio: "inherit",
       },
     );
+
+    if (targets.length === 0) {
+      await execFileAsync("pnpm", [
+        "--filter",
+        "@silksong-git/desktop",
+        "format",
+      ]);
+    }
   } catch (error) {
     // ESLint or Prettier can modify files before returning a nonzero exit code. Defer the error so
     // the post-format snapshot and diff reporting still run for that partially successful work.
