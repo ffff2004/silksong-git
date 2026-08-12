@@ -37,6 +37,7 @@
   "devDependencies": {
     "@silksong-git/history": "^0.1.0",
     "@silksong-git/repo-session": "^0.1.0",
+    "npm": "12.0.2",
     "tsup": "^8.5.1"
   },
   "engines": {
