@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
+import { devNull } from "node:os";
 import path from "node:path";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const TSX_ENTRY = path.join(REPO_ROOT, "node_modules/tsx/dist/cli.mjs");
+const GIT_VERSION_OUTPUT_LIMIT_BYTES = 64 * 1024;
 
 await stat(TSX_ENTRY);
 
@@ -87,17 +89,53 @@ function parseOptions(args: readonly string[]): QualificationOptions {
 function createTestEnvironment(gitBin: string): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (!isGitEnvironmentKey(key) && value !== undefined) {
+    if (!isRestrictedEnvironmentKey(key) && value !== undefined) {
       environment[key] = value;
     }
   }
 
   environment["PATH"] = gitBin;
+  environment["GIT_ATTR_NOSYSTEM"] = "1";
+  environment["GIT_CONFIG_GLOBAL"] = devNull;
+  environment["GIT_CONFIG_NOSYSTEM"] = "1";
+  environment["GIT_TERMINAL_PROMPT"] = "0";
+  environment["LANG"] = "C";
+  environment["LC_ALL"] = "C";
+  environment["LC_MESSAGES"] = "C";
+  environment["LANGUAGE"] = "C";
   return environment;
 }
 
-function isGitEnvironmentKey(key: string): boolean {
-  return key.length >= 4 && key.slice(0, 4).toUpperCase() === "GIT_";
+function isRestrictedEnvironmentKey(key: string): boolean {
+  return (
+    hasAsciiCaseInsensitivePrefix(key, "GIT_")
+    || hasAsciiCaseInsensitivePrefix(key, "NODE_")
+  );
+}
+
+function hasAsciiCaseInsensitivePrefix(value: string, prefix: string): boolean {
+  if (value.length < prefix.length) {
+    return false;
+  }
+
+  for (let index = 0; index < prefix.length; index++) {
+    const valueCode = value.codePointAt(index);
+    const prefixCode = prefix.codePointAt(index);
+
+    if (
+      valueCode === undefined
+      || prefixCode === undefined
+      || toAsciiUpperCode(valueCode) !== toAsciiUpperCode(prefixCode)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function toAsciiUpperCode(code: number): number {
+  return code >= 0x61 && code <= 0x7a ? code - 0x20 : code;
 }
 
 async function readCandidateVersion(
@@ -115,19 +153,42 @@ async function readCandidateVersion(
 }
 
 async function getTestFiles(directory: string): Promise<readonly string[]> {
-  const entries = await readdir(path.join(REPO_ROOT, directory), {
-    withFileTypes: true,
-  });
-  const testFiles = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".test.ts"))
-    .map((entry) => path.join(directory, entry.name))
-    .toSorted();
+  const collectedTestFiles = await collectTestFiles(
+    path.join(REPO_ROOT, directory),
+    directory,
+  );
+  const testFiles = collectedTestFiles.toSorted();
 
   if (testFiles.length === 0) {
     throw new Error(`No test files found in ${directory}.`);
   }
 
   return testFiles;
+}
+
+async function collectTestFiles(
+  absoluteDirectory: string,
+  relativeDirectory: string,
+): Promise<readonly string[]> {
+  const entries = await readdir(absoluteDirectory, { withFileTypes: true });
+  const nestedFiles = await Promise.all(
+    entries.map(async (entry) => {
+      const relativePath = path.join(relativeDirectory, entry.name);
+
+      if (entry.isDirectory()) {
+        return await collectTestFiles(
+          path.join(absoluteDirectory, entry.name),
+          relativePath,
+        );
+      }
+
+      return entry.isFile() && entry.name.endsWith(".test.ts")
+        ? [relativePath]
+        : [];
+    }),
+  );
+
+  return nestedFiles.flat();
 }
 
 async function run(
@@ -161,21 +222,64 @@ async function capture(
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    const outputLengths = { stderr: 0, stdout: 0 };
+    let settled = false;
+
+    const fail = (error: Error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      child.kill();
+      reject(error);
+    };
+
+    const collect = (
+      stream: "stderr" | "stdout",
+      chunk: Readonly<Buffer>,
+    ): Buffer | undefined => {
+      const nextLength = outputLengths[stream] + chunk.length;
+      if (nextLength > GIT_VERSION_OUTPUT_LIMIT_BYTES) {
+        fail(
+          new Error(
+            `Git --version ${stream} exceeded the ${GIT_VERSION_OUTPUT_LIMIT_BYTES}-byte capture limit.`,
+          ),
+        );
+        return undefined;
+      }
+
+      outputLengths[stream] = nextLength;
+      return Buffer.from(chunk);
+    };
 
     child.stdout.on("data", (chunk: Buffer) => {
-      stdout.push(chunk);
+      const collected = collect("stdout", chunk);
+      if (collected !== undefined) {
+        stdout.push(collected);
+      }
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr.push(chunk);
+      const collected = collect("stderr", chunk);
+      if (collected !== undefined) {
+        stderr.push(collected);
+      }
     });
-    child.once("error", reject);
+    child.once("error", (error) => {
+      fail(error instanceof Error ? error : new Error(String(error)));
+    });
     child.once("close", (code, signal) => {
+      if (settled) {
+        return;
+      }
+
       if (code === 0 && signal === null) {
+        settled = true;
         resolve(Buffer.concat(stdout).toString("utf8"));
         return;
       }
 
-      reject(
+      fail(
         new Error(
           `Git --version failed with ${describeCompletion({ code, signal })}: ${Buffer.concat(stderr).toString("utf8").trim()}`,
         ),
@@ -195,7 +299,7 @@ function printUsage() {
     [
       "Usage: pnpm qualify-git --git-bin <directory> [--expect-version <version>]",
       "",
-      "Runs Git --version, the complete History suite, and the complete Repo Session suite with PATH restricted to <directory> and ambient GIT_* variables removed.",
+      "Runs Git --version, the complete History suite, and the complete Repo Session suite with PATH restricted to <directory> and ambient GIT_*/NODE_* variables removed.",
     ].join("\n"),
   );
 }

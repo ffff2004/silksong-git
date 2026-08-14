@@ -9,9 +9,11 @@ on.
 
 ## Supported policy
 
-The qualified Git core policy is `>=2.34.0 <3.0.0`. The lower bound is based
-on the complete History and Repo Session behavior suites passing with upstream
-Git 2.34.0. The ordinary dynamically linked glibc/Linux build is the
+The supported Git core policy is `>=2.34.0 <3.0.0`. The Git 2.34.0 lower floor
+is qualified by the reusable procedure and evidence recorded in [issue
+#61](https://github.com/ffff2004/silksong-git/issues/61). The `<3.0.0` ceiling
+is a forward policy boundary, not a claim that Git 3.x was tested or shown
+incompatible. The ordinary dynamically linked glibc/Linux build is the
 portability authority. A static musl build is useful supplemental evidence but
 does not qualify Linux compatibility by itself.
 
@@ -20,9 +22,15 @@ does not qualify Linux compatibility by itself.
 History invokes the executable named `git` with `cwd` set to the absolute Save
 History Repository path. Every invocation uses `execFile`, so arguments are
 passed as individual argv entries and no shell parsing is part of the
-contract. A successful command has exit status 0. Git stdout is trimmed by
-text readers; Git stderr is retained only for error classification and the
-resulting error cause.
+contract. Under the Node 24 runtime policy from [parent issue #57](https://github.com/ffff2004/silksong-git/issues/57),
+text-producing and no-output calls use `execFile` without a `maxBuffer`
+override, so Node 24's documented default is 1 MiB (1,048,576 bytes) per
+stdout/stderr stream. This is scoped to the Node 24 policy and does not claim
+that future Node versions retain the same default. Blob reads explicitly
+request raw `Buffer` output and set `maxBuffer` to 10 MiB.
+A successful command has exit status 0. Git stdout is trimmed by text readers;
+Git stderr is retained only for error classification and the resulting error
+cause.
 
 | Operation              | Exact argv after any managed `-c` arguments                                                                                  | Success assumption                                                                                                                                                                                          |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,7 +88,7 @@ Observation commits additionally pass the explicit History-owned values
 `GIT_COMMITTER_DATE=<observedAt>`. The fixed values win over caller-provided
 values. The current adapter still inherits other ambient `GIT_*` keys; the
 stronger removal of all ambient `GIT_*` keys and the `GIT_CONFIG_GLOBAL` null
-device described by parent issue #57 are a parent-runtime responsibility, not
+device described by [parent issue #57](https://github.com/ffff2004/silksong-git/issues/57) are a parent-runtime responsibility, not
 a hidden qualification assumption.
 
 Repository-local Git configuration is therefore present, but managed writes
@@ -148,30 +156,24 @@ pnpm qualify-git \
   --expect-version 2.34.0
 ```
 
+The `git --version` capture has an independent 64 KiB limit for each stream:
+stdout and stderr are each bounded at 64 KiB. If either stream overflows its
+limit, the harness terminates the Git process and fails cleanly rather than
+accumulating unbounded output.
+
 The harness first runs `git --version`, then runs every History test and every
 Repo Session test through the absolute Node and tsx entries. The child `PATH`
-contains only the supplied Git directory; ambient `GIT_*` keys are removed,
-while ordinary environment values remain inherited. Test files are enumerated
-by the harness, so the command does not depend on shell glob expansion.
+contains only the supplied Git directory; ambient `GIT_*` and `NODE_*` keys are
+removed using ASCII-case-insensitive matching, while ordinary Node/application
+environment values remain inherited. `GIT_CONFIG_GLOBAL` is set to
+`node:os.devNull`, system config and terminal prompts are disabled, and the C
+locale values used for stable Git diagnostics are forced. Test files are
+enumerated recursively by the harness, so the command does not depend on shell
+glob expansion.
 
 The required representative workflow is covered by the public-interface
 History and Repo Session suites: repository initialization, observation,
 read-model query/export, restore, watcher lifecycle, and graceful session
-shutdown. Future qualification runs should record the candidate's exact
-`git version` output, build/provenance, harness command, and both suite counts
-in the relevant issue.
-
-## Qualification evidence for 2.34.0
-
-On 2026-08-14, upstream Git v2.34.0 was built from the official source archive
-with the ordinary dynamic glibc toolchain and passed the harness with:
-
-```text
-History: 77 passed, 0 failed
-Repo Session: 42 passed, 0 failed
-```
-
-The supplemental static musl Git 2.34.0 candidate also passed `77` History and
-`42` Repo Session tests. It used `NO_CURL=YesPlease`; silksong-git exercises
-only local Git operations, so network transports are not part of this
-qualification surface.
+shutdown. The qualification evidence and run results are maintained in the
+[issue #61 completion evidence comment](https://github.com/ffff2004/silksong-git/issues/61#issuecomment-5290021055), rather than copied into
+this reference.
