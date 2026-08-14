@@ -8,11 +8,24 @@ SQLite, watcher scheduling, or repository layout.
 
 The Rust shell owns native directory selection, canonicalization, and the
 private [`apps/desktop-sidecar`](../../apps/desktop-sidecar) process lifecycle.
-Debug builds run Node with the fixed
-`apps/desktop-sidecar/dist/main.js` entry, which must exist before Desktop
-starts. Non-debug builds resolve the fixed `silksong-git-desktop-sidecar`
-executable beneath the application resource directory and report Local History
-as unavailable when it is absent. A selected repository path is sent only in
+One mutually exclusive Cargo-selected Runtime Layout resolves either a system
+Node entry or a manifest-owned bundled executable and Git path. Development and
+installed applications use the same Tauri resource-root adapter and the same
+strict `resourceRoot/runtime/manifest.json` lookup. Development differs only
+because its staging producer writes the Git-ignored simulated SystemRuntime
+tree directly to the resource root that Tauri will resolve for the executable.
+In the current Linux development and no-bundle build configuration, those
+roots are `src-tauri/target/debug` and `src-tauri/target/release`, respectively;
+the unqualified staging step is not a packaging resource map. The resolved
+launch plan is preflighted before WebView
+construction; failure leaves Static inspection available and exposes a stable
+unavailable reason to Local History. The unqualified SystemRuntime platform
+adapter safely reports `RuntimeUnavailable` rather than treating staging data
+as a Node selector; controlled adapter tests exercise a ready system plan.
+Launch clears inherited `PATH` and `NODE_*` values. Missing installed resources
+are safely unavailable. This is a runtime selection and validation boundary,
+not a claim that either runtime has been packaged or qualified. A selected
+repository path is sent only in
 JSONL `repository.inspect` and `session.open` messages, never as a spawn
 argument.
 

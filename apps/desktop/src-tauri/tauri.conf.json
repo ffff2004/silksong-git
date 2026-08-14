@@ -5,8 +5,8 @@
   "identifier": "io.github.ffff2004.silksong-git",
   "mainBinaryName": "silksong-git",
   "build": {
-    "beforeDevCommand": "pnpm --dir ../.. --filter @silksong-git/desktop-sidecar... run build && pnpm --dir ../web dev:desktop",
-    "beforeBuildCommand": "pnpm --dir ../.. --filter @silksong-git/desktop-sidecar... run build && pnpm --dir ../web build:desktop && pnpm verify:web-assets",
+    "beforeDevCommand": "pnpm --dir ../.. --filter @silksong-git/desktop-sidecar... run build && pnpm stage:runtime:dev && pnpm --dir ../web dev:desktop",
+    "beforeBuildCommand": "pnpm --dir ../.. --filter @silksong-git/desktop-sidecar... run build && pnpm stage:runtime:build && pnpm --dir ../web build:desktop && pnpm verify:web-assets",
     "devUrl": "http://127.0.0.1:1420",
     "frontendDist": "../../web/dist-desktop"
   },

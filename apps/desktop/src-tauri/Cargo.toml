@@ -3,10 +3,21 @@ name = "silksong-git"
 version = "0.1.0"
 description = "Hardened desktop shell for Silksong Git"
 edition = "2024"
+default-run = "silksong-git"
 
 [lib]
 name = "silksong_git_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "runtime_layout_fixture"
+path = "src/bin/runtime_layout_fixture.rs"
+test = false
+
+[features]
+default = ["runtime-system"]
+runtime-system = []
+runtime-bundled = []
 
 [build-dependencies]
 tauri-build = { version = "=2.6.3", features = [] }

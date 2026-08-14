@@ -23,10 +23,13 @@ use crate::managed_initialization::{
     ClaimedDirectoryCleanupError, ManagedDirectoryClaim, claim_managed_repository_directory,
     managed_repository_name, remove_claimed_directory,
 };
+use crate::runtime_layout::{RuntimeLaunchPlan, RuntimePreflightError, RuntimePreflightErrorCode};
 use crate::save_location::{SaveLocationPlatform, SaveLocationSystem, initial_directory};
 
 const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 11;
+#[cfg(test)]
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
+#[cfg(test)]
 const BUNDLED_SIDECAR_NAME: &str = "silksong-git-desktop-sidecar";
 const REPLACEMENT_CONFIRMATION: &str = "archive-and-reinitialize-managed-repository";
 const REPOSITORY_WATCHED_SAVE_COMPARE_FAILED: &str = "repository_watched_save_compare_failed";
@@ -4357,36 +4360,58 @@ fn parse_required_action(value: &str) -> Result<RepositoryRequiredAction, Deskto
 
 #[derive(Clone)]
 enum SidecarLaunch {
-    Development { entry: PathBuf, node: PathBuf },
-    Bundled { executable: PathBuf },
+    Runtime(RuntimeLaunchPlan),
+    #[cfg(test)]
+    Development {
+        entry: PathBuf,
+        node: PathBuf,
+    },
+    #[cfg(test)]
+    Bundled {
+        executable: PathBuf,
+    },
 }
+
+/// Public Desktop command tests explicitly install their controlled fixture
+/// launch. Production command handling can only obtain a validated layout
+/// plan from `RuntimeLayoutState`.
+#[cfg(test)]
+#[derive(Clone)]
+struct TestRuntimeLaunch(SidecarLaunch);
 
 impl SidecarLaunch {
     fn for_app<R: Runtime>(app: &AppHandle<R>) -> Result<Self, DesktopRuntimeError> {
-        let workspace_root = workspace_root()?;
-        if cfg!(debug_assertions) {
-            return development_sidecar_launch(workspace_root);
+        #[cfg(test)]
+        if let Some(launch) = app.try_state::<TestRuntimeLaunch>() {
+            return Ok(launch.0.clone());
         }
-
-        let resource_directory = app
-            .path()
-            .resource_dir()
-            .map_err(|_| DesktopRuntimeError::Unavailable)?;
-        sidecar_launch_for_resource_directory(false, &resource_directory, workspace_root)
+        let state = app.try_state::<crate::RuntimeLayoutState>().ok_or(
+            DesktopRuntimeError::RuntimePreflight(RuntimePreflightError::new(
+                RuntimePreflightErrorCode::ManifestUnavailable,
+            )),
+        )?;
+        state
+            .plan()
+            .map(Self::Runtime)
+            .map_err(DesktopRuntimeError::RuntimePreflight)
     }
 
     fn command(&self) -> Command {
         match self {
+            Self::Runtime(plan) => plan.command(),
+            #[cfg(test)]
             Self::Development { entry, node } => {
                 let mut command = Command::new(node);
                 command.arg(entry);
                 command
             }
+            #[cfg(test)]
             Self::Bundled { executable } => Command::new(executable),
         }
     }
 }
 
+#[cfg(test)]
 fn workspace_root() -> Result<&'static Path, DesktopRuntimeError> {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -4394,6 +4419,7 @@ fn workspace_root() -> Result<&'static Path, DesktopRuntimeError> {
         .ok_or(DesktopRuntimeError::Unavailable)
 }
 
+#[cfg(test)]
 fn development_sidecar_launch(workspace_root: &Path) -> Result<SidecarLaunch, DesktopRuntimeError> {
     let entry = workspace_root.join(DEVELOPMENT_SIDECAR_ENTRY);
     if !entry.is_file() {
@@ -4409,6 +4435,7 @@ fn development_sidecar_launch(workspace_root: &Path) -> Result<SidecarLaunch, De
 /// Selects the workspace sidecar only for the unbundled Cargo release layout.
 /// Packaged applications never use this fallback: their resource directory is
 /// outside the workspace target directory and must contain the bundled binary.
+#[cfg(test)]
 fn sidecar_launch_for_resource_directory(
     debug_build: bool,
     resource_directory: &Path,
@@ -4729,7 +4756,9 @@ fn diagnostic_for(error: &DesktopRuntimeError) -> SafeDiagnostic {
 pub(crate) enum DesktopRuntimeError {
     BlockedByMutation,
     Busy,
+    #[cfg(test)]
     BundledSidecarUnavailable,
+    #[cfg(test)]
     DevelopmentSidecarUnavailable,
     InvalidDirectory,
     InvalidSaveFile,
@@ -4738,8 +4767,12 @@ pub(crate) enum DesktopRuntimeError {
     NoPreparedMigration,
     Protocol(String),
     ReadOnly,
-    SidecarRejected { code: String, message: String },
+    SidecarRejected {
+        code: String,
+        message: String,
+    },
     SidecarUnavailable,
+    RuntimePreflight(RuntimePreflightError),
     UnsupportedDirectoryName,
     Unavailable,
 }
@@ -4749,10 +4782,18 @@ impl DesktopRuntimeError {
         match self {
             Self::BlockedByMutation => "Wait for the active Manual Checkpoint or restore to finish before changing the Desktop session.".into(),
             Self::Busy => "Desktop Local History is changing sessions. Try again when the current operation finishes.".into(),
+            #[cfg(test)]
             Self::BundledSidecarUnavailable | Self::SidecarUnavailable => {
                 "The Desktop Local History service is unavailable. Close and reopen the app, then try again."
                     .into()
             }
+            #[cfg(not(test))]
+            Self::SidecarUnavailable => {
+                "The Desktop Local History service is unavailable. Close and reopen the app, then try again."
+                    .into()
+            }
+            Self::RuntimePreflight(error) => error.to_string(),
+            #[cfg(test)]
             Self::DevelopmentSidecarUnavailable => {
                 "The Desktop development sidecar is not built. Run pnpm build-desktop-sidecar, then restart Desktop."
                     .into()
@@ -8568,6 +8609,7 @@ process.stdout.write(Buffer.from(await response.arrayBuffer()));
                 std::process::id()
             );
             let app = mock_builder()
+                .manage(super::TestRuntimeLaunch(real_sidecar_launch()))
                 .manage(super::DesktopWorkflow {
                     state: Default::default(),
                     archive_clock: Box::new(FixedArchiveClock(test_initialization_time())),

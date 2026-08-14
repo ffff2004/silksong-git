@@ -168,4 +168,5 @@ Thumbs.db
 /apps/web/public/assets/scenes/desktop.ini
 /apps/web/public/assets/scenes/*.tmp
 /apps/web/test-results/
+/apps/desktop/build/
 /docs/generated/local-http-api.openapi.json

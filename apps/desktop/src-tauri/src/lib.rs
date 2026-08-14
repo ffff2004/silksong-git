@@ -1,5 +1,11 @@
+#[cfg(all(feature = "runtime-system", feature = "runtime-bundled"))]
+compile_error!("runtime-system and runtime-bundled are mutually exclusive");
+#[cfg(not(any(feature = "runtime-system", feature = "runtime-bundled")))]
+compile_error!("one runtime layout feature must be selected");
+
 mod desktop_runtime;
 mod managed_initialization;
+pub mod runtime_layout;
 mod save_location;
 mod security;
 
@@ -15,6 +21,10 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::desktop_runtime::DesktopWorkflow;
+use crate::runtime_layout::{
+    RuntimeLaunchPlan, RuntimePreflight, RuntimePreflightError, RuntimePreflightErrorCode,
+    TauriResourceRuntimeLayoutAdapter, preflight,
+};
 
 const MAIN_WINDOW_LABEL: &str = "main";
 
@@ -23,6 +33,34 @@ struct RepositoryMenu<R: tauri::Runtime> {
     open_external: MenuItem<R>,
     start_watching: MenuItem<R>,
     stop_watching: MenuItem<R>,
+}
+
+/// Kept in Rust application state so every sidecar lifecycle receives the
+/// exact launch plan that was validated before the WebView was created.
+pub(crate) struct RuntimeLayoutState(RuntimePreflight);
+
+impl RuntimeLayoutState {
+    fn for_app<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Self {
+        Self(tauri_resource_runtime_preflight(app))
+    }
+
+    pub(crate) fn plan(&self) -> Result<RuntimeLaunchPlan, RuntimePreflightError> {
+        match &self.0 {
+            RuntimePreflight::Ready(plan) => Ok(plan.clone()),
+            RuntimePreflight::Unavailable(error) => Err(error.clone()),
+        }
+    }
+}
+
+fn tauri_resource_runtime_preflight<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> RuntimePreflight {
+    match app.path().resource_dir() {
+        Ok(resource_root) => preflight(&TauriResourceRuntimeLayoutAdapter::new(resource_root)),
+        Err(_) => RuntimePreflight::Unavailable(RuntimePreflightError::new(
+            RuntimePreflightErrorCode::ManifestUnavailable,
+        )),
+    }
 }
 
 pub fn run() {
@@ -78,6 +116,10 @@ pub fn run() {
             desktop_runtime::desktop_stop_watching,
         ])
         .setup(|app| {
+            // This is intentionally before window construction. A failed
+            // preflight still permits static inspection, but Local History
+            // commands see a single safe unavailable state.
+            app.manage(RuntimeLayoutState::for_app(app.handle()));
             let menu = install_repository_menu(app)?;
             app.manage(menu);
             update_repository_menu(app.handle());
@@ -347,7 +389,10 @@ mod tests {
 
     use serde_json::Value;
 
-    use super::dispatch_menu_static_save_picker;
+    use super::{RuntimeLayoutState, dispatch_menu_static_save_picker};
+    use crate::runtime_layout::{
+        RuntimePreflight, RuntimePreflightError, RuntimePreflightErrorCode,
+    };
 
     const CONFIG: &str = include_str!("../tauri.conf.json");
     const CAPABILITY: &str = include_str!("../capabilities/main.json");
@@ -437,5 +482,16 @@ mod tests {
         task.replace(None).expect("scheduled menu task")();
 
         assert!(picker_started.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn runtime_layout_state_preserves_precise_preflight_unavailability() {
+        let expected = RuntimePreflightError {
+            code: RuntimePreflightErrorCode::RuntimeProtocol,
+            cleanup_incomplete: true,
+        };
+        let state = RuntimeLayoutState(RuntimePreflight::Unavailable(expected.clone()));
+
+        assert_eq!(state.plan().expect_err("state is unavailable"), expected);
     }
 }

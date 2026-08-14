@@ -6,9 +6,15 @@
     "build": "tauri build --no-bundle",
     "dev": "tauri dev",
     "format": "cargo fmt --manifest-path src-tauri/Cargo.toml",
-    "lint": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
+    "lint": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-default-features --features runtime-bundled -- -D warnings",
     "smoke:webkit": "tsx scripts/smoke-webkit.ts",
-    "test": "pnpm --filter @silksong-git/desktop-sidecar build && cargo test --manifest-path src-tauri/Cargo.toml",
+    "stage:runtime": "pnpm stage:runtime:dev",
+    "stage:runtime:build": "tsx scripts/stage-runtime-layout.ts release",
+    "stage:runtime:dev": "tsx scripts/stage-runtime-layout.ts debug",
+    "test": "pnpm test:runtime-system && pnpm test:runtime-bundled",
+    "test:runtime-bundled": "pnpm --filter @silksong-git/desktop-sidecar build && cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features runtime-bundled",
+    "test:runtime-system": "pnpm --filter @silksong-git/desktop-sidecar build && pnpm stage:runtime && cargo test --manifest-path src-tauri/Cargo.toml",
+    "verify:runtime-stage": "pnpm stage:runtime:dev && tsx scripts/verify-runtime-stage.ts debug && pnpm stage:runtime:build && tsx scripts/verify-runtime-stage.ts release",
     "verify:web-assets": "tsx scripts/verify-web-assets.ts"
   },
   "devDependencies": {
