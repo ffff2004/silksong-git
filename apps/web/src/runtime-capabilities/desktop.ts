@@ -1,5 +1,6 @@
 import type {
   ArchiveRepositoryResult,
+  DesktopRuntimeStartup,
   ImportRepositoryResult,
   ManagedInitializationResult,
   ManagedRepositoryReplacementResult,
@@ -43,9 +44,17 @@ export function createDesktopRuntimeCapabilities(input: {
     readonly intent: RepositoryOpenIntent;
   }) => Promise<OpenExternalRepositoryResult>;
   readonly reopenRepository?: () => Promise<OpenExternalRepositoryResult>;
+  readonly startup?: DesktopRuntimeStartup;
   readonly startWatching: () => Promise<void>;
   readonly stopWatching: () => Promise<void>;
 }): RuntimeCapabilities {
+  if (input.startup?.kind === "unavailable") {
+    return {
+      kind: "runtimeUnavailable",
+      startup: input.startup,
+    };
+  }
+
   return {
     getRepoSessionConnection: input.getRepoSessionConnection,
     closeRepository: input.closeRepository,
@@ -65,6 +74,7 @@ export function createDesktopRuntimeCapabilities(input: {
     onStaticEncodedSavePicked: input.onStaticEncodedSavePicked,
     openLibraryEntry: input.openLibraryEntry,
     reopenRepository: input.reopenRepository,
+    startup: { kind: "ready" },
     startWatching: input.startWatching,
     stopWatching: input.stopWatching,
   };

@@ -53,6 +53,11 @@ its repository library; Browser keeps
 its existing Static progress start. `App.tsx` composes four
 application-wide providers around the router:
 
+Desktop startup projection and the terminal `RuntimeUnavailable` state are
+owned by the [Desktop Shell architecture](desktop-shell.md#composition-and-build).
+The Web composition consumes that projection without becoming its authority;
+Browser capabilities remain Static-only and are unaffected.
+
 - the Toast Store owns transient notifications;
 - the Preferences Store owns presentation preferences and may persist them in
   browser storage;

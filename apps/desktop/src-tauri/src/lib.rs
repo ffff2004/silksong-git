@@ -14,8 +14,9 @@ mod security;
 
 use std::thread;
 
+use serde::Serialize;
 use tauri::{
-    Emitter, Manager,
+    Emitter, Manager, State,
     menu::{Menu, MenuItem, Submenu},
     utils::config::WebviewUrl,
     webview::{NewWindowResponse, WebviewWindowBuilder},
@@ -32,6 +33,8 @@ use crate::runtime_layout::{
 const MAIN_WINDOW_LABEL: &str = "main";
 
 struct RepositoryMenu<R: tauri::Runtime> {
+    inspect_local_save: MenuItem<R>,
+    initialize: MenuItem<R>,
     close: MenuItem<R>,
     open_external: MenuItem<R>,
     start_watching: MenuItem<R>,
@@ -41,6 +44,24 @@ struct RepositoryMenu<R: tauri::Runtime> {
 /// Kept in Rust application state so every sidecar lifecycle receives the
 /// exact launch plan that was validated before the WebView was created.
 pub(crate) struct RuntimeLayoutState(RuntimePreflight);
+
+#[cfg(test)]
+pub(crate) struct TestRuntimeReady;
+
+pub(crate) const DESKTOP_RUNTIME_UNAVAILABLE_MESSAGE: &str =
+    "Desktop runtime is unavailable. Restart Desktop to repair it.";
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum DesktopRuntimeStartup {
+    Ready,
+    Unavailable {
+        code: RuntimePreflightErrorCode,
+        message: String,
+        #[serde(rename = "cleanupIncomplete")]
+        cleanup_incomplete: bool,
+    },
+}
 
 impl RuntimeLayoutState {
     fn for_app<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Self {
@@ -53,6 +74,21 @@ impl RuntimeLayoutState {
             RuntimePreflight::Unavailable(error) => Err(error.clone()),
         }
     }
+
+    pub(crate) fn startup(&self) -> DesktopRuntimeStartup {
+        match &self.0 {
+            RuntimePreflight::Ready(_) => DesktopRuntimeStartup::Ready,
+            RuntimePreflight::Unavailable(error) => DesktopRuntimeStartup::Unavailable {
+                code: error.code,
+                message: error.to_string(),
+                cleanup_incomplete: error.cleanup_incomplete,
+            },
+        }
+    }
+
+    pub(crate) fn is_ready(&self) -> bool {
+        matches!(self.0, RuntimePreflight::Ready(_))
+    }
 }
 
 fn tauri_resource_runtime_preflight<R: tauri::Runtime>(
@@ -64,6 +100,14 @@ fn tauri_resource_runtime_preflight<R: tauri::Runtime>(
             RuntimePreflightErrorCode::ManifestUnavailable,
         )),
     }
+}
+
+/// Returns only the stable startup projection needed to choose the hardened
+/// Desktop Web state. Runtime paths, child output, and native process handles
+/// remain Rust-only.
+#[tauri::command]
+fn desktop_get_runtime_status(runtime: State<'_, RuntimeLayoutState>) -> DesktopRuntimeStartup {
+    runtime.startup()
 }
 
 pub fn run() {
@@ -103,6 +147,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             desktop_runtime::desktop_get_repo_session_connection,
+            desktop_get_runtime_status,
             desktop_runtime::desktop_get_repository_library,
             desktop_runtime::desktop_open_library_entry,
             desktop_runtime::desktop_archive_repository,
@@ -119,9 +164,9 @@ pub fn run() {
             desktop_runtime::desktop_stop_watching,
         ])
         .setup(|app| {
-            // This is intentionally before window construction. A failed
-            // preflight still permits static inspection, but Local History
-            // commands see a single safe unavailable state.
+            // This is intentionally before window construction. The WebView
+            // receives the resulting safe startup projection and never gets a
+            // runtime path, process output, or generic native authority.
             app.manage(RuntimeLayoutState::for_app(app.handle()));
             let menu = install_repository_menu(app)?;
             app.manage(menu);
@@ -238,6 +283,8 @@ fn install_repository_menu<R: tauri::Runtime>(
     let menu = Menu::with_items(app, &[&file, &repository])?;
     app.set_menu(menu)?;
     Ok(RepositoryMenu {
+        inspect_local_save,
+        initialize,
         close,
         open_external: external,
         start_watching: start,
@@ -246,6 +293,9 @@ fn install_repository_menu<R: tauri::Runtime>(
 }
 
 fn inspect_local_save_from_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if !runtime_is_ready(app) {
+        return;
+    }
     let picker_app = app.clone();
     let initial_directory = desktop_runtime::static_save_picker_initial_directory();
 
@@ -307,13 +357,20 @@ fn inspect_selected_save_after_picker<R: tauri::Runtime>(
 
 pub(crate) fn update_repository_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let state = app.state::<DesktopWorkflow>().repository_menu_state();
+    let runtime_ready = runtime_is_ready(app);
     let menu = app.state::<RepositoryMenu<R>>();
-    let _ = menu.close.set_enabled(state.close_enabled);
-    let _ = menu.open_external.set_enabled(state.open_external_enabled);
+    let _ = menu.inspect_local_save.set_enabled(runtime_ready);
+    let _ = menu.initialize.set_enabled(runtime_ready);
+    let _ = menu.close.set_enabled(runtime_ready && state.close_enabled);
+    let _ = menu
+        .open_external
+        .set_enabled(runtime_ready && state.open_external_enabled);
     let _ = menu
         .start_watching
-        .set_enabled(state.start_watching_enabled);
-    let _ = menu.stop_watching.set_enabled(state.stop_watching_enabled);
+        .set_enabled(runtime_ready && state.start_watching_enabled);
+    let _ = menu
+        .stop_watching
+        .set_enabled(runtime_ready && state.stop_watching_enabled);
 }
 
 fn navigate_to_library<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
@@ -323,6 +380,9 @@ fn navigate_to_library<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
 }
 
 fn open_external_from_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if !runtime_is_ready(app) {
+        return;
+    }
     let Some(selected) = app
         .dialog()
         .file()
@@ -348,6 +408,9 @@ fn open_external_from_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
 }
 
 fn initialize_managed_repository_from_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if !runtime_is_ready(app) {
+        return;
+    }
     let Some(selected) = app
         .dialog()
         .file()
@@ -368,6 +431,31 @@ fn initialize_managed_repository_from_menu<R: tauri::Runtime>(app: &tauri::AppHa
         eprintln!("managed repository initialization failed: {error}");
     }
     update_repository_menu(app);
+}
+
+pub(crate) fn runtime_is_ready<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    app.try_state::<RuntimeLayoutState>()
+        .is_some_and(|runtime| runtime.is_ready())
+        || {
+            #[cfg(test)]
+            {
+                app.try_state::<TestRuntimeReady>().is_some()
+            }
+            #[cfg(not(test))]
+            {
+                false
+            }
+        }
+}
+
+pub(crate) fn require_runtime_ready<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<(), String> {
+    if runtime_is_ready(app) {
+        Ok(())
+    } else {
+        Err(DESKTOP_RUNTIME_UNAVAILABLE_MESSAGE.into())
+    }
 }
 
 fn focus_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
@@ -443,6 +531,7 @@ mod tests {
         assert_eq!(
             capability["permissions"],
             serde_json::json!([
+                "allow-desktop-get-runtime-status",
                 "allow-desktop-get-repo-session-connection",
                 "allow-desktop-get-repository-library",
                 "allow-desktop-open-library-entry",
@@ -490,11 +579,31 @@ mod tests {
     #[test]
     fn runtime_layout_state_preserves_precise_preflight_unavailability() {
         let expected = RuntimePreflightError {
-            code: RuntimePreflightErrorCode::RuntimeProtocol,
+            code: RuntimePreflightErrorCode::SidecarProtocolInvalid,
             cleanup_incomplete: true,
         };
         let state = RuntimeLayoutState(RuntimePreflight::Unavailable(expected.clone()));
 
         assert_eq!(state.plan().expect_err("state is unavailable"), expected);
+    }
+
+    #[test]
+    fn runtime_layout_state_projects_only_safe_startup_fields() {
+        let state = RuntimeLayoutState(RuntimePreflight::Unavailable(RuntimePreflightError {
+            code: RuntimePreflightErrorCode::SidecarProtocolInvalid,
+            cleanup_incomplete: true,
+        }));
+
+        let projected = serde_json::to_value(state.startup()).expect("serialize startup status");
+
+        assert_eq!(projected["kind"], "unavailable");
+        assert_eq!(projected["code"], "sidecarProtocolInvalid");
+        assert_eq!(projected["cleanupIncomplete"], true);
+        assert_eq!(
+            projected["message"],
+            "The Desktop Local History runtime returned an invalid response."
+        );
+        assert!(projected.get("path").is_none());
+        assert!(projected.get("stderr").is_none());
     }
 }

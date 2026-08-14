@@ -7,6 +7,7 @@ import { MapView } from "../features/map/MapView.tsx";
 import { ProgressView } from "../features/progress/ProgressView.tsx";
 import { RawSaveView } from "../features/raw-save/RawSaveView.tsx";
 import { RepositoryLibraryView } from "../features/repositories/RepositoryLibraryView.tsx";
+import { RuntimeUnavailableView } from "../features/runtime/RuntimeUnavailableView.tsx";
 import { WatcherRoute } from "../features/watcher/WatcherView.tsx";
 import type { RuntimeCapabilities } from "../runtime-capabilities/interface.ts";
 import { LocalHistoryProvider } from "../state/local-history-store.tsx";
@@ -19,6 +20,12 @@ import { AppShell } from "./AppShell.tsx";
 export function App(props: {
   readonly runtimeCapabilities: RuntimeCapabilities;
 }) {
+  if (props.runtimeCapabilities.kind === "runtimeUnavailable") {
+    return (
+      <RuntimeUnavailableView startup={props.runtimeCapabilities.startup} />
+    );
+  }
+
   return (
     <RuntimeCapabilitiesProvider
       runtimeCapabilities={props.runtimeCapabilities}

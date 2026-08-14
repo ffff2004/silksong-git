@@ -6,6 +6,7 @@ import { App } from "./app/App.tsx";
 import { createDesktopRuntimeCapabilities } from "./runtime-capabilities/desktop.ts";
 import type {
   ArchiveRepositoryResult,
+  DesktopRuntimeStartup,
   ImportRepositoryResult,
   ManagedInitializationResult,
   ManagedRepositoryReplacementResult,
@@ -24,6 +25,10 @@ const root = document.querySelector("#root");
 if (root === null) {
   throw new Error("Failed to find Solid root element for Desktop.");
 }
+
+const desktopRuntimeStartup = await invoke<DesktopRuntimeStartup>(
+  "desktop_get_runtime_status",
+);
 
 const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
   getRepoSessionConnection: async () =>
@@ -80,6 +85,7 @@ const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
     }),
   reopenRepository: async () =>
     await invoke<OpenExternalRepositoryResult>("desktop_reopen_repository"),
+  startup: desktopRuntimeStartup,
   startWatching: async () => {
     await invoke("desktop_start_watching");
   },

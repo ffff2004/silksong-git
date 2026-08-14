@@ -15,7 +15,9 @@ feature compatibility, candidate validation, restricted-environment and frozen
 launch-plan construction, bounded preflight, and safe unavailable results.
 Runtime Layout Adapters own only platform integration: obtaining the installed
 resource root, selecting platform-owned executable candidates, and creating or
-cleaning up owned child processes. The Layout consumes those adapter-provided
+cleaning up owned child processes. On Linux, the SystemRuntime adapter calls
+the `which` crate once for each of `node` and `git`, before the shared module
+performs any functional validation. The Layout consumes those adapter-provided
 facts rather than performing Tauri or operating-system discovery itself.
 Development and installed applications use the same Tauri resource-root adapter
 and the same
@@ -25,14 +27,19 @@ tree directly to the resource root that Tauri will resolve for the executable.
 In the current Linux development and no-bundle build configuration, those
 roots are `src-tauri/target/debug` and `src-tauri/target/release`, respectively;
 the unqualified staging step is not a packaging resource map. The resolved
-launch plan is preflighted before WebView
-construction; failure leaves Static inspection available and exposes a stable
-unavailable reason to Local History. The unqualified SystemRuntime platform
-adapter safely reports `RuntimeUnavailable` rather than treating staging data
-as a Node selector; controlled adapter tests exercise a ready system plan.
-Launch clears inherited `PATH` and `NODE_*` values. Missing installed resources
-are safely unavailable. This is a runtime selection and validation boundary,
-not a claim that either runtime has been packaged or qualified. A selected
+launch plan is preflighted before WebView construction. The Desktop composition
+reads the resulting safe startup projection before rendering: failure creates a
+non-retryable `RuntimeUnavailable` state with only a stable code, safe message,
+and cleanup flag; Local History and sidecar-backed save inspection are disabled
+until Desktop is restarted. Launch clears inherited `PATH` and `NODE_*` values
+and installs one canonical `PATH` containing only the selected Git directory.
+The same immutable launch plan is used for preflight and later business
+sidecars. Missing installed resources and incompatible system candidates are
+safely unavailable. SystemRuntime preflight accepts only Node 24 with the
+required `node:sqlite` prepared-statement workflow and Git `>=2.34.0 <3.0.0`,
+then performs the sidecar ready/shutdown handshake before the plan is made
+available. This is a runtime selection and validation boundary, not a claim
+that either runtime has been packaged or qualified. A selected
 repository path is sent only in
 JSONL `repository.inspect` and `session.open` messages, never as a spawn
 argument.
@@ -41,7 +48,9 @@ argument.
 
 [`apps/desktop`](../../apps/desktop) owns native lifecycle and packaging.
 [`desktop-main.tsx`](../../apps/web/src/desktop-main.tsx) is the Desktop Web
-composition root and explicitly injects Desktop Runtime Capabilities. The
+composition root. It obtains the Rust startup projection and injects either
+ready Desktop Runtime Capabilities or the hardened `RuntimeUnavailable` state.
+The
 Browser entry injects Static-only browser capabilities. Both entry points reuse
 `App`, the Save Store, and the Progress, Map, and Raw Save feature Modules.
 

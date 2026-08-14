@@ -13,12 +13,13 @@ use std::{
     io::{BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
+    str::FromStr,
     sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
     thread,
     time::{Duration, Instant},
 };
 
-use serde::{Deserialize, de};
+use serde::{Deserialize, Serialize, de};
 use serde_json::{Value, json};
 
 use crate::desktop_sidecar_protocol::VERSION as PROTOCOL_VERSION;
@@ -30,6 +31,24 @@ pub(crate) const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const MAX_STREAM_BYTES: usize = 64 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 const MAX_QUEUED_FRAMES: usize = 16;
+const NODE_PROBE_SCRIPT: &str = r#"
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+let sqlite = 'unavailable';
+try {
+  const { DatabaseSync } = require('node:sqlite');
+  const database = new DatabaseSync(':memory:');
+  database.exec('CREATE TABLE probe (value TEXT NOT NULL)');
+  const insert = database.prepare('INSERT INTO probe (value) VALUES (?)');
+  insert.run('ready');
+  const select = database.prepare('SELECT value FROM probe');
+  const row = select.get();
+  if (row.value !== 'ready') throw new Error('unexpected probe value');
+  database.close();
+  sqlite = 'prepared-write-read-close';
+} catch {}
+process.stdout.write(JSON.stringify({ nodeMajor, sqlite }) + '\n');
+if (sqlite !== 'prepared-write-read-close') process.exitCode = 1;
+"#;
 
 #[derive(Clone, Copy)]
 pub struct RuntimePreflightLimits {
@@ -133,12 +152,30 @@ pub trait RuntimeLayoutAdapter {
     fn manifest_path(&self) -> PathBuf {
         self.runtime_root().join("manifest.json")
     }
-    /// The system Node executable is chosen by the platform adapter before
-    /// preflight. It must already be absolute because launch environments do
-    /// not inherit `PATH`.
+    /// Select the system Node executable once from the launch environment.
+    /// It must already be absolute because launch environments do not inherit
+    /// `PATH` after the final environment is frozen.
     fn node_program(&self) -> Result<PathBuf, RuntimePreflightError>;
+    /// Select the system Git executable once from the launch environment.
+    fn git_program(&self) -> Result<PathBuf, RuntimePreflightError>;
     fn process_adapter(&self) -> &dyn OwnedProcessAdapter {
         &PLATFORM_PROCESS_ADAPTER
+    }
+}
+
+/// Selects a system executable using the platform's normal command lookup.
+/// The production implementation is deliberately tiny; the seam lets the
+/// public preflight tests observe selection without replacing process or
+/// protocol behavior.
+pub trait SystemExecutableSelector {
+    fn select(&self, name: &str) -> Option<PathBuf>;
+}
+
+struct WhichSystemExecutableSelector;
+
+impl SystemExecutableSelector for WhichSystemExecutableSelector {
+    fn select(&self, name: &str) -> Option<PathBuf> {
+        which::which(name).ok()
     }
 }
 
@@ -146,18 +183,24 @@ pub trait RuntimeLayoutAdapter {
 /// Desktop execution. Tauri supplies its `resource_dir`; development differs
 /// only because Tauri copies the staged simulated tree there.
 ///
-/// A real SystemRuntime Node selector is a startup platform-adapter concern,
-/// but it is not qualified by this ticket. The production adapter therefore
-/// keeps a system layout safely unavailable instead of treating staging
-/// metadata as an executable selector. Controlled adapter tests supply their
-/// own absolute fixture program to exercise the shared resolver and preflight.
 pub struct TauriResourceRuntimeLayoutAdapter {
     resource_root: PathBuf,
+    system_executable_selector: Box<dyn SystemExecutableSelector>,
 }
 
 impl TauriResourceRuntimeLayoutAdapter {
     pub fn new(resource_root: PathBuf) -> Self {
-        Self { resource_root }
+        Self::with_system_executable_selector(resource_root, WhichSystemExecutableSelector)
+    }
+
+    pub fn with_system_executable_selector(
+        resource_root: PathBuf,
+        selector: impl SystemExecutableSelector + 'static,
+    ) -> Self {
+        Self {
+            resource_root,
+            system_executable_selector: Box::new(selector),
+        }
     }
 }
 
@@ -167,9 +210,34 @@ impl RuntimeLayoutAdapter for TauriResourceRuntimeLayoutAdapter {
     }
 
     fn node_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::RuntimeUnavailable,
-        ))
+        select_system_program(
+            self.system_executable_selector.as_ref(),
+            "node",
+            RuntimePreflightErrorCode::NodeUnavailable,
+        )
+    }
+
+    fn git_program(&self) -> Result<PathBuf, RuntimePreflightError> {
+        select_system_program(
+            self.system_executable_selector.as_ref(),
+            "git",
+            RuntimePreflightErrorCode::GitUnavailable,
+        )
+    }
+}
+
+fn select_system_program(
+    selector: &dyn SystemExecutableSelector,
+    name: &str,
+    unavailable_code: RuntimePreflightErrorCode,
+) -> Result<PathBuf, RuntimePreflightError> {
+    let path = selector
+        .select(name)
+        .ok_or_else(|| RuntimePreflightError::new(unavailable_code))?;
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Err(RuntimePreflightError::new(unavailable_code))
     }
 }
 
@@ -185,6 +253,7 @@ enum ResolvedRuntimeLaunchPlan {
     SystemNodeEntry {
         node: PathBuf,
         entry: PathBuf,
+        git: PathBuf,
         environment: FrozenEnvironment,
     },
     BundledExecutable {
@@ -195,12 +264,16 @@ enum ResolvedRuntimeLaunchPlan {
 }
 
 impl RuntimeLaunchPlan {
+    /// Builds the command used by both the preflight probe and later Rust-side
+    /// business sidecars. The plan is already frozen; this method does not
+    /// rediscover executables or read the manifest.
     pub(crate) fn command(&self) -> Command {
         let (program, arguments, environment) = match &self.0 {
             ResolvedRuntimeLaunchPlan::SystemNodeEntry {
                 node,
                 entry,
                 environment,
+                ..
             } => (node, vec![entry.as_os_str()], environment),
             ResolvedRuntimeLaunchPlan::BundledExecutable {
                 executable,
@@ -221,17 +294,26 @@ pub enum RuntimePreflight {
     Unavailable(RuntimePreflightError),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum RuntimePreflightErrorCode {
     ManifestUnavailable,
-    ManifestMalformed,
-    ManifestIncompatible,
-    RuntimeUnavailable,
-    RuntimeTimedOut,
-    RuntimeOutputExceeded,
-    RuntimeProtocol,
-    RuntimeShutdown,
-    RuntimeExited,
+    ManifestInvalid,
+    LayoutMismatch,
+    RuntimeResourceUnavailable,
+    NodeUnavailable,
+    NodeVersionUnreadable,
+    UnsupportedNodeMajor,
+    NodeSqliteUnavailable,
+    GitUnavailable,
+    GitVersionUnreadable,
+    UnsupportedGitVersion,
+    SidecarSpawnFailed,
+    SidecarReadyTimeout,
+    SidecarProtocolMismatch,
+    SidecarProtocolInvalid,
+    SidecarShutdownFailed,
+    SidecarOutputLimitExceeded,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -260,27 +342,49 @@ impl Display for RuntimePreflightError {
             RuntimePreflightErrorCode::ManifestUnavailable => {
                 "Desktop runtime layout is unavailable."
             }
-            RuntimePreflightErrorCode::ManifestMalformed => "Desktop runtime layout is invalid.",
-            RuntimePreflightErrorCode::ManifestIncompatible => {
+            RuntimePreflightErrorCode::ManifestInvalid => "Desktop runtime layout is invalid.",
+            RuntimePreflightErrorCode::LayoutMismatch => {
                 "Desktop runtime layout does not match this build."
             }
-            RuntimePreflightErrorCode::RuntimeUnavailable => {
-                "Desktop Local History runtime is unavailable."
+            RuntimePreflightErrorCode::RuntimeResourceUnavailable => {
+                "Desktop runtime resources are unavailable."
             }
-            RuntimePreflightErrorCode::RuntimeTimedOut => {
-                "Desktop Local History runtime did not respond in time."
+            RuntimePreflightErrorCode::NodeUnavailable => {
+                "The required Node.js runtime is unavailable."
             }
-            RuntimePreflightErrorCode::RuntimeOutputExceeded => {
-                "Desktop Local History runtime produced unsafe output."
+            RuntimePreflightErrorCode::NodeVersionUnreadable => {
+                "The Node.js runtime version could not be verified."
             }
-            RuntimePreflightErrorCode::RuntimeProtocol => {
-                "Desktop Local History runtime returned an incompatible response."
+            RuntimePreflightErrorCode::UnsupportedNodeMajor => {
+                "This Desktop build requires Node.js 24."
             }
-            RuntimePreflightErrorCode::RuntimeShutdown => {
-                "Desktop Local History runtime did not shut down cleanly."
+            RuntimePreflightErrorCode::NodeSqliteUnavailable => {
+                "The Node.js runtime does not provide the required SQLite support."
             }
-            RuntimePreflightErrorCode::RuntimeExited => {
-                "Desktop Local History runtime exited unexpectedly."
+            RuntimePreflightErrorCode::GitUnavailable => "The required Git runtime is unavailable.",
+            RuntimePreflightErrorCode::GitVersionUnreadable => {
+                "The Git runtime version could not be verified."
+            }
+            RuntimePreflightErrorCode::UnsupportedGitVersion => {
+                "The installed Git runtime is not supported."
+            }
+            RuntimePreflightErrorCode::SidecarSpawnFailed => {
+                "The Desktop Local History runtime could not start."
+            }
+            RuntimePreflightErrorCode::SidecarReadyTimeout => {
+                "The Desktop Local History runtime did not become ready in time."
+            }
+            RuntimePreflightErrorCode::SidecarProtocolMismatch => {
+                "The Desktop Local History runtime uses an incompatible protocol."
+            }
+            RuntimePreflightErrorCode::SidecarProtocolInvalid => {
+                "The Desktop Local History runtime returned an invalid response."
+            }
+            RuntimePreflightErrorCode::SidecarShutdownFailed => {
+                "The Desktop Local History runtime did not shut down cleanly."
+            }
+            RuntimePreflightErrorCode::SidecarOutputLimitExceeded => {
+                "The Desktop Local History runtime produced unsafe output."
             }
         };
         formatter.write_str(message)
@@ -318,26 +422,39 @@ fn resolve(
     match manifest {
         Manifest::System { sidecar } => {
             ensure_system_build()?;
-            let node = adapter.node_program()?;
+            // Complete both selections before returning either selection
+            // failure. This keeps the startup contract exactly one lookup for
+            // each command and, importantly, still performs no functional
+            // validation until both entries are frozen.
+            let node_result = adapter.node_program();
+            let git_result = adapter.git_program();
+            let node = node_result?;
+            let git = git_result?;
             if !node.is_absolute() {
                 return Err(RuntimePreflightError::new(
-                    RuntimePreflightErrorCode::RuntimeUnavailable,
+                    RuntimePreflightErrorCode::NodeUnavailable,
+                ));
+            }
+            if !git.is_absolute() {
+                return Err(RuntimePreflightError::new(
+                    RuntimePreflightErrorCode::GitUnavailable,
                 ));
             }
             Ok(RuntimeLaunchPlan(
                 ResolvedRuntimeLaunchPlan::SystemNodeEntry {
                     node,
-                    entry: resolve_segments(&adapter.runtime_root(), &sidecar)?,
-                    environment: FrozenEnvironment::capture(None),
+                    entry: resolve_resource(&adapter.runtime_root(), &sidecar)?,
+                    environment: FrozenEnvironment::capture(Some(&git)),
+                    git,
                 },
             ))
         }
         Manifest::Bundled { sidecar, git } => {
             ensure_bundled_build()?;
-            let git = resolve_segments(&adapter.runtime_root(), &git)?;
+            let git = resolve_resource(&adapter.runtime_root(), &git)?;
             Ok(RuntimeLaunchPlan(
                 ResolvedRuntimeLaunchPlan::BundledExecutable {
-                    executable: resolve_segments(&adapter.runtime_root(), &sidecar)?,
+                    executable: resolve_resource(&adapter.runtime_root(), &sidecar)?,
                     environment: FrozenEnvironment::capture(Some(&git)),
                     git,
                 },
@@ -349,7 +466,7 @@ fn resolve(
 fn ensure_system_build() -> Result<(), RuntimePreflightError> {
     #[cfg(not(feature = "runtime-system"))]
     return Err(RuntimePreflightError::new(
-        RuntimePreflightErrorCode::ManifestIncompatible,
+        RuntimePreflightErrorCode::LayoutMismatch,
     ));
     #[cfg(feature = "runtime-system")]
     Ok(())
@@ -358,7 +475,7 @@ fn ensure_system_build() -> Result<(), RuntimePreflightError> {
 fn ensure_bundled_build() -> Result<(), RuntimePreflightError> {
     #[cfg(not(feature = "runtime-bundled"))]
     return Err(RuntimePreflightError::new(
-        RuntimePreflightErrorCode::ManifestIncompatible,
+        RuntimePreflightErrorCode::LayoutMismatch,
     ));
     #[cfg(feature = "runtime-bundled")]
     Ok(())
@@ -380,17 +497,17 @@ fn read_manifest(path: &Path) -> Result<Manifest, RuntimePreflightError> {
         .map_err(|_| RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestUnavailable))?;
     if !metadata.is_file() || metadata.len() > MAX_MANIFEST_BYTES {
         return Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::ManifestMalformed,
+            RuntimePreflightErrorCode::ManifestInvalid,
         ));
     }
     let contents = fs::read(path)
         .map_err(|_| RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestUnavailable))?;
     let mut deserializer = serde_json::Deserializer::from_slice(&contents);
     let value = StrictJsonValue::deserialize(&mut deserializer)
-        .map_err(|_| RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestMalformed))?;
+        .map_err(|_| RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestInvalid))?;
     deserializer
         .end()
-        .map_err(|_| RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestMalformed))?;
+        .map_err(|_| RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestInvalid))?;
     parse_manifest(&value.0)
 }
 
@@ -465,12 +582,12 @@ impl<'de> Deserialize<'de> for StrictJsonValue {
 fn parse_manifest(value: &Value) -> Result<Manifest, RuntimePreflightError> {
     let object = value
         .as_object()
-        .ok_or_else(|| RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestMalformed))?;
+        .ok_or_else(|| RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestInvalid))?;
     let layout_type = object_value(object, "layout")
         .and_then(Value::as_object)
         .and_then(|layout| object_value(layout, "type"))
         .and_then(Value::as_str)
-        .ok_or_else(|| RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestMalformed))?;
+        .ok_or_else(|| RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestInvalid))?;
     match layout_type {
         "system" => {
             exact_keys(object, &["layoutVersion", "layout", "sidecar"])?;
@@ -481,7 +598,7 @@ fn parse_manifest(value: &Value) -> Result<Manifest, RuntimePreflightError> {
                 || object_value(object, "layoutVersion").and_then(Value::as_u64) != Some(1)
             {
                 return Err(RuntimePreflightError::new(
-                    RuntimePreflightErrorCode::ManifestMalformed,
+                    RuntimePreflightErrorCode::ManifestInvalid,
                 ));
             }
             Ok(Manifest::System {
@@ -499,7 +616,7 @@ fn parse_manifest(value: &Value) -> Result<Manifest, RuntimePreflightError> {
                 || object_value(object, "layoutVersion").and_then(Value::as_u64) != Some(1)
             {
                 return Err(RuntimePreflightError::new(
-                    RuntimePreflightErrorCode::ManifestMalformed,
+                    RuntimePreflightErrorCode::ManifestInvalid,
                 ));
             }
             Ok(Manifest::Bundled {
@@ -508,13 +625,13 @@ fn parse_manifest(value: &Value) -> Result<Manifest, RuntimePreflightError> {
             })
         }
         _ => Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::ManifestMalformed,
+            RuntimePreflightErrorCode::ManifestInvalid,
         )),
     }
 }
 
 fn malformed() -> RuntimePreflightError {
-    RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestMalformed)
+    RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestInvalid)
 }
 
 fn object_value<'a>(object: &'a serde_json::Map<String, Value>, key: &str) -> Option<&'a Value> {
@@ -580,6 +697,44 @@ fn resolve_segments(root: &Path, segments: &[String]) -> Result<PathBuf, Runtime
         .fold(root.to_path_buf(), |path, segment| path.join(segment)))
 }
 
+fn resolve_resource(root: &Path, segments: &[String]) -> Result<PathBuf, RuntimePreflightError> {
+    let path = resolve_segments(root, segments)?;
+    match fs::metadata(&path) {
+        Ok(metadata) if metadata.is_file() => Ok(path),
+        _ => Err(RuntimePreflightError::new(
+            RuntimePreflightErrorCode::RuntimeResourceUnavailable,
+        )),
+    }
+}
+
+#[derive(Debug)]
+struct ToolOutput {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+}
+
+#[derive(Clone, Copy)]
+struct ToolErrorCodes {
+    spawn: RuntimePreflightErrorCode,
+    failure: RuntimePreflightErrorCode,
+    output: RuntimePreflightErrorCode,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NodeProbeOutput {
+    #[serde(rename = "nodeMajor")]
+    node_major: u64,
+    sqlite: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct GitCoreVersion {
+    major: u64,
+    minor: u64,
+    patch: u64,
+}
+
 fn probe(
     plan: &RuntimeLaunchPlan,
     processes: &dyn OwnedProcessAdapter,
@@ -587,26 +742,54 @@ fn probe(
 ) -> Result<(), RuntimePreflightError> {
     match &plan.0 {
         ResolvedRuntimeLaunchPlan::SystemNodeEntry {
-            node, environment, ..
+            node,
+            git,
+            environment,
+            ..
         } => {
-            run_tool(
+            let node_output = run_tool(
                 node,
-                &[OsStr::new("--version")],
+                &[OsStr::new("--eval"), OsStr::new(NODE_PROBE_SCRIPT)],
                 environment,
                 limits.node,
                 processes,
+                ToolErrorCodes {
+                    spawn: RuntimePreflightErrorCode::NodeUnavailable,
+                    failure: RuntimePreflightErrorCode::NodeVersionUnreadable,
+                    output: RuntimePreflightErrorCode::NodeVersionUnreadable,
+                },
             )?;
-        }
-        ResolvedRuntimeLaunchPlan::BundledExecutable {
-            git, environment, ..
-        } => {
-            run_tool(
+            validate_node_probe(&node_output)?;
+            let git_output = run_tool(
                 git,
                 &[OsStr::new("--version")],
                 environment,
                 limits.git,
                 processes,
+                ToolErrorCodes {
+                    spawn: RuntimePreflightErrorCode::GitUnavailable,
+                    failure: RuntimePreflightErrorCode::GitVersionUnreadable,
+                    output: RuntimePreflightErrorCode::GitVersionUnreadable,
+                },
             )?;
+            validate_git_probe(&git_output)?;
+        }
+        ResolvedRuntimeLaunchPlan::BundledExecutable {
+            git, environment, ..
+        } => {
+            let git_output = run_tool(
+                git,
+                &[OsStr::new("--version")],
+                environment,
+                limits.git,
+                processes,
+                ToolErrorCodes {
+                    spawn: RuntimePreflightErrorCode::GitUnavailable,
+                    failure: RuntimePreflightErrorCode::GitVersionUnreadable,
+                    output: RuntimePreflightErrorCode::GitVersionUnreadable,
+                },
+            )?;
+            validate_git_probe(&git_output)?;
         }
     }
     probe_sidecar(plan, processes, limits)
@@ -618,36 +801,145 @@ fn run_tool(
     environment: &FrozenEnvironment,
     timeout: Duration,
     processes: &dyn OwnedProcessAdapter,
-) -> Result<(), RuntimePreflightError> {
+    error_codes: ToolErrorCodes,
+) -> Result<ToolOutput, RuntimePreflightError> {
     let mut command = Command::new(program);
     command
         .args(arguments)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     environment.apply(&mut command);
-    let mut child = processes.spawn(&mut command)?;
-    let stdout = child.stdout.take().ok_or_else(unavailable)?;
-    let stderr = child.stderr.take().ok_or_else(unavailable)?;
-    let stdout_reader = bounded_stream(stdout);
-    let stderr_reader = bounded_stream(stderr);
-    let result = wait_for_exit(&mut child, timeout);
-    let cleanup = processes.cleanup(&mut child);
-    let stdout_result = stdout_reader.recv_timeout(Duration::from_millis(100));
-    let stderr_result = stderr_reader.recv_timeout(Duration::from_millis(100));
-    let outcome = if stream_exceeded(stdout_result) || stream_exceeded(stderr_result) {
-        Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::RuntimeOutputExceeded,
-        ))
-    } else {
-        match result {
-            Ok(status) if status.success() => Ok(()),
-            Ok(_) => Err(RuntimePreflightError::new(
-                RuntimePreflightErrorCode::RuntimeUnavailable,
-            )),
-            Err(code) => Err(RuntimePreflightError::new(code)),
+    let mut child = processes
+        .spawn(&mut command)
+        .map_err(|_| RuntimePreflightError::new(error_codes.spawn))?;
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let cleanup = processes.cleanup(&mut child);
+            return Err(RuntimePreflightError::new(error_codes.spawn).with_cleanup(cleanup));
         }
     };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let cleanup = processes.cleanup(&mut child);
+            return Err(RuntimePreflightError::new(error_codes.spawn).with_cleanup(cleanup));
+        }
+    };
+    let stdout_reader = bounded_output(stdout);
+    let stderr_reader = bounded_output(stderr);
+    let result = wait_for_exit(&mut child, timeout);
+    let cleanup = processes.cleanup(&mut child);
+    let stdout_result = stdout_reader.recv_timeout(Duration::from_secs(1));
+    let stderr_result = stderr_reader.recv_timeout(Duration::from_secs(1));
+    let outcome = match (stdout_result, stderr_result) {
+        (Ok(Err(())), _) | (_, Ok(Err(()))) => Err(RuntimePreflightError::new(error_codes.output)),
+        (Ok(Ok(stdout)), Ok(Ok(_stderr))) => match result {
+            Ok(status) => Ok(ToolOutput { status, stdout }),
+            Err(_) => Err(RuntimePreflightError::new(error_codes.failure)),
+        },
+        _ => Err(RuntimePreflightError::new(error_codes.failure)),
+    };
     augment_cleanup(outcome, cleanup)
+}
+
+fn validate_node_probe(output: &ToolOutput) -> Result<(), RuntimePreflightError> {
+    let result = parse_single_json_line::<NodeProbeOutput>(&output.stdout).ok_or_else(|| {
+        RuntimePreflightError::new(RuntimePreflightErrorCode::NodeVersionUnreadable)
+    })?;
+    if result.node_major != 24 {
+        return Err(RuntimePreflightError::new(
+            RuntimePreflightErrorCode::UnsupportedNodeMajor,
+        ));
+    }
+    if !output.status.success() || result.sqlite != "prepared-write-read-close" {
+        return Err(RuntimePreflightError::new(
+            RuntimePreflightErrorCode::NodeSqliteUnavailable,
+        ));
+    }
+    Ok(())
+}
+
+fn validate_git_probe(output: &ToolOutput) -> Result<(), RuntimePreflightError> {
+    let version = parse_git_version(&output.stdout).ok_or_else(|| {
+        RuntimePreflightError::new(RuntimePreflightErrorCode::GitVersionUnreadable)
+    })?;
+    if !output.status.success() {
+        return Err(RuntimePreflightError::new(
+            RuntimePreflightErrorCode::GitVersionUnreadable,
+        ));
+    }
+    if version
+        < (GitCoreVersion {
+            major: 2,
+            minor: 34,
+            patch: 0,
+        })
+        || version.major >= 3
+    {
+        return Err(RuntimePreflightError::new(
+            RuntimePreflightErrorCode::UnsupportedGitVersion,
+        ));
+    }
+    Ok(())
+}
+
+fn parse_single_json_line<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Option<T> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let line = text.strip_suffix('\n').unwrap_or(text);
+    if line.contains(['\n', '\r']) {
+        return None;
+    }
+    serde_json::from_str(line).ok()
+}
+
+fn parse_git_version(bytes: &[u8]) -> Option<GitCoreVersion> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let line = text.strip_suffix('\n').unwrap_or(text);
+    if line.contains(['\n', '\r']) {
+        return None;
+    }
+    let version = line.strip_prefix("git version ")?;
+    let mut index = 0;
+    let mut core = [0_u64; 3];
+    for (part_index, part) in core.iter_mut().enumerate() {
+        let start = index;
+        while version
+            .as_bytes()
+            .get(index)
+            .is_some_and(u8::is_ascii_digit)
+        {
+            index += 1;
+        }
+        if start == index {
+            return None;
+        }
+        *part = u64::from_str(&version[start..index]).ok()?;
+        if part_index < 2 {
+            if version.as_bytes().get(index) != Some(&b'.') {
+                return None;
+            }
+            index += 1;
+        }
+    }
+    let suffix = &version[index..];
+    if suffix.chars().any(char::is_control)
+        || suffix
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_alphanumeric())
+        || (suffix.starts_with('.')
+            && suffix[1..]
+                .chars()
+                .all(|character| character == '.' || character.is_ascii_digit()))
+    {
+        return None;
+    }
+    Some(GitCoreVersion {
+        major: core[0],
+        minor: core[1],
+        patch: core[2],
+    })
 }
 
 fn probe_sidecar(
@@ -660,36 +952,63 @@ fn probe_sidecar(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = processes.spawn(&mut command)?;
-    let input = child.stdin.take().ok_or_else(unavailable)?;
-    let output = child.stdout.take().ok_or_else(unavailable)?;
-    let stderr = child.stderr.take().ok_or_else(unavailable)?;
+    let mut child = processes
+        .spawn(&mut command)
+        .map_err(|_| RuntimePreflightError::new(RuntimePreflightErrorCode::SidecarSpawnFailed))?;
+    let input = match child.stdin.take() {
+        Some(input) => input,
+        None => {
+            let cleanup = processes.cleanup(&mut child);
+            return Err(
+                RuntimePreflightError::new(RuntimePreflightErrorCode::SidecarSpawnFailed)
+                    .with_cleanup(cleanup),
+            );
+        }
+    };
+    let output = match child.stdout.take() {
+        Some(output) => output,
+        None => {
+            let cleanup = processes.cleanup(&mut child);
+            return Err(
+                RuntimePreflightError::new(RuntimePreflightErrorCode::SidecarSpawnFailed)
+                    .with_cleanup(cleanup),
+            );
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let cleanup = processes.cleanup(&mut child);
+            return Err(
+                RuntimePreflightError::new(RuntimePreflightErrorCode::SidecarSpawnFailed)
+                    .with_cleanup(cleanup),
+            );
+        }
+    };
     let frames = bounded_frames(output);
-    let stderr_reader = bounded_stream(stderr);
+    let stderr_reader = bounded_output(stderr);
     let outcome = probe_protocol(&mut child, input, &frames, limits);
     let cleanup = processes.cleanup(&mut child);
-    let stderr_outcome = stderr_reader.recv_timeout(Duration::from_millis(100));
-    let outcome = if stream_exceeded(stderr_outcome) {
-        Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::RuntimeOutputExceeded,
-        ))
-    } else {
-        outcome
+    let outcome = match stderr_reader.recv_timeout(Duration::from_secs(1)) {
+        Ok(Err(())) => Err(RuntimePreflightError::new(
+            RuntimePreflightErrorCode::SidecarOutputLimitExceeded,
+        )),
+        _ => outcome,
     };
     augment_cleanup(outcome, cleanup)
 }
 
-fn augment_cleanup(
-    outcome: Result<(), RuntimePreflightError>,
+fn augment_cleanup<T>(
+    outcome: Result<T, RuntimePreflightError>,
     cleanup_incomplete: bool,
-) -> Result<(), RuntimePreflightError> {
+) -> Result<T, RuntimePreflightError> {
     match outcome {
         Err(error) => Err(error.with_cleanup(cleanup_incomplete)),
-        Ok(()) if cleanup_incomplete => Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::RuntimeShutdown,
+        Ok(_) if cleanup_incomplete => Err(RuntimePreflightError::new(
+            RuntimePreflightErrorCode::SidecarShutdownFailed,
         )
         .with_cleanup(true)),
-        Ok(()) => Ok(()),
+        Ok(value) => Ok(value),
     }
 }
 
@@ -699,11 +1018,13 @@ fn probe_protocol(
     frames: &Receiver<Result<Value, RuntimePreflightErrorCode>>,
     limits: RuntimePreflightLimits,
 ) -> Result<(), RuntimePreflightError> {
-    let ready = receive_frame(frames, limits.ready)?;
+    let ready = receive_frame(
+        frames,
+        limits.ready,
+        RuntimePreflightErrorCode::SidecarReadyTimeout,
+    )?;
     if !is_ready(&ready) {
-        return Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::RuntimeProtocol,
-        ));
+        return Err(protocol_error(&ready));
     }
     if serde_json::to_writer(
         &mut input,
@@ -719,22 +1040,35 @@ fn probe_protocol(
         || input.flush().is_err()
     {
         return Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::RuntimeUnavailable,
+            RuntimePreflightErrorCode::SidecarShutdownFailed,
         ));
     }
-    let response = receive_frame(frames, limits.shutdown)?;
+    let response = receive_frame(
+        frames,
+        limits.shutdown,
+        RuntimePreflightErrorCode::SidecarShutdownFailed,
+    )?;
     if !is_shutdown_complete(&response) {
-        return Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::RuntimeShutdown,
-        ));
+        return Err(protocol_error(&response));
     }
     match wait_for_exit(child, limits.shutdown) {
         Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::RuntimeExited,
+        Ok(_) | Err(_) => Err(RuntimePreflightError::new(
+            RuntimePreflightErrorCode::SidecarShutdownFailed,
         )),
-        Err(code) => Err(RuntimePreflightError::new(code)),
     }
+}
+
+fn protocol_error(message: &Value) -> RuntimePreflightError {
+    RuntimePreflightError::new(
+        if message.get("protocolVersion").and_then(Value::as_u64)
+            != Some(u64::from(PROTOCOL_VERSION))
+        {
+            RuntimePreflightErrorCode::SidecarProtocolMismatch
+        } else {
+            RuntimePreflightErrorCode::SidecarProtocolInvalid
+        },
+    )
 }
 
 fn is_ready(message: &Value) -> bool {
@@ -755,15 +1089,14 @@ fn is_shutdown_complete(message: &Value) -> bool {
 fn receive_frame(
     frames: &Receiver<Result<Value, RuntimePreflightErrorCode>>,
     timeout: Duration,
+    timeout_code: RuntimePreflightErrorCode,
 ) -> Result<Value, RuntimePreflightError> {
     match frames.recv_timeout(timeout) {
         Ok(Ok(frame)) => Ok(frame),
         Ok(Err(code)) => Err(RuntimePreflightError::new(code)),
-        Err(RecvTimeoutError::Timeout) => Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::RuntimeTimedOut,
-        )),
+        Err(RecvTimeoutError::Timeout) => Err(RuntimePreflightError::new(timeout_code)),
         Err(RecvTimeoutError::Disconnected) => Err(RuntimePreflightError::new(
-            RuntimePreflightErrorCode::RuntimeExited,
+            RuntimePreflightErrorCode::SidecarProtocolMismatch,
         )),
     }
 }
@@ -789,13 +1122,13 @@ fn read_frames<R: Read>(
             Ok(count) => {
                 total += count;
                 if total > MAX_STREAM_BYTES {
-                    let _ = sender.send(Err(RuntimePreflightErrorCode::RuntimeOutputExceeded));
+                    let _ = sender.send(Err(RuntimePreflightErrorCode::SidecarOutputLimitExceeded));
                     return;
                 }
                 for byte in &bytes[..count] {
                     if *byte == b'\n' {
                         let parsed = serde_json::from_slice(&frame)
-                            .map_err(|_| RuntimePreflightErrorCode::RuntimeProtocol);
+                            .map_err(|_| RuntimePreflightErrorCode::SidecarProtocolInvalid);
                         frame.clear();
                         if sender.send(parsed).is_err() {
                             return;
@@ -803,60 +1136,55 @@ fn read_frames<R: Read>(
                     } else {
                         frame.push(*byte);
                         if frame.len() > MAX_STREAM_BYTES {
-                            let _ =
-                                sender.send(Err(RuntimePreflightErrorCode::RuntimeOutputExceeded));
+                            let _ = sender
+                                .send(Err(RuntimePreflightErrorCode::SidecarOutputLimitExceeded));
                             return;
                         }
                     }
                 }
             }
             Err(_) => {
-                let _ = sender.send(Err(RuntimePreflightErrorCode::RuntimeExited));
+                let _ = sender.send(Err(RuntimePreflightErrorCode::SidecarProtocolMismatch));
                 return;
             }
         }
     }
 }
 
-fn bounded_stream<R: Read + Send + 'static>(stream: R) -> Receiver<bool> {
+fn bounded_output<R: Read + Send + 'static>(stream: R) -> Receiver<Result<Vec<u8>, ()>> {
     let (sender, receiver) = mpsc::sync_channel(1);
     thread::spawn(move || {
         let mut reader = BufReader::new(stream);
         let mut total = 0usize;
         let mut buffer = [0_u8; 1024];
+        let mut output = Vec::new();
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(count) => {
                     total += count;
                     if total > MAX_STREAM_BYTES {
-                        let _ = sender.send(true);
+                        let _ = sender.send(Err(()));
                         return;
                     }
+                    output.extend_from_slice(&buffer[..count]);
                 }
                 Err(_) => break,
             }
         }
-        let _ = sender.send(false);
+        let _ = sender.send(Ok(output));
     });
     receiver
 }
 
-fn stream_exceeded(result: Result<bool, RecvTimeoutError>) -> bool {
-    matches!(result, Ok(true))
-}
-
-fn wait_for_exit(
-    child: &mut Child,
-    timeout: Duration,
-) -> Result<std::process::ExitStatus, RuntimePreflightErrorCode> {
+fn wait_for_exit(child: &mut Child, timeout: Duration) -> Result<std::process::ExitStatus, ()> {
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return Ok(status),
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
-            Ok(None) => return Err(RuntimePreflightErrorCode::RuntimeTimedOut),
-            Err(_) => return Err(RuntimePreflightErrorCode::RuntimeExited),
+            Ok(None) => return Err(()),
+            Err(_) => return Err(()),
         }
     }
 }
@@ -867,9 +1195,9 @@ mod platform_process {
     pub(super) fn spawn(command: &mut Command) -> Result<Child, RuntimePreflightError> {
         #[cfg(target_os = "linux")]
         linux::configure_owned_group(command);
-        command
-            .spawn()
-            .map_err(|_| RuntimePreflightError::new(RuntimePreflightErrorCode::RuntimeUnavailable))
+        command.spawn().map_err(|_| {
+            RuntimePreflightError::new(RuntimePreflightErrorCode::RuntimeResourceUnavailable)
+        })
     }
 
     pub(super) fn cleanup(child: &mut Child) -> bool {
@@ -931,10 +1259,6 @@ mod platform_process {
     }
 }
 
-fn unavailable() -> RuntimePreflightError {
-    RuntimePreflightError::new(RuntimePreflightErrorCode::RuntimeUnavailable)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -944,10 +1268,12 @@ mod tests {
             [
                 (OsString::from("NODE_OPTIONS"), OsString::from("unsafe")),
                 (
-                    OsString::from("node_extra_ca_certs"),
+                    OsString::from("nOdE_extra_ca_certs"),
                     OsString::from("unsafe"),
                 ),
-                (OsString::from("Path"), OsString::from("ambient")),
+                (OsString::from("NODE_PATH"), OsString::from("unsafe")),
+                (OsString::from("path"), OsString::from("ambient-lower")),
+                (OsString::from("PaTh"), OsString::from("ambient-mixed")),
                 (OsString::from("SAFE"), OsString::from("kept")),
             ],
             Some(Path::new("/copied/runtime/bin/git")),
@@ -960,24 +1286,36 @@ mod tests {
             environment.0.get(OsStr::new("PATH")),
             Some(&OsString::from("/copied/runtime/bin"))
         );
-        assert!(
-            !environment
+        let path_keys = environment
+            .0
+            .keys()
+            .filter(|key| key.to_string_lossy().eq_ignore_ascii_case("PATH"))
+            .collect::<Vec<_>>();
+        assert_eq!(path_keys, vec![&OsString::from("PATH")]);
+        assert_eq!(
+            environment
                 .0
                 .keys()
-                .any(|key| is_node_or_path_key(key) && key != OsStr::new("PATH"))
+                .filter(|key| is_node_or_path_key(key))
+                .count(),
+            1,
+            "the final child environment has exactly one canonical PATH and no NODE_* keys"
         );
     }
 
     #[test]
     fn cleanup_incomplete_augments_the_protocol_error() {
-        let error = augment_cleanup(
+        let error = augment_cleanup::<()>(
             Err(RuntimePreflightError::new(
-                RuntimePreflightErrorCode::RuntimeProtocol,
+                RuntimePreflightErrorCode::SidecarProtocolInvalid,
             )),
             true,
         )
         .expect_err("cleanup must not hide protocol error");
-        assert_eq!(error.code, RuntimePreflightErrorCode::RuntimeProtocol);
+        assert_eq!(
+            error.code,
+            RuntimePreflightErrorCode::SidecarProtocolInvalid
+        );
         assert!(error.cleanup_incomplete);
     }
 }

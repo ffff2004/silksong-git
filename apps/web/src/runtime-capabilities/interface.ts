@@ -186,13 +186,52 @@ export type ManagedRepositoryReplacementResult =
   | { readonly kind: "blockedByMutation" }
   | { readonly kind: "busy" };
 
+type RuntimePreflightCode =
+  | "manifestUnavailable"
+  | "manifestInvalid"
+  | "layoutMismatch"
+  | "runtimeResourceUnavailable"
+  | "nodeUnavailable"
+  | "nodeVersionUnreadable"
+  | "unsupportedNodeMajor"
+  | "nodeSqliteUnavailable"
+  | "gitUnavailable"
+  | "gitVersionUnreadable"
+  | "unsupportedGitVersion"
+  | "sidecarSpawnFailed"
+  | "sidecarReadyTimeout"
+  | "sidecarProtocolMismatch"
+  | "sidecarProtocolInvalid"
+  | "sidecarShutdownFailed"
+  | "sidecarOutputLimitExceeded";
+
+export type DesktopRuntimeStartup =
+  | { readonly kind: "ready" }
+  | {
+      readonly cleanupIncomplete: boolean;
+      readonly code: RuntimePreflightCode;
+      readonly kind: "unavailable";
+      readonly message: string;
+    };
+
 export type RuntimeCapabilities =
   | { readonly kind: "browser" }
+  | {
+      readonly kind: "runtimeUnavailable";
+      readonly startup: Extract<
+        DesktopRuntimeStartup,
+        { readonly kind: "unavailable" }
+      >;
+    }
   | {
       readonly getRepoSessionConnection: () =>
         | Promise<RepoSessionConnection>
         | RepoSessionConnection;
       readonly kind: "desktop";
+      readonly startup: Extract<
+        DesktopRuntimeStartup,
+        { readonly kind: "ready" }
+      >;
       readonly closeRepository?: () => Promise<void>;
       readonly getRepositoryLibrary?: () => Promise<RepositoryLibrary>;
       readonly archiveRepository?: (input: {

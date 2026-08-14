@@ -119,6 +119,42 @@ describe("Solid Web app routing", () => {
     ).toBeDefined();
   });
 
+  it("projects failed Desktop startup as a non-retryable RuntimeUnavailable state", () => {
+    const runtimeCapabilities = createDesktopRuntimeCapabilities({
+      getRepoSessionConnection: () => ({
+        endpoint: "http://127.0.0.1:4312",
+        token: "not-used",
+      }),
+      openExternalRepository: async () => ({ kind: "opened" }),
+      startup: {
+        cleanupIncomplete: false,
+        code: "unsupportedNodeMajor",
+        kind: "unavailable",
+        message: "This Desktop build requires Node.js 24.",
+      },
+      startWatching: async () => undefined,
+      stopWatching: async () => undefined,
+    });
+
+    render(() => <RuntimeApp runtimeCapabilities={runtimeCapabilities} />);
+
+    expect(screen.getByTestId("runtime-unavailable")).toBeDefined();
+    expect(
+      screen.getByRole("heading", { name: "Runtime unavailable" }),
+    ).toBeDefined();
+    expect(
+      screen.getByText("This Desktop build requires Node.js 24."),
+    ).toBeDefined();
+    expect(
+      screen.getByText(
+        "Local History and local save inspection are unavailable.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByText("Check: unsupportedNodeMajor")).toBeDefined();
+    expect(screen.queryByTestId("repository-library")).toBeNull();
+    expect(screen.queryByText("Inspect local save…")).toBeNull();
+  });
+
   it("keeps Desktop local-save actions in the menu and landing page", async () => {
     render(() => <DesktopApp />);
 

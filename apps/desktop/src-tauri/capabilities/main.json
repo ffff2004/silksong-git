@@ -4,6 +4,7 @@
   "description": "The unique main WebView can use only the Desktop Local History intent commands.",
   "windows": ["main"],
   "permissions": [
+    "allow-desktop-get-runtime-status",
     "allow-desktop-get-repo-session-connection",
     "allow-desktop-get-repository-library",
     "allow-desktop-open-library-entry",

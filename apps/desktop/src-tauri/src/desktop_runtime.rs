@@ -292,7 +292,11 @@ pub enum RepositoryMigrationSourceState {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-#[serde(tag = "status", rename_all = "camelCase")]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum RepositoryMigrationSnapshotState {
     NotCreated,
     Retained { repo_path: String },
@@ -308,7 +312,11 @@ pub struct RepositoryMigrationInspection {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-#[serde(tag = "status", rename_all = "camelCase")]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum RepositoryMigrationCommitResult {
     Migrated {
         inspection: RepositoryMigrationInspection,
@@ -2141,7 +2149,7 @@ impl DesktopWorkflow {
         )
     }
 
-    fn prepare_repository_migration<R: Runtime>(
+    pub(crate) fn prepare_repository_migration<R: Runtime>(
         &self,
         app: &AppHandle<R>,
         input: RepositoryMigrationInput,
@@ -2590,10 +2598,11 @@ impl DesktopWorkflow {
 }
 
 #[tauri::command]
-pub async fn desktop_open_external_repository(
-    app: AppHandle,
+pub async fn desktop_open_external_repository<R: Runtime>(
+    app: AppHandle<R>,
     runtime: State<'_, DesktopWorkflow>,
 ) -> Result<OpenExternalRepositoryResult, String> {
+    crate::require_runtime_ready(&app)?;
     let Some(selected) = app
         .dialog()
         .file()
@@ -2614,10 +2623,11 @@ pub async fn desktop_open_external_repository(
 }
 
 #[tauri::command]
-pub async fn desktop_initialize_managed_repository(
-    app: AppHandle,
+pub async fn desktop_initialize_managed_repository<R: Runtime>(
+    app: AppHandle<R>,
     workflow: State<'_, DesktopWorkflow>,
 ) -> Result<ManagedInitializationResult, String> {
+    crate::require_runtime_ready(&app)?;
     let Some(selected) = app
         .dialog()
         .file()
@@ -2647,6 +2657,7 @@ pub async fn desktop_import_repository<R: Runtime>(
     app: AppHandle<R>,
     workflow: State<'_, DesktopWorkflow>,
 ) -> Result<ImportRepositoryResult, String> {
+    crate::require_runtime_ready(&app)?;
     let result = workflow
         .import_repository(&app)
         .map_err(|error| error.user_message());
@@ -2660,6 +2671,7 @@ pub async fn desktop_archive_and_reinitialize_managed_repository<R: Runtime>(
     workflow: State<'_, DesktopWorkflow>,
     input: ManagedRepositoryReplacementInput,
 ) -> Result<ManagedRepositoryReplacementResult, String> {
+    crate::require_runtime_ready(&app)?;
     let result = workflow
         .archive_and_reinitialize_managed_repository(&app, input)
         .map_err(|error| error.user_message());
@@ -2670,9 +2682,10 @@ pub async fn desktop_archive_and_reinitialize_managed_repository<R: Runtime>(
 /// Opens one native file picker for an Encoded Save. The WebView receives only
 /// a decoded JSON value after both Rust and the Core-owning sidecar validate it.
 #[tauri::command]
-pub async fn desktop_pick_static_encoded_save(
-    app: AppHandle,
+pub async fn desktop_pick_static_encoded_save<R: Runtime>(
+    app: AppHandle<R>,
 ) -> Result<PickStaticEncodedSaveResult, String> {
+    crate::require_runtime_ready(&app)?;
     inspect_static_encoded_save(&app).map_err(|error| error.user_message())
 }
 
@@ -2790,6 +2803,7 @@ pub fn desktop_get_repository_library<R: Runtime>(
     app: AppHandle<R>,
     workflow: State<'_, DesktopWorkflow>,
 ) -> Result<RepositoryLibrary, String> {
+    crate::require_runtime_ready(&app)?;
     workflow.library(&app).map_err(|error| error.user_message())
 }
 
@@ -2799,6 +2813,7 @@ pub fn desktop_open_library_entry<R: Runtime>(
     workflow: State<'_, DesktopWorkflow>,
     input: OpenLibraryEntryInput,
 ) -> Result<OpenExternalRepositoryResult, String> {
+    crate::require_runtime_ready(&app)?;
     let result = workflow
         .open_library_entry(&app, input)
         .map_err(|error| error.user_message());
@@ -2807,11 +2822,12 @@ pub fn desktop_open_library_entry<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn desktop_prepare_repository_migration(
-    app: AppHandle,
+pub fn desktop_prepare_repository_migration<R: Runtime>(
+    app: AppHandle<R>,
     workflow: State<'_, DesktopWorkflow>,
     input: RepositoryMigrationInput,
 ) -> Result<RepositoryMigrationPreparationResult, String> {
+    crate::require_runtime_ready(&app)?;
     let result = workflow
         .prepare_repository_migration(&app, input)
         .map_err(|error| error.user_message());
@@ -2825,6 +2841,7 @@ pub fn desktop_archive_repository<R: Runtime>(
     workflow: State<'_, DesktopWorkflow>,
     input: ArchiveRepositoryInput,
 ) -> Result<ArchiveRepositoryResult, String> {
+    crate::require_runtime_ready(&app)?;
     let result = workflow
         .archive_repository(&app, input)
         .map_err(|error| error.user_message());
@@ -2833,10 +2850,11 @@ pub fn desktop_archive_repository<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn desktop_commit_repository_migration(
-    app: AppHandle,
+pub fn desktop_commit_repository_migration<R: Runtime>(
+    app: AppHandle<R>,
     workflow: State<'_, DesktopWorkflow>,
 ) -> Result<RepositoryMigrationCommitResult, String> {
+    crate::require_runtime_ready(&app)?;
     let result = workflow
         .commit_repository_migration()
         .map_err(|error| error.user_message());
@@ -2849,6 +2867,7 @@ pub fn desktop_close_repository<R: Runtime>(
     app: AppHandle<R>,
     workflow: State<'_, DesktopWorkflow>,
 ) -> Result<(), String> {
+    crate::require_runtime_ready(&app)?;
     let result = workflow.close().map_err(|error| error.user_message());
     crate::update_repository_menu(&app);
     result
@@ -2857,10 +2876,11 @@ pub fn desktop_close_repository<R: Runtime>(
 /// Reopens only the in-memory repository selection after a sidecar failure.
 /// It never restarts watching and never retries a mutation.
 #[tauri::command]
-pub fn desktop_reopen_repository(
-    app: AppHandle,
+pub fn desktop_reopen_repository<R: Runtime>(
+    app: AppHandle<R>,
     workflow: State<'_, DesktopWorkflow>,
 ) -> Result<OpenExternalRepositoryResult, String> {
+    crate::require_runtime_ready(&app)?;
     let result = workflow.reopen(&app).map_err(|error| error.user_message());
     crate::update_repository_menu(&app);
     result
@@ -2868,9 +2888,11 @@ pub fn desktop_reopen_repository(
 
 /// Returns only the current in-memory Local HTTP connection for the shared Web client closure.
 #[tauri::command]
-pub fn desktop_get_repo_session_connection(
+pub fn desktop_get_repo_session_connection<R: Runtime>(
+    app: AppHandle<R>,
     runtime: State<'_, DesktopWorkflow>,
 ) -> Result<RepoSessionConnection, String> {
+    crate::require_runtime_ready(&app)?;
     runtime.connection().map_err(|error| error.user_message())
 }
 
@@ -2879,6 +2901,7 @@ pub fn desktop_start_watching<R: Runtime>(
     app: AppHandle<R>,
     runtime: State<'_, DesktopWorkflow>,
 ) -> Result<(), String> {
+    crate::require_runtime_ready(&app)?;
     let result = runtime
         .control_watcher("watcher.start")
         .map_err(|error| error.user_message());
@@ -2891,6 +2914,7 @@ pub fn desktop_stop_watching<R: Runtime>(
     app: AppHandle<R>,
     runtime: State<'_, DesktopWorkflow>,
 ) -> Result<(), String> {
+    crate::require_runtime_ready(&app)?;
     let result = runtime
         .control_watcher("watcher.stop")
         .map_err(|error| error.user_message());
@@ -4865,18 +4889,42 @@ mod tests {
     use super::{
         ArchivePlacementPurpose, ArchiveRepositoryResult, DEVELOPMENT_SIDECAR_ENTRY,
         DesktopRuntime, DesktopRuntimeError, ImportRepositoryResult, ManagedInitializationResult,
-        OpenExternalRepositoryResult, PendingRepositoryMigration, PickStaticEncodedSaveResult,
-        REPLACEMENT_CONFIRMATION, RepositoryLifecycle, RepositoryOpenIntent, SaveLocationPlatform,
-        SaveLocationSystem, SidecarLaunch, SidecarSupervisor, StaticSaveFileSystem,
-        StaticSaveInspection, StaticSaveInspector, StaticSavePicker,
-        advisory_repository_inspection_command, archive_placement_name,
-        canonicalize_repository_path, development_sidecar_launch,
+        OpenExternalRepositoryResult, PickStaticEncodedSaveResult, REPLACEMENT_CONFIRMATION,
+        RepositoryLifecycle, RepositoryMigrationInput, RepositoryOpenIntent, SaveLocationPlatform,
+        SaveLocationSystem, SidecarLaunch, StaticSaveFileSystem, StaticSaveInspection,
+        StaticSaveInspector, StaticSavePicker, advisory_repository_inspection_command,
+        archive_placement_name, canonicalize_repository_path, development_sidecar_launch,
         inspect_static_encoded_save_with_adapters, managed_repository_name,
         menu_static_save_result, natural_name_cmp, repository_open_inspection_command,
         sidecar_launch_for_resource_directory, workspace_root,
     };
+    #[cfg(all(target_os = "linux", feature = "runtime-system"))]
+    use crate::runtime_layout::{
+        RuntimeLayoutAdapter, RuntimePreflightLimits, SystemExecutableSelector,
+        TauriResourceRuntimeLayoutAdapter, preflight_with_limits,
+    };
+    use crate::runtime_layout::{
+        RuntimePreflight, RuntimePreflightError, RuntimePreflightErrorCode,
+    };
 
     static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+
+    #[cfg(all(target_os = "linux", feature = "runtime-system"))]
+    struct FixedRuntimeSelector {
+        node: PathBuf,
+        git: PathBuf,
+    }
+
+    #[cfg(all(target_os = "linux", feature = "runtime-system"))]
+    impl SystemExecutableSelector for FixedRuntimeSelector {
+        fn select(&self, name: &str) -> Option<PathBuf> {
+            match name {
+                "node" => Some(self.node.clone()),
+                "git" => Some(self.git.clone()),
+                _ => None,
+            }
+        }
+    }
 
     struct FixedArchiveClock(chrono::DateTime<chrono::FixedOffset>);
 
@@ -6242,34 +6290,36 @@ mod tests {
     #[test]
     fn pending_migration_blocks_repository_switch_and_normal_exit() {
         let temp = TestDirectory::new();
-        let repository = temp.path().join("repository");
-        fs::create_dir(&repository).expect("create repository");
         let script = temp.path().join("sidecar.mjs");
-        fs::write(
-            &script,
-            fixture_sidecar_source(repository.to_str().expect("UTF-8 path"), "ready"),
-        )
-        .expect("write sidecar fixture");
-
-        let workflow = DesktopRuntime::default();
-        let pending_sidecar = SidecarSupervisor::spawn(SidecarLaunch::Development {
+        fs::write(&script, pending_migration_fixture_sidecar_source())
+            .expect("write migration fixture");
+        let desktop = TestDesktopApp::new_with_launch(SidecarLaunch::Development {
             entry: script,
             node: PathBuf::from("node"),
-        })
-        .expect("start migration sidecar");
-        {
-            let mut state = workflow.state.lock().expect("lock workflow state");
-            state.pending_migration = Some(PendingRepositoryMigration {
-                sidecar: pending_sidecar,
-            });
-        }
+        });
+        let repository = desktop.root().join("repositories").join("repository");
+        fs::create_dir_all(&repository).expect("create repository");
+        let workflow = desktop.app.state::<super::DesktopWorkflow>();
+        let preparation = workflow
+            .prepare_repository_migration(
+                desktop.app.handle(),
+                RepositoryMigrationInput {
+                    lifecycle: RepositoryLifecycle::Managed,
+                    name: "repository".into(),
+                },
+            )
+            .expect("prepare migration through the public workflow");
+        assert!(matches!(
+            preparation,
+            super::RepositoryMigrationPreparationResult::Prepared { .. }
+        ));
 
-        let result = workflow.open_repository_path_with_launch(
-            temp.path().join("another-repository"),
-            SidecarLaunch::Development {
-                entry: temp.path().join("unused-sidecar.mjs"),
-                node: PathBuf::from("node"),
-            },
+        let another_repository = desktop.root().join("another-repository");
+        fs::create_dir(&another_repository).expect("create another repository");
+        let result = workflow.open_repository_path(
+            desktop.app.handle(),
+            another_repository,
+            RepositoryLifecycle::External,
         );
         assert!(matches!(result, Ok(OpenExternalRepositoryResult::Busy)));
         assert!(matches!(
@@ -6280,19 +6330,55 @@ mod tests {
         assert!(!menu.close_enabled);
         assert!(!menu.open_external_enabled);
 
-        let pending = workflow
-            .state
-            .lock()
-            .expect("lock workflow state")
-            .pending_migration
-            .is_some();
-        assert!(pending);
-        let pending = {
-            let mut state = workflow.state.lock().expect("lock workflow state");
-            state.pending_migration.take().expect("pending migration")
-        };
-        let mut sidecar = pending.sidecar;
-        sidecar.shutdown_without_session();
+        workflow
+            .commit_repository_migration()
+            .expect("commit and shut down the prepared migration");
+    }
+
+    #[test]
+    fn migration_results_preserve_the_sidecar_protocol_for_every_status() {
+        let results = [
+            json!({
+                "status": "migrated",
+                "inspection": {
+                    "inspectionId": "migration-inspection",
+                    "status": "ready",
+                    "requiredAction": "open",
+                    "capabilities": ["read"]
+                },
+                "backupCreated": true,
+                "sourceState": "migrated",
+                "snapshotState": {
+                    "status": "retained",
+                    "repoPath": "/archives/migration"
+                },
+                "cleanupFailure": "leaseReleaseFailed"
+            }),
+            json!({
+                "status": "rejected",
+                "reason": "confirmationRequired",
+                "sourceState": "unchanged",
+                "snapshotState": { "status": "notCreated" }
+            }),
+            json!({
+                "status": "failed",
+                "reason": "migrationFailed",
+                "sourceState": "unknown",
+                "snapshotState": {
+                    "status": "retained",
+                    "repoPath": "/archives/migration"
+                }
+            }),
+        ];
+
+        for value in results {
+            let parsed: super::RepositoryMigrationCommitResult =
+                serde_json::from_value(value.clone()).expect("parse migration result");
+            assert_eq!(
+                serde_json::to_value(parsed).expect("serialize migration result"),
+                value
+            );
+        }
     }
 
     #[test]
@@ -8268,6 +8354,45 @@ process.stdin.on("data", (chunk) => {{
         )
     }
 
+    fn pending_migration_fixture_sidecar_source() -> &'static str {
+        r#"
+function write(requestId, result) {
+  process.stdout.write(JSON.stringify({ protocolVersion: 11, kind: "response", requestId, ok: true, result }) + "\n");
+}
+process.stdout.write(JSON.stringify({ protocolVersion: 11, kind: "event", event: { type: "process.ready" } }) + "\n");
+let buffer = "";
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  for (;;) {
+    const newline = buffer.indexOf("\n");
+    if (newline < 0) return;
+    const request = JSON.parse(buffer.slice(0, newline));
+    buffer = buffer.slice(newline + 1);
+    const type = request.command.type;
+    if (type === "repository.inspect") {
+      write(request.requestId, { type: "repository.inspected", inspection: {
+        inspectionId: "migration-inspection", status: "migrationRequired", requiredAction: "confirmMigration", capabilities: []
+      }});
+    } else if (type === "repository.migration.prepare") {
+      write(request.requestId, { type: "repository.migration.prepared", preparation: {
+        status: "prepared", snapshot: { repoPath: request.command.repoPath, directoryDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      }});
+    } else if (type === "repository.migration.commit") {
+      write(request.requestId, { type: "repository.migration.committed", migration: {
+        status: "migrated", inspection: { inspectionId: "migration-inspection", status: "ready", requiredAction: "open", capabilities: [] },
+        backupCreated: false, sourceState: "migrated", snapshotState: { status: "notCreated" }
+      }});
+    } else if (type === "process.shutdown") {
+      write(request.requestId, { type: "process.shutdownComplete" });
+      process.exit(0);
+    } else {
+      process.exit(3);
+    }
+  }
+});
+"#
+    }
+
     fn fixture_sidecar_source(repository: &str, status: &str) -> String {
         let repository = serde_json::to_string(repository).expect("serialize repository path");
         let inspection = if status == "ready" || status == "mutation" {
@@ -8602,26 +8727,54 @@ process.stdout.write(Buffer.from(await response.arrayBuffer()));
 
     impl TestDesktopApp {
         fn new() -> Self {
+            Self::new_with_launch(real_sidecar_launch())
+        }
+
+        fn new_with_launch(launch: SidecarLaunch) -> Self {
+            Self::build(Some(launch), true)
+        }
+
+        fn unavailable() -> Self {
+            Self::build(None, false)
+        }
+
+        fn build(launch: Option<SidecarLaunch>, runtime_ready: bool) -> Self {
             let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
             let mut context = mock_context(noop_assets());
             context.config_mut().identifier = format!(
                 "io.github.ffff2004.silksong-git-test-{}-{sequence}",
                 std::process::id()
             );
-            let app = mock_builder()
-                .manage(super::TestRuntimeLaunch(real_sidecar_launch()))
+            let mut builder = mock_builder()
+                .manage(crate::RuntimeLayoutState(RuntimePreflight::Unavailable(
+                    RuntimePreflightError::new(RuntimePreflightErrorCode::ManifestUnavailable),
+                )))
                 .manage(super::DesktopWorkflow {
                     state: Default::default(),
                     archive_clock: Box::new(FixedArchiveClock(test_initialization_time())),
                     replacement_test_input: Mutex::new(None),
-                })
+                });
+            if runtime_ready {
+                builder = builder.manage(crate::TestRuntimeReady);
+                builder = builder.manage(super::TestRuntimeLaunch(
+                    launch.expect("ready test Desktop needs a sidecar launch"),
+                ));
+            }
+            let app = builder
                 .invoke_handler(tauri::generate_handler![
+                    super::desktop_open_external_repository,
+                    super::desktop_initialize_managed_repository,
+                    super::desktop_import_repository,
+                    super::desktop_archive_and_reinitialize_managed_repository,
+                    super::desktop_pick_static_encoded_save,
                     super::desktop_get_repo_session_connection,
                     super::desktop_get_repository_library,
                     super::desktop_open_library_entry,
                     super::desktop_archive_repository,
-                    super::desktop_archive_and_reinitialize_managed_repository,
+                    super::desktop_prepare_repository_migration,
+                    super::desktop_commit_repository_migration,
                     super::desktop_close_repository,
+                    super::desktop_reopen_repository,
                     super::desktop_start_watching,
                     super::desktop_stop_watching,
                 ])
@@ -8629,6 +8782,7 @@ process.stdout.write(Buffer.from(await response.arrayBuffer()));
                 .expect("build mock Desktop App");
             let menu = crate::install_repository_menu(&app).expect("install test repository menu");
             app.manage(menu);
+            crate::update_repository_menu(app.handle());
             let webview = tauri::WebviewWindowBuilder::new(
                 &app,
                 "main",
@@ -8652,6 +8806,151 @@ process.stdout.write(Buffer.from(await response.arrayBuffer()));
         fn invoke<T: DeserializeOwned>(&self, command: &str, body: Value) -> Result<T, Value> {
             invoke_public_desktop_command(&self.webview, command, body)
         }
+    }
+
+    #[test]
+    fn unavailable_startup_disables_and_rejects_sidecar_backed_public_commands() {
+        let desktop = TestDesktopApp::unavailable();
+        let initialize = desktop
+            .app
+            .state::<crate::RepositoryMenu<tauri::test::MockRuntime>>()
+            .initialize
+            .is_enabled()
+            .expect("read initialize menu state");
+        assert!(!initialize);
+        let expected = json!(crate::DESKTOP_RUNTIME_UNAVAILABLE_MESSAGE);
+        for (command, body) in [
+            ("desktop_open_external_repository", json!({})),
+            ("desktop_initialize_managed_repository", json!({})),
+            ("desktop_import_repository", json!({})),
+            (
+                "desktop_archive_and_reinitialize_managed_repository",
+                json!({"input":{"confirmation":"archive-and-reinitialize-managed-repository"}}),
+            ),
+            ("desktop_pick_static_encoded_save", json!({})),
+            ("desktop_get_repository_library", json!({})),
+            (
+                "desktop_open_library_entry",
+                json!({"input":{"lifecycle":"managed","name":"candidate","intent":"open"}}),
+            ),
+            (
+                "desktop_archive_repository",
+                json!({"input":{"lifecycle":"managed","name":"candidate"}}),
+            ),
+            (
+                "desktop_prepare_repository_migration",
+                json!({"input":{"lifecycle":"managed","name":"candidate"}}),
+            ),
+            ("desktop_commit_repository_migration", json!({})),
+            ("desktop_reopen_repository", json!({})),
+            ("desktop_get_repo_session_connection", json!({})),
+            ("desktop_start_watching", json!({})),
+            ("desktop_stop_watching", json!({})),
+            ("desktop_close_repository", json!({})),
+        ] {
+            let error = desktop
+                .invoke::<Value>(command, body)
+                .expect_err("unavailable runtime must reject before sidecar-backed work");
+            assert_eq!(error, expected, "command {command}");
+        }
+    }
+
+    #[cfg(all(target_os = "linux", feature = "runtime-system"))]
+    #[test]
+    fn preflighted_plan_reuses_restricted_environment_through_public_workflow_launch() {
+        let temp = TestDirectory::new();
+        let resource_root = temp.path().to_path_buf();
+        let runtime_root = resource_root.join("runtime");
+        fs::create_dir_all(&runtime_root).expect("create copied runtime tree");
+        let node = which::which("node").expect("compatible system Node");
+        let git = which::which("git").expect("system Git");
+        let expected_path = git.parent().expect("selected Git parent").to_string_lossy();
+        let protocol_version = super::DESKTOP_SIDECAR_PROTOCOL_VERSION;
+        let sidecar = runtime_root.join("sidecar.js");
+        fs::write(
+            &sidecar,
+            format!(
+                r#"const expectedPath = {expected_path};
+const pathKeys = Object.keys(process.env).filter((key) => key.toLowerCase() === "path");
+if (pathKeys.length !== 1 || pathKeys[0] !== "PATH" || process.env.PATH !== expectedPath
+    || Object.keys(process.env).some((key) => key.toUpperCase().startsWith("NODE_"))) process.exit(2);
+const ready = {{ protocolVersion: {protocol_version}, kind: "event", event: {{ type: "process.ready" }} }};
+process.stdout.write(JSON.stringify(ready) + "\n");
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {{
+  input += chunk;
+  for (;;) {{
+    const newline = input.indexOf("\n");
+    if (newline < 0) return;
+    const request = JSON.parse(input.slice(0, newline));
+    input = input.slice(newline + 1);
+    let result;
+    if (request.command.type === "repository.inspect") {{
+      result = {{ type: "repository.inspection", inspection: {{ status: "ready", requiredAction: "open" }} }};
+    }} else if (request.command.type === "session.open") {{
+      result = {{ type: "session.opened", connection: {{ endpoint: "http://127.0.0.1:4312", bearerToken: "test-token" }}, access: "readWrite" }};
+    }} else if (request.command.type === "process.shutdown") {{
+      result = {{ type: "process.shutdownComplete" }};
+    }} else {{
+      process.exit(3);
+    }}
+    const response = {{ protocolVersion: {protocol_version}, kind: "response", requestId: request.requestId,
+      ok: true, result }};
+    process.stdout.write(JSON.stringify(response) + "\n", () => {{
+      if (result.type === "process.shutdownComplete") process.exit(0);
+    }});
+  }}
+}});
+"#,
+                expected_path = serde_json::to_string(expected_path.as_ref())
+                    .expect("encode expected PATH"),
+                protocol_version = protocol_version,
+            ),
+        )
+        .expect("write sidecar environment fixture");
+        fs::write(
+            runtime_root.join("manifest.json"),
+            r#"{"layoutVersion":1,"layout":{"type":"system"},"sidecar":{"type":"nodeEntry","path":["sidecar.js"]}}"#,
+        )
+        .expect("write runtime manifest");
+        let adapter = TauriResourceRuntimeLayoutAdapter::with_system_executable_selector(
+            resource_root,
+            FixedRuntimeSelector {
+                node: node.clone(),
+                git: git.clone(),
+            },
+        );
+        let plan = match preflight_with_limits(
+            &adapter,
+            RuntimePreflightLimits::new(
+                Duration::from_millis(500),
+                Duration::from_millis(500),
+                Duration::from_millis(500),
+                Duration::from_millis(500),
+            ),
+        ) {
+            RuntimePreflight::Ready(plan) => plan,
+            RuntimePreflight::Unavailable(error) => {
+                panic!("restricted sidecar preflight should pass: {error:?}")
+            }
+        };
+        fs::remove_file(adapter.manifest_path()).expect("remove manifest after preflight");
+        let desktop = TestDesktopApp::new_with_launch(SidecarLaunch::Runtime(plan));
+        let repository = desktop.root().join("repository");
+        fs::create_dir(&repository).expect("create business repository");
+        let workflow = desktop.app.state::<super::DesktopWorkflow>();
+        assert!(matches!(
+            workflow.open_repository_path(
+                desktop.app.handle(),
+                repository,
+                RepositoryLifecycle::External,
+            ),
+            Ok(OpenExternalRepositoryResult::Opened)
+        ));
+        workflow
+            .shutdown()
+            .expect("reused business sidecar shuts down without a session");
     }
 
     fn invoke_public_desktop_command<T: DeserializeOwned>(
