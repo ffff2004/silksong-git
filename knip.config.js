@@ -14,6 +14,7 @@ const config = {
     "ajv-cli", // This is used by the lint script.
     "ajv-formats", // This is used by the lint script.
     "complete-lint", // This is a linting meta-package.
+    "npm", // This is spawned by the CLI package verification script.
   ],
 };
 
