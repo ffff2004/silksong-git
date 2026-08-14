@@ -9,8 +9,16 @@ SQLite, watcher scheduling, or repository layout.
 The Rust shell owns native directory selection, canonicalization, and the
 private [`apps/desktop-sidecar`](../../apps/desktop-sidecar) process lifecycle.
 One mutually exclusive Cargo-selected Runtime Layout resolves either a system
-Node entry or a manifest-owned bundled executable and Git path. Development and
-installed applications use the same Tauri resource-root adapter and the same
+Node entry or a manifest-owned bundled executable and Git path. Runtime Layout
+owns the platform-independent runtime policy: strict manifest interpretation,
+feature compatibility, candidate validation, restricted-environment and frozen
+launch-plan construction, bounded preflight, and safe unavailable results.
+Runtime Layout Adapters own only platform integration: obtaining the installed
+resource root, selecting platform-owned executable candidates, and creating or
+cleaning up owned child processes. The Layout consumes those adapter-provided
+facts rather than performing Tauri or operating-system discovery itself.
+Development and installed applications use the same Tauri resource-root adapter
+and the same
 strict `resourceRoot/runtime/manifest.json` lookup. Development differs only
 because its staging producer writes the Git-ignored simulated SystemRuntime
 tree directly to the resource root that Tauri will resolve for the executable.
