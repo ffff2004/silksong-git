@@ -5,6 +5,11 @@ public Repo Session Interface for the Tauri Rust caller. It is a Node.js
 development executable and is not a packaged Tauri external binary. The
 executable protocol schemas in
 [`protocol.ts`](../../apps/desktop-sidecar/src/protocol.ts) are authoritative.
+The current version is defined only in
+[`protocol-version.json`](../../apps/desktop-sidecar/src/protocol-version.json).
+The TypeScript schema imports it directly and the Desktop Rust build generates
+its matching protocol constant from the same input. This reference uses
+`<protocol-version>` as a placeholder rather than copying that number.
 
 Run the development entry point from the workspace:
 
@@ -21,7 +26,7 @@ has this common envelope:
 
 ```json
 {
-  "protocolVersion": 11,
+  "protocolVersion": "<protocol-version>",
   "kind": "command",
   "requestId": "caller-unique-id",
   "command": { "type": "watcher.start" }
@@ -36,7 +41,7 @@ Events have no request ID:
 
 ```json
 {
-  "protocolVersion": 11,
+  "protocolVersion": "<protocol-version>",
   "kind": "event",
   "event": { "type": "process.ready" }
 }
@@ -49,7 +54,7 @@ payloads for known event types and protocol versions they do not support.
 
 ## Lifecycle
 
-Version 11 accepts these commands:
+The current protocol version accepts these commands:
 
 - `repository.inspect` with one absolute `repoPath` and an optional
   `gitIntegrityPolicy` of `strict` (default) or `advisory`;
@@ -172,7 +177,7 @@ compatibility inspection is `ready`:
 
 ```json
 {
-  "protocolVersion": 11,
+  "protocolVersion": "<protocol-version>",
   "kind": "response",
   "requestId": "open-1",
   "ok": true,

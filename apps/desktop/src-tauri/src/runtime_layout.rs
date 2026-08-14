@@ -21,12 +21,13 @@ use std::{
 use serde::{Deserialize, de};
 use serde_json::{Value, json};
 
+use crate::desktop_sidecar_protocol::VERSION as PROTOCOL_VERSION;
+
 pub(crate) const NODE_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const GIT_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const READY_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const MAX_STREAM_BYTES: usize = 64 * 1024;
-const PROTOCOL_VERSION: u8 = 11;
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 const MAX_QUEUED_FRAMES: usize = 16;
 

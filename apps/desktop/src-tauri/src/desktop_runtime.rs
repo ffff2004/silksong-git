@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::desktop_sidecar_protocol::VERSION as DESKTOP_SIDECAR_PROTOCOL_VERSION;
 use crate::managed_initialization::{
     ClaimedDirectoryCleanupError, ManagedDirectoryClaim, claim_managed_repository_directory,
     managed_repository_name, remove_claimed_directory,
@@ -26,7 +27,6 @@ use crate::managed_initialization::{
 use crate::runtime_layout::{RuntimeLaunchPlan, RuntimePreflightError, RuntimePreflightErrorCode};
 use crate::save_location::{SaveLocationPlatform, SaveLocationSystem, initial_directory};
 
-const DESKTOP_SIDECAR_PROTOCOL_VERSION: u8 = 11;
 #[cfg(test)]
 const DEVELOPMENT_SIDECAR_ENTRY: &str = "apps/desktop-sidecar/dist/main.js";
 #[cfg(test)]

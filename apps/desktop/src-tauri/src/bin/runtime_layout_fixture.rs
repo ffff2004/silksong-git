@@ -11,6 +11,8 @@ use std::{
     time::Duration,
 };
 
+use silksong_git_desktop_lib::desktop_sidecar_protocol::VERSION;
+
 fn main() {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     if arguments
@@ -70,19 +72,19 @@ fn spawn_descendant() -> u32 {
 
 fn ready_then_shutdown() {
     println!(
-        "{{\"protocolVersion\":11,\"kind\":\"event\",\"event\":{{\"type\":\"process.ready\"}}}}"
+        "{{\"protocolVersion\":{VERSION},\"kind\":\"event\",\"event\":{{\"type\":\"process.ready\"}}}}"
     );
     io::stdout().flush().expect("flush ready");
     let mut line = String::new();
     let _ = io::stdin().lock().read_line(&mut line);
     println!(
-        "{{\"protocolVersion\":11,\"kind\":\"response\",\"requestId\":\"runtime-layout-probe\",\"ok\":true,\"result\":{{\"type\":\"process.shutdownComplete\"}}}}"
+        "{{\"protocolVersion\":{VERSION},\"kind\":\"response\",\"requestId\":\"runtime-layout-probe\",\"ok\":true,\"result\":{{\"type\":\"process.shutdownComplete\"}}}}"
     );
 }
 
 fn ready_without_shutdown_complete() {
     println!(
-        "{{\"protocolVersion\":11,\"kind\":\"event\",\"event\":{{\"type\":\"process.ready\"}}}}"
+        "{{\"protocolVersion\":{VERSION},\"kind\":\"event\",\"event\":{{\"type\":\"process.ready\"}}}}"
     );
     io::stdout().flush().expect("flush ready");
     let mut line = String::new();
@@ -92,13 +94,13 @@ fn ready_without_shutdown_complete() {
 
 fn ready_then_shutdown_without_exit() {
     println!(
-        "{{\"protocolVersion\":11,\"kind\":\"event\",\"event\":{{\"type\":\"process.ready\"}}}}"
+        "{{\"protocolVersion\":{VERSION},\"kind\":\"event\",\"event\":{{\"type\":\"process.ready\"}}}}"
     );
     io::stdout().flush().expect("flush ready");
     let mut line = String::new();
     let _ = io::stdin().lock().read_line(&mut line);
     println!(
-        "{{\"protocolVersion\":11,\"kind\":\"response\",\"requestId\":\"runtime-layout-probe\",\"ok\":true,\"result\":{{\"type\":\"process.shutdownComplete\"}}}}"
+        "{{\"protocolVersion\":{VERSION},\"kind\":\"response\",\"requestId\":\"runtime-layout-probe\",\"ok\":true,\"result\":{{\"type\":\"process.shutdownComplete\"}}}}"
     );
     io::stdout().flush().expect("flush shutdown response");
     thread::sleep(Duration::from_secs(60));

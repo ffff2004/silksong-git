@@ -4,6 +4,9 @@ compile_error!("runtime-system and runtime-bundled are mutually exclusive");
 compile_error!("one runtime layout feature must be selected");
 
 mod desktop_runtime;
+pub mod desktop_sidecar_protocol {
+    include!(concat!(env!("OUT_DIR"), "/desktop_sidecar_protocol.rs"));
+}
 mod managed_initialization;
 pub mod runtime_layout;
 mod save_location;

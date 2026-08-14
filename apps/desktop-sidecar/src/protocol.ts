@@ -1,6 +1,7 @@
 import { z } from "zod";
+import protocolVersion from "./protocol-version.json" with { type: "json" };
 
-export const desktopSidecarProtocolVersion = 11 as const;
+export const desktopSidecarProtocolVersion = protocolVersion.version;
 
 export const desktopSidecarErrorCodes = [
   "invalid_message",
@@ -697,7 +698,7 @@ function createCompatibleEventEnvelopeSchema() {
 
 function requireValidCurrentEvent(
   envelope: {
-    readonly protocolVersion: 11;
+    readonly protocolVersion: number;
     readonly kind: "event";
     readonly event: { readonly type: string };
   },
