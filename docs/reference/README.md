@@ -8,6 +8,7 @@ these details.
 
 - [CLI Reference](cli.md)
 - [Desktop Sidecar Process Protocol](desktop-sidecar-protocol.md)
+- [History Git Compatibility Reference](history-git-compatibility.md)
 - [Local HTTP API Reference](local-http-api.md)
 
 The public TypeScript Interfaces remain owned by the package-root exports:
