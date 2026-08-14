@@ -120,11 +120,13 @@ Do not run `pnpm --filter <changed-package> format/lint`, since the root validat
 Before commit, run formatting and full repository verification serially, in this order:
 
 ```sh
-pnpm format
-pnpm verify:agent
+pnpm validate:agent
 ```
 
-`pnpm format` applies formatting and lint fixes, taking about 55s. `pnpm verify:agent` then runs linting, tests, builds, and custom verifications, taking more than 150s.
+`pnpm validate:agent` runs `pnpm format` first and runs `pnpm verify:agent`
+only after format exits successfully. Formatting applies formatting and lint
+fixes, taking about 55s; agent verification then runs linting, tests, builds,
+and custom verifications, taking more than 150s.
 
 If satisfying the linter would conflict with the design or degrade code quality, pause the work and report.
 

@@ -29,8 +29,7 @@ never be selected for publication.
 3. Run the required repository checks serially:
 
    ```sh
-   pnpm format
-   pnpm verify:agent
+   pnpm validate:agent
    ```
 
    Release verification builds and dry-packs only Core and CLI, checks the exact

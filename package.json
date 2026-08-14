@@ -36,6 +36,7 @@
     "preview-web": "pnpm --filter @silksong-git/web preview",
     "qualify-git": "tsx ./scripts/qualify-git.ts",
     "test": "pnpm --recursive --if-present run test",
+    "validate:agent": "pnpm format && pnpm verify:agent",
     "verify": "tsx ./scripts/verify.ts --reporter=human",
     "verify:agent": "tsx ./scripts/verify.ts --reporter=agent",
     "verify-cli-pack": "pnpm build:release-packages && pnpm verify-cli-pack:built",
