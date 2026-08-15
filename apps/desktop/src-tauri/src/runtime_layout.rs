@@ -152,12 +152,12 @@ pub trait RuntimeLayoutAdapter {
     fn manifest_path(&self) -> PathBuf {
         self.runtime_root().join("manifest.json")
     }
-    /// Select the system Node executable once from the launch environment.
-    /// It must already be absolute because launch environments do not inherit
-    /// `PATH` after the final environment is frozen.
-    fn node_program(&self) -> Result<PathBuf, RuntimePreflightError>;
-    /// Select the system Git executable once from the launch environment.
-    fn git_program(&self) -> Result<PathBuf, RuntimePreflightError>;
+    /// Supplies the optional system-runtime executable lookup capability.
+    /// Bundled layouts resolve both executables from their strict manifest and
+    /// therefore do not expose this capability.
+    fn system_executable_selector(&self) -> Option<&dyn SystemExecutableSelector> {
+        None
+    }
     fn process_adapter(&self) -> &dyn OwnedProcessAdapter {
         &PLATFORM_PROCESS_ADAPTER
     }
@@ -209,20 +209,8 @@ impl RuntimeLayoutAdapter for TauriResourceRuntimeLayoutAdapter {
         &self.resource_root
     }
 
-    fn node_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        select_system_program(
-            self.system_executable_selector.as_ref(),
-            "node",
-            RuntimePreflightErrorCode::NodeUnavailable,
-        )
-    }
-
-    fn git_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        select_system_program(
-            self.system_executable_selector.as_ref(),
-            "git",
-            RuntimePreflightErrorCode::GitUnavailable,
-        )
+    fn system_executable_selector(&self) -> Option<&dyn SystemExecutableSelector> {
+        Some(self.system_executable_selector.as_ref())
     }
 }
 
@@ -426,8 +414,28 @@ fn resolve(
             // failure. This keeps the startup contract exactly one lookup for
             // each command and, importantly, still performs no functional
             // validation until both entries are frozen.
-            let node_result = adapter.node_program();
-            let git_result = adapter.git_program();
+            let (node_result, git_result) = match adapter.system_executable_selector() {
+                Some(selector) => (
+                    select_system_program(
+                        selector,
+                        "node",
+                        RuntimePreflightErrorCode::NodeUnavailable,
+                    ),
+                    select_system_program(
+                        selector,
+                        "git",
+                        RuntimePreflightErrorCode::GitUnavailable,
+                    ),
+                ),
+                None => (
+                    Err(RuntimePreflightError::new(
+                        RuntimePreflightErrorCode::NodeUnavailable,
+                    )),
+                    Err(RuntimePreflightError::new(
+                        RuntimePreflightErrorCode::GitUnavailable,
+                    )),
+                ),
+            };
             let node = node_result?;
             let git = git_result?;
             if !node.is_absolute() {
@@ -440,10 +448,11 @@ fn resolve(
                     RuntimePreflightErrorCode::GitUnavailable,
                 ));
             }
+            let entry = resolve_resource(&adapter.runtime_root(), &sidecar)?;
             Ok(RuntimeLaunchPlan(
                 ResolvedRuntimeLaunchPlan::SystemNodeEntry {
                     node,
-                    entry: resolve_resource(&adapter.runtime_root(), &sidecar)?,
+                    entry,
                     environment: FrozenEnvironment::capture(Some(&git)),
                     git,
                 },
@@ -451,10 +460,11 @@ fn resolve(
         }
         Manifest::Bundled { sidecar, git } => {
             ensure_bundled_build()?;
+            let executable = resolve_resource(&adapter.runtime_root(), &sidecar)?;
             let git = resolve_resource(&adapter.runtime_root(), &git)?;
             Ok(RuntimeLaunchPlan(
                 ResolvedRuntimeLaunchPlan::BundledExecutable {
-                    executable: resolve_resource(&adapter.runtime_root(), &sidecar)?,
+                    executable,
                     environment: FrozenEnvironment::capture(Some(&git)),
                     git,
                 },
@@ -619,15 +629,29 @@ fn parse_manifest(value: &Value) -> Result<Manifest, RuntimePreflightError> {
                     RuntimePreflightErrorCode::ManifestInvalid,
                 ));
             }
-            Ok(Manifest::Bundled {
-                sidecar: segments(sidecar.pointer("/path").ok_or_else(malformed)?)?,
-                git: segments(git.pointer("/path").ok_or_else(malformed)?)?,
-            })
+            let sidecar = segments(sidecar.pointer("/path").ok_or_else(malformed)?)?;
+            let git = segments(git.pointer("/path").ok_or_else(malformed)?)?;
+            if !is_platform_standard_git_entry(&git) {
+                return Err(RuntimePreflightError::new(
+                    RuntimePreflightErrorCode::ManifestInvalid,
+                ));
+            }
+            Ok(Manifest::Bundled { sidecar, git })
         }
         _ => Err(RuntimePreflightError::new(
             RuntimePreflightErrorCode::ManifestInvalid,
         )),
     }
+}
+
+fn is_platform_standard_git_entry(path: &[String]) -> bool {
+    path.last().is_some_and(|name| {
+        if cfg!(target_os = "windows") {
+            name == "git.exe"
+        } else {
+            name == "git"
+        }
+    })
 }
 
 fn malformed() -> RuntimePreflightError {

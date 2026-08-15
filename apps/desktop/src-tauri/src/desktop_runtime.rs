@@ -4903,11 +4903,19 @@ mod tests {
         RuntimeLayoutAdapter, RuntimePreflightLimits, SystemExecutableSelector,
         TauriResourceRuntimeLayoutAdapter, preflight_with_limits,
     };
+    #[cfg(all(target_os = "linux", feature = "runtime-bundled"))]
+    use crate::runtime_layout::{
+        RuntimeLayoutAdapter, RuntimePreflightLimits, SystemExecutableSelector,
+        TauriResourceRuntimeLayoutAdapter, preflight_with_limits,
+    };
     use crate::runtime_layout::{
         RuntimePreflight, RuntimePreflightError, RuntimePreflightErrorCode,
     };
 
     static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+
+    #[cfg(all(target_os = "linux", feature = "runtime-bundled"))]
+    static BUNDLED_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[cfg(all(target_os = "linux", feature = "runtime-system"))]
     struct FixedRuntimeSelector {
@@ -4922,6 +4930,63 @@ mod tests {
                 "node" => Some(self.node.clone()),
                 "git" => Some(self.git.clone()),
                 _ => None,
+            }
+        }
+    }
+
+    #[cfg(all(target_os = "linux", feature = "runtime-bundled"))]
+    struct UnexpectedSystemSelection;
+
+    #[cfg(all(target_os = "linux", feature = "runtime-bundled"))]
+    impl SystemExecutableSelector for UnexpectedSystemSelection {
+        fn select(&self, name: &str) -> Option<PathBuf> {
+            panic!("BundledRuntime must not select system executable {name}")
+        }
+    }
+
+    #[cfg(all(target_os = "linux", feature = "runtime-bundled"))]
+    struct AmbientRuntimeEnvironment {
+        original: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+    }
+
+    #[cfg(all(target_os = "linux", feature = "runtime-bundled"))]
+    impl AmbientRuntimeEnvironment {
+        fn install(entries: &[(std::ffi::OsString, std::ffi::OsString)]) -> Self {
+            let original = std::env::vars_os()
+                .filter(|(key, _)| Self::is_runtime_key(key))
+                .collect();
+            Self::remove_runtime_keys();
+            for (key, value) in entries {
+                unsafe { std::env::set_var(key, value) };
+            }
+            Self { original }
+        }
+
+        fn is_runtime_key(key: &std::ffi::OsStr) -> bool {
+            let normalized = key.to_string_lossy().to_ascii_lowercase();
+            normalized == "path"
+                || normalized.starts_with("node_")
+                || normalized.starts_with("git_")
+                || normalized.starts_with("runtime_layout_")
+        }
+
+        fn remove_runtime_keys() {
+            for key in std::env::vars_os()
+                .map(|(key, _)| key)
+                .filter(|key| Self::is_runtime_key(key))
+                .collect::<Vec<_>>()
+            {
+                unsafe { std::env::remove_var(key) };
+            }
+        }
+    }
+
+    #[cfg(all(target_os = "linux", feature = "runtime-bundled"))]
+    impl Drop for AmbientRuntimeEnvironment {
+        fn drop(&mut self) {
+            Self::remove_runtime_keys();
+            for (key, value) in &self.original {
+                unsafe { std::env::set_var(key, value) };
             }
         }
     }
@@ -8951,6 +9016,108 @@ process.stdin.on("data", (chunk) => {{
         workflow
             .shutdown()
             .expect("reused business sidecar shuts down without a session");
+    }
+
+    #[cfg(all(target_os = "linux", feature = "runtime-bundled"))]
+    #[test]
+    fn bundled_runtime_plan_reaches_real_business_launch_with_frozen_command_and_environment() {
+        let _lock = BUNDLED_RUNTIME_TEST_LOCK
+            .lock()
+            .expect("bundled runtime test lock");
+        let temp = TestDirectory::new();
+        let resource_root = temp.path().join("resources");
+        let runtime_root = resource_root.join("runtime");
+        let sidecar = runtime_root.join("sidecar/desktop-business-sidecar");
+        let git = runtime_root.join("private-git/git");
+        let marker = temp.path().join("business-sidecar-launches");
+        fs::create_dir_all(sidecar.parent().expect("sidecar parent")).expect("create sidecar dir");
+        fs::create_dir_all(git.parent().expect("Git parent")).expect("create Git dir");
+        let fixture = std::env::var_os("CARGO_BIN_EXE_runtime_layout_fixture")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|path| path.parent()?.parent().map(Path::to_path_buf))
+                    .map(|target| target.join("runtime_layout_fixture"))
+            })
+            .expect("locate runtime layout fixture");
+        fs::copy(&fixture, &sidecar).expect("copy bundled business sidecar fixture");
+        fs::copy(&fixture, &git).expect("copy manifest-owned Git fixture");
+        fs::write(
+            runtime_root.join("manifest.json"),
+            r#"{"layoutVersion":1,"layout":{"type":"bundled"},"sidecar":{"type":"embeddedExecutable","path":["sidecar","desktop-business-sidecar"]},"git":{"path":["private-git","git"]}}"#,
+        )
+        .expect("write bundled runtime manifest");
+
+        let ambient = AmbientRuntimeEnvironment::install(&[
+            ("nOdE_OPTIONS".into(), "unsafe-node-options".into()),
+            ("nOdE_EXTRA_CA_CERTS".into(), "unsafe-node-certs".into()),
+            ("path".into(), "ambient-lower-path".into()),
+            ("PaTh".into(), "ambient-mixed-path".into()),
+            ("GIT_TEST_SENTINEL".into(), "retained-for-history".into()),
+            (
+                "RUNTIME_LAYOUT_EXPECTED_PATH".into(),
+                git.parent().expect("Git parent").as_os_str().into(),
+            ),
+            (
+                "RUNTIME_LAYOUT_EXPECTED_SIDECAR_EXECUTABLE".into(),
+                sidecar.as_os_str().into(),
+            ),
+            (
+                "RUNTIME_LAYOUT_EXPECTED_GIT_EXECUTABLE".into(),
+                git.as_os_str().into(),
+            ),
+            (
+                "RUNTIME_LAYOUT_BUSINESS_MARKER".into(),
+                marker.as_os_str().into(),
+            ),
+        ]);
+        let adapter = TauriResourceRuntimeLayoutAdapter::with_system_executable_selector(
+            resource_root,
+            UnexpectedSystemSelection,
+        );
+        let plan = match preflight_with_limits(
+            &adapter,
+            RuntimePreflightLimits::new(
+                Duration::from_millis(500),
+                Duration::from_millis(500),
+                Duration::from_millis(500),
+                Duration::from_millis(500),
+            ),
+        ) {
+            RuntimePreflight::Ready(plan) => plan,
+            RuntimePreflight::Unavailable(error) => {
+                panic!("bundled runtime preflight should pass: {error:?}")
+            }
+        };
+
+        // The business launch must use the immutable plan rather than reread
+        // the manifest or rediscover a system executable.
+        fs::remove_file(adapter.manifest_path()).expect("remove manifest after preflight");
+        fs::remove_file(&git).expect("remove Git after preflight");
+        let desktop = TestDesktopApp::new_with_launch(SidecarLaunch::Runtime(plan));
+        let repository = desktop.root().join("repository");
+        fs::create_dir(&repository).expect("create business repository");
+        let workflow = desktop.app.state::<super::DesktopWorkflow>();
+        assert!(matches!(
+            workflow.open_repository_path(
+                desktop.app.handle(),
+                repository,
+                RepositoryLifecycle::External,
+            ),
+            Ok(OpenExternalRepositoryResult::Opened)
+        ));
+        workflow
+            .shutdown()
+            .expect("bundled business sidecar shuts down cleanly");
+
+        let launches = fs::read_to_string(&marker)
+            .expect("business sidecar recorded preflight and launch")
+            .lines()
+            .map(PathBuf::from)
+            .collect::<Vec<_>>();
+        assert_eq!(launches, vec![sidecar.clone(), sidecar]);
+        drop(ambient);
     }
 
     fn invoke_public_desktop_command<T: DeserializeOwned>(

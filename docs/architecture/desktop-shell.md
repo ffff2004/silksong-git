@@ -9,8 +9,11 @@ SQLite, watcher scheduling, or repository layout.
 The Rust shell owns native directory selection, canonicalization, and the
 private [`apps/desktop-sidecar`](../../apps/desktop-sidecar) process lifecycle.
 One mutually exclusive Cargo-selected Runtime Layout resolves either a system
-Node entry or a manifest-owned bundled executable and Git path. Runtime Layout
-owns the platform-independent runtime policy: strict manifest interpretation,
+Node entry or a manifest-owned bundled executable and Git path. A bundled
+manifest's private Git path must end in the platform-standard `git` name on
+Linux/macOS or `git.exe` on Windows, because History invokes Git by command
+name through the restricted `PATH`. Runtime Layout owns the
+platform-independent runtime policy: strict manifest interpretation,
 feature compatibility, candidate validation, restricted-environment and frozen
 launch-plan construction, bounded preflight, and safe unavailable results.
 Runtime Layout Adapters own only platform integration: obtaining the installed
@@ -35,11 +38,14 @@ until Desktop is restarted. Launch clears inherited `PATH` and `NODE_*` values
 and installs one canonical `PATH` containing only the selected Git directory.
 The same immutable launch plan is used for preflight and later business
 sidecars. Missing installed resources and incompatible system candidates are
-safely unavailable. SystemRuntime preflight accepts only Node 24 with the
-required `node:sqlite` prepared-statement workflow and Git `>=2.34.0 <3.0.0`,
-then performs the sidecar ready/shutdown handshake before the plan is made
-available. This is a runtime selection and validation boundary, not a claim
-that either runtime has been packaged or qualified. A selected
+safely unavailable; BundledRuntime never invokes the system executable
+selector or falls back to SystemRuntime. SystemRuntime preflight accepts only
+Node 24 with the required `node:sqlite` prepared-statement workflow and Git
+`>=2.34.0 <3.0.0`, while BundledRuntime applies the same Git policy and checks
+its embedded sidecar through the protocol handshake. Both layouts perform the
+sidecar ready/shutdown handshake before the plan is made available. The
+copied-resource Linux fixtures qualify this shared lifecycle seam; artifact
+production and packaging are outside this architecture boundary. A selected
 repository path is sent only in
 JSONL `repository.inspect` and `session.open` messages, never as a spawn
 argument.

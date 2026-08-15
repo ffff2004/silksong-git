@@ -1,6 +1,8 @@
 #[cfg(feature = "runtime-system")]
+use std::sync::Arc;
+#[cfg(feature = "runtime-system")]
 use std::sync::atomic::AtomicUsize;
-#[cfg(all(target_os = "linux", feature = "runtime-system"))]
+#[cfg(target_os = "linux")]
 use std::thread;
 use std::{
     fs,
@@ -8,15 +10,12 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-#[cfg(feature = "runtime-system")]
 use std::{
     process::{Child, Command},
-    sync::{Arc, Mutex},
+    sync::Mutex,
 };
 
-#[cfg(feature = "runtime-system")]
 use silksong_git_desktop_lib::runtime_layout::SystemExecutableSelector;
-#[cfg(feature = "runtime-system")]
 use silksong_git_desktop_lib::runtime_layout::{OwnedProcessAdapter, PlatformOwnedProcessAdapter};
 use silksong_git_desktop_lib::runtime_layout::{
     RuntimeLayoutAdapter, RuntimePreflight, RuntimePreflightError, RuntimePreflightErrorCode,
@@ -24,8 +23,8 @@ use silksong_git_desktop_lib::runtime_layout::{
 };
 
 static TREE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-#[cfg(all(target_os = "linux", feature = "runtime-system"))]
-static RUNTIME_SYSTEM_TEST_LOCK: Mutex<()> = Mutex::new(());
+#[cfg(target_os = "linux")]
+static RUNTIME_LAYOUT_TEST_LOCK: Mutex<()> = Mutex::new(());
 const FAST_LIMITS: RuntimePreflightLimits = RuntimePreflightLimits::new(
     Duration::from_millis(250),
     Duration::from_millis(250),
@@ -37,20 +36,24 @@ struct CopiedTree {
     resource_root: PathBuf,
     node: PathBuf,
     git: PathBuf,
+    #[cfg(feature = "runtime-bundled")]
+    sidecar: PathBuf,
 }
 
-#[cfg(all(target_os = "linux", feature = "runtime-system"))]
+#[cfg(target_os = "linux")]
 struct AmbientEnvironmentGuard {
     original: Vec<(std::ffi::OsString, std::ffi::OsString)>,
 }
 
-#[cfg(all(target_os = "linux", feature = "runtime-system"))]
+#[cfg(target_os = "linux")]
 impl AmbientEnvironmentGuard {
     fn install(entries: &[(std::ffi::OsString, std::ffi::OsString)]) -> Self {
         let original = std::env::vars_os()
             .filter(|(key, _)| {
                 let normalized = key.to_string_lossy().to_ascii_lowercase();
-                normalized == "path" || normalized.starts_with("node_")
+                normalized == "path"
+                    || normalized.starts_with("node_")
+                    || normalized.starts_with("git_")
             })
             .collect();
         Self::remove_runtime_keys();
@@ -66,7 +69,9 @@ impl AmbientEnvironmentGuard {
             .map(|(key, _)| key)
             .filter(|key| {
                 let normalized = key.to_string_lossy().to_ascii_lowercase();
-                normalized == "path" || normalized.starts_with("node_")
+                normalized == "path"
+                    || normalized.starts_with("node_")
+                    || normalized.starts_with("git_")
             })
             .collect::<Vec<_>>()
         {
@@ -75,7 +80,7 @@ impl AmbientEnvironmentGuard {
     }
 }
 
-#[cfg(all(target_os = "linux", feature = "runtime-system"))]
+#[cfg(target_os = "linux")]
 impl Drop for AmbientEnvironmentGuard {
     fn drop(&mut self) {
         Self::remove_runtime_keys();
@@ -85,11 +90,11 @@ impl Drop for AmbientEnvironmentGuard {
     }
 }
 
-#[cfg(all(target_os = "linux", feature = "runtime-system"))]
-fn lock_runtime_system_test() -> std::sync::MutexGuard<'static, ()> {
-    RUNTIME_SYSTEM_TEST_LOCK
+#[cfg(target_os = "linux")]
+fn lock_runtime_layout_test() -> std::sync::MutexGuard<'static, ()> {
+    RUNTIME_LAYOUT_TEST_LOCK
         .lock()
-        .expect("runtime-system test lock")
+        .expect("runtime-layout test lock")
 }
 
 impl Drop for CopiedTree {
@@ -140,6 +145,38 @@ struct MutableExecutableSelector {
     events: Arc<Mutex<Vec<String>>>,
     node: Arc<Mutex<PathBuf>>,
     git: Arc<Mutex<PathBuf>>,
+}
+
+#[cfg(feature = "runtime-system")]
+struct MissingSystemExecutableSelector {
+    missing: &'static str,
+}
+
+#[cfg(feature = "runtime-system")]
+impl SystemExecutableSelector for MissingSystemExecutableSelector {
+    fn select(&self, name: &str) -> Option<PathBuf> {
+        (name != self.missing).then(|| PathBuf::from("/unused/system-runtime"))
+    }
+}
+
+#[cfg(feature = "runtime-bundled")]
+struct UnexpectedSystemSelection;
+
+#[cfg(feature = "runtime-bundled")]
+impl SystemExecutableSelector for UnexpectedSystemSelection {
+    fn select(&self, name: &str) -> Option<PathBuf> {
+        panic!("BundledRuntime must not select system executable {name}")
+    }
+}
+
+impl SystemExecutableSelector for CopiedTree {
+    fn select(&self, name: &str) -> Option<PathBuf> {
+        match name {
+            "node" => Some(self.node.clone()),
+            "git" => Some(self.git.clone()),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(feature = "runtime-system")]
@@ -199,12 +236,8 @@ impl RuntimeLayoutAdapter for ObservedSystemAdapter {
         self.base.resource_root()
     }
 
-    fn node_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        self.base.node_program()
-    }
-
-    fn git_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        self.base.git_program()
+    fn system_executable_selector(&self) -> Option<&dyn SystemExecutableSelector> {
+        self.base.system_executable_selector()
     }
 
     fn process_adapter(&self) -> &dyn OwnedProcessAdapter {
@@ -212,10 +245,8 @@ impl RuntimeLayoutAdapter for ObservedSystemAdapter {
     }
 }
 
-#[cfg(feature = "runtime-system")]
 struct UnrelatedCwdProcess(PathBuf);
 
-#[cfg(feature = "runtime-system")]
 impl OwnedProcessAdapter for UnrelatedCwdProcess {
     fn spawn(&self, command: &mut Command) -> Result<Child, RuntimePreflightError> {
         command.current_dir(&self.0);
@@ -227,24 +258,18 @@ impl OwnedProcessAdapter for UnrelatedCwdProcess {
     }
 }
 
-#[cfg(feature = "runtime-system")]
 struct UnrelatedCwdTree {
     tree: CopiedTree,
     process: UnrelatedCwdProcess,
 }
 
-#[cfg(feature = "runtime-system")]
 impl RuntimeLayoutAdapter for UnrelatedCwdTree {
     fn resource_root(&self) -> &Path {
         self.tree.resource_root()
     }
 
-    fn node_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        self.tree.node_program()
-    }
-
-    fn git_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        self.tree.git_program()
+    fn system_executable_selector(&self) -> Option<&dyn SystemExecutableSelector> {
+        Some(&self.tree)
     }
 
     fn process_adapter(&self) -> &dyn OwnedProcessAdapter {
@@ -257,12 +282,8 @@ impl RuntimeLayoutAdapter for CopiedTree {
         &self.resource_root
     }
 
-    fn node_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        Ok(self.node.clone())
-    }
-
-    fn git_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        Ok(self.git.clone())
+    fn system_executable_selector(&self) -> Option<&dyn SystemExecutableSelector> {
+        Some(self)
     }
 }
 
@@ -272,12 +293,8 @@ impl RuntimeLayoutAdapter for IncompleteCleanupTree {
         self.0.resource_root()
     }
 
-    fn node_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        self.0.node_program()
-    }
-
-    fn git_program(&self) -> Result<PathBuf, RuntimePreflightError> {
-        self.0.git_program()
+    fn system_executable_selector(&self) -> Option<&dyn SystemExecutableSelector> {
+        Some(&self.0)
     }
 
     fn process_adapter(&self) -> &dyn OwnedProcessAdapter {
@@ -299,7 +316,7 @@ fn copied_tree(layout: &str, behavior: &str) -> CopiedTree {
     let fixture = PathBuf::from(env!("CARGO_BIN_EXE_runtime_layout_fixture"));
     let node = runtime_root.join("bin/node-runtime-layout-fixture");
     fs::copy(fixture, &node).expect("copy Rust fixture executable");
-    let git = runtime_root.join("bin/git-runtime-layout-fixture");
+    let git = runtime_root.join("bin/git");
     fs::copy(env!("CARGO_BIN_EXE_runtime_layout_fixture"), &git)
         .expect("copy Git fixture executable");
     let sidecar = match layout {
@@ -322,7 +339,7 @@ fn copied_tree(layout: &str, behavior: &str) -> CopiedTree {
                 .expect("UTF-8 sidecar name"),
         ),
         "bundled" => format!(
-            r#"{{"layoutVersion":1,"layout":{{"type":"bundled"}},"sidecar":{{"type":"embeddedExecutable","path":["bin","{}"]}},"git":{{"path":["bin","git-runtime-layout-fixture"]}}}}"#,
+            r#"{{"layoutVersion":1,"layout":{{"type":"bundled"}},"sidecar":{{"type":"embeddedExecutable","path":["bin","{}"]}},"git":{{"path":["bin","git"]}}}}"#,
             sidecar
                 .file_name()
                 .expect("sidecar name")
@@ -337,6 +354,8 @@ fn copied_tree(layout: &str, behavior: &str) -> CopiedTree {
         resource_root: root,
         node,
         git,
+        #[cfg(feature = "runtime-bundled")]
+        sidecar,
     }
 }
 
@@ -348,6 +367,41 @@ fn copy_fixture_named(tree: &CopiedTree, name: &str) -> PathBuf {
     path
 }
 
+#[cfg(feature = "runtime-bundled")]
+fn copy_git_fixture_named(tree: &CopiedTree, name: &str) -> PathBuf {
+    let path = tree.runtime_root().join("bin").join(name).join("git");
+    fs::create_dir_all(path.parent().expect("Git fixture parent")).expect("create Git fixture dir");
+    fs::copy(env!("CARGO_BIN_EXE_runtime_layout_fixture"), &path)
+        .expect("copy named Git runtime fixture");
+    let sidecar_segments = manifest_segments(&tree.runtime_root(), &tree.sidecar);
+    let git_segments = manifest_segments(&tree.runtime_root(), &path);
+    fs::write(
+        tree.manifest(),
+        format!(
+            r#"{{"layoutVersion":1,"layout":{{"type":"bundled"}},"sidecar":{{"type":"embeddedExecutable","path":{}}},"git":{{"path":{}}}}}"#,
+            serde_json::to_string(&sidecar_segments).expect("serialize sidecar path"),
+            serde_json::to_string(&git_segments).expect("serialize Git path"),
+        ),
+    )
+    .expect("update bundled Git manifest");
+    path
+}
+
+#[cfg(feature = "runtime-bundled")]
+fn manifest_segments(root: &Path, path: &Path) -> Vec<String> {
+    path.strip_prefix(root)
+        .expect("manifest entry is beneath runtime root")
+        .components()
+        .map(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .expect("fixture path is UTF-8")
+                .to_owned()
+        })
+        .collect()
+}
+
 fn unavailable(adapter: &impl RuntimeLayoutAdapter) -> RuntimePreflightError {
     match preflight_with_limits(adapter, FAST_LIMITS) {
         RuntimePreflight::Unavailable(error) => error,
@@ -355,10 +409,18 @@ fn unavailable(adapter: &impl RuntimeLayoutAdapter) -> RuntimePreflightError {
     }
 }
 
+#[cfg(feature = "runtime-bundled")]
+fn no_fallback_bundled_adapter(tree: &CopiedTree) -> TauriResourceRuntimeLayoutAdapter {
+    TauriResourceRuntimeLayoutAdapter::with_system_executable_selector(
+        tree.resource_root.clone(),
+        UnexpectedSystemSelection,
+    )
+}
+
 #[test]
 fn copied_system_tree_observes_ready_protocol_timeout_and_output() {
     #[cfg(all(target_os = "linux", feature = "runtime-system"))]
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     #[cfg(feature = "runtime-system")]
     {
         let tree = copied_tree("system", "ready");
@@ -393,7 +455,7 @@ fn copied_system_tree_observes_ready_protocol_timeout_and_output() {
 #[test]
 fn system_candidates_cover_missing_incompatible_and_vendor_versions() {
     #[cfg(all(target_os = "linux", feature = "runtime-system"))]
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     let mut node_missing = copied_tree("system", "ready");
     node_missing.node = node_missing.runtime_root().join("bin/missing-node");
     assert_eq!(
@@ -486,9 +548,40 @@ fn system_candidates_cover_missing_incompatible_and_vendor_versions() {
 
 #[cfg(feature = "runtime-system")]
 #[test]
+fn system_selector_errors_keep_priority_over_a_missing_manifest_sidecar() {
+    #[cfg(target_os = "linux")]
+    let _lock = lock_runtime_layout_test();
+
+    let node_missing = copied_tree("system", "ready");
+    fs::remove_file(node_missing.runtime_root().join("sidecar-ready.js"))
+        .expect("remove system manifest-owned sidecar");
+    let node_missing_adapter = TauriResourceRuntimeLayoutAdapter::with_system_executable_selector(
+        node_missing.resource_root.clone(),
+        MissingSystemExecutableSelector { missing: "node" },
+    );
+    assert_eq!(
+        unavailable(&node_missing_adapter).code,
+        RuntimePreflightErrorCode::NodeUnavailable
+    );
+
+    let git_missing = copied_tree("system", "ready");
+    fs::remove_file(git_missing.runtime_root().join("sidecar-ready.js"))
+        .expect("remove system manifest-owned sidecar");
+    let git_missing_adapter = TauriResourceRuntimeLayoutAdapter::with_system_executable_selector(
+        git_missing.resource_root.clone(),
+        MissingSystemExecutableSelector { missing: "git" },
+    );
+    assert_eq!(
+        unavailable(&git_missing_adapter).code,
+        RuntimePreflightErrorCode::GitUnavailable
+    );
+}
+
+#[cfg(feature = "runtime-system")]
+#[test]
 fn system_preflight_observes_the_restricted_environment_in_real_probe_children() {
     #[cfg(all(target_os = "linux", feature = "runtime-system"))]
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     let mut tree = copied_tree("system", "env-check");
     tree.node = copy_fixture_named(&tree, "node-env-check-fixture");
     tree.git = copy_fixture_named(&tree, "git-env-check-fixture");
@@ -502,7 +595,7 @@ fn system_preflight_observes_the_restricted_environment_in_real_probe_children()
 #[cfg(all(target_os = "linux", feature = "runtime-system"))]
 #[test]
 fn system_preflight_removes_mixed_case_ambient_runtime_keys_in_real_children() {
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     let ambient = AmbientEnvironmentGuard::install(&[
         ("nOdE_OPTIONS".into(), "unsafe-node-options".into()),
         ("nOdE_extra_ca_certs".into(), "unsafe-node-certs".into()),
@@ -535,7 +628,7 @@ fn system_preflight_removes_mixed_case_ambient_runtime_keys_in_real_children() {
 #[test]
 fn system_preflight_selects_each_program_once_before_validation_and_reuses_the_frozen_plan() {
     #[cfg(all(target_os = "linux", feature = "runtime-system"))]
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     let tree = copied_tree("system", "ready");
     let events = Arc::new(Mutex::new(Vec::new()));
     let node = Arc::new(Mutex::new(tree.node.clone()));
@@ -592,7 +685,7 @@ fn system_preflight_selects_each_program_once_before_validation_and_reuses_the_f
 #[cfg(all(target_os = "linux", feature = "runtime-system"))]
 #[test]
 fn system_preflight_is_independent_of_the_desktop_process_cwd() {
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     let tree = copied_tree("system", "ready");
     let cwd = tree
         .resource_root
@@ -617,10 +710,27 @@ fn copied_bundled_tree_observes_ready_and_never_falls_back_to_system() {
     #[cfg(feature = "runtime-bundled")]
     {
         let tree = copied_tree("bundled", "ready");
+        let adapter = no_fallback_bundled_adapter(&tree);
         assert!(matches!(
-            preflight_with_limits(&tree, FAST_LIMITS),
+            preflight_with_limits(&adapter, FAST_LIMITS),
             RuntimePreflight::Ready(_)
         ));
+
+        let missing_git = copied_tree("bundled", "ready");
+        fs::remove_file(&missing_git.git).expect("remove manifest-owned Git");
+        let adapter = no_fallback_bundled_adapter(&missing_git);
+        assert_eq!(
+            unavailable(&adapter).code,
+            RuntimePreflightErrorCode::RuntimeResourceUnavailable
+        );
+
+        let missing_sidecar = copied_tree("bundled", "ready");
+        fs::remove_file(&missing_sidecar.sidecar).expect("remove manifest-owned sidecar");
+        let adapter = no_fallback_bundled_adapter(&missing_sidecar);
+        assert_eq!(
+            unavailable(&adapter).code,
+            RuntimePreflightErrorCode::RuntimeResourceUnavailable
+        );
     }
     #[cfg(feature = "runtime-system")]
     {
@@ -630,6 +740,149 @@ fn copied_bundled_tree_observes_ready_and_never_falls_back_to_system() {
             RuntimePreflightErrorCode::LayoutMismatch
         );
     }
+}
+
+#[cfg(feature = "runtime-bundled")]
+#[test]
+fn bundled_preflight_covers_protocol_timeout_output_shutdown_and_descendant_cleanup() {
+    #[cfg(target_os = "linux")]
+    let _lock = lock_runtime_layout_test();
+
+    for (behavior, code) in [
+        (
+            "malformed",
+            RuntimePreflightErrorCode::SidecarProtocolInvalid,
+        ),
+        ("timeout", RuntimePreflightErrorCode::SidecarReadyTimeout),
+        (
+            "output",
+            RuntimePreflightErrorCode::SidecarOutputLimitExceeded,
+        ),
+        (
+            "no-shutdown",
+            RuntimePreflightErrorCode::SidecarShutdownFailed,
+        ),
+        ("no-exit", RuntimePreflightErrorCode::SidecarShutdownFailed),
+    ] {
+        let tree = copied_tree("bundled", behavior);
+        assert_eq!(unavailable(&tree).code, code, "bundled sidecar {behavior}");
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let tree = copied_tree("bundled", "descendant");
+        let marker = tree.runtime_root().join("descendant-pid");
+        let error = unavailable(&tree);
+        assert_eq!(error.code, RuntimePreflightErrorCode::SidecarReadyTimeout);
+        assert!(error.cleanup_incomplete);
+        let pid = fs::read_to_string(marker).expect("fixture recorded live descendant pid");
+        for _ in 0..20 {
+            let status = fs::read_to_string(Path::new("/proc").join(pid.trim()).join("status"));
+            if status.is_err() || status.is_ok_and(|status| status.contains("State:\tZ")) {
+                return;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        panic!("owned process adapter left the bundled fixture descendant alive");
+    }
+}
+
+#[cfg(feature = "runtime-bundled")]
+#[test]
+fn bundled_git_uses_the_shared_compatibility_policy_and_requires_standard_name() {
+    #[cfg(target_os = "linux")]
+    let _lock = lock_runtime_layout_test();
+
+    for fixture_name in [
+        "git-floor-fixture",
+        "git-ceiling-fixture",
+        "git-apple-fixture",
+        "git-windows-fixture",
+        "git-vendor-fixture",
+    ] {
+        let mut tree = copied_tree("bundled", "ready");
+        let git = copy_git_fixture_named(&tree, fixture_name);
+        tree.git = git.clone();
+        assert_eq!(
+            tree.git, git,
+            "the bundled manifest must select the copied standard-named Git"
+        );
+        assert!(
+            matches!(
+                preflight_with_limits(&tree, FAST_LIMITS),
+                RuntimePreflight::Ready(_)
+            ),
+            "Git fixture {fixture_name} should be accepted by BundledRuntime"
+        );
+    }
+
+    for (fixture_name, expected) in [
+        (
+            "git-malformed-fixture",
+            RuntimePreflightErrorCode::GitVersionUnreadable,
+        ),
+        (
+            "git-incompatible-fixture",
+            RuntimePreflightErrorCode::UnsupportedGitVersion,
+        ),
+        (
+            "git-upper-bound-fixture",
+            RuntimePreflightErrorCode::UnsupportedGitVersion,
+        ),
+    ] {
+        let tree = copied_tree("bundled", "ready");
+        copy_git_fixture_named(&tree, fixture_name);
+        assert_eq!(
+            unavailable(&tree).code,
+            expected,
+            "Git fixture {fixture_name}"
+        );
+    }
+
+    let tree = copied_tree("bundled", "ready");
+    fs::write(
+        tree.manifest(),
+        r#"{"layoutVersion":1,"layout":{"type":"bundled"},"sidecar":{"type":"embeddedExecutable","path":["bin","sidecar-ready"]},"git":{"path":["bin","private-git"]}}"#,
+    )
+    .expect("write non-standard bundled Git manifest");
+    assert_eq!(
+        unavailable(&tree).code,
+        RuntimePreflightErrorCode::ManifestInvalid
+    );
+}
+
+#[cfg(all(feature = "runtime-bundled", target_os = "linux"))]
+#[test]
+fn bundled_preflight_is_cwd_independent_and_removes_only_runtime_ambient_keys() {
+    let _lock = lock_runtime_layout_test();
+    let ambient = AmbientEnvironmentGuard::install(&[
+        ("nOdE_OPTIONS".into(), "unsafe-node-options".into()),
+        ("nOdE_extra_ca_certs".into(), "unsafe-node-certs".into()),
+        ("path".into(), "ambient-lower-path".into()),
+        ("PaTh".into(), "ambient-mixed-path".into()),
+        ("GIT_TEST_SENTINEL".into(), "retained-for-history".into()),
+    ]);
+    let tree = copied_tree("bundled", "env-check");
+    let cwd = tree
+        .resource_root
+        .parent()
+        .expect("temporary parent")
+        .join("unrelated-cwd");
+    fs::create_dir(&cwd).expect("create unrelated cwd");
+    let adapter = UnrelatedCwdTree {
+        tree,
+        process: UnrelatedCwdProcess(cwd.clone()),
+    };
+    let ready = matches!(
+        preflight_with_limits(&adapter, FAST_LIMITS),
+        RuntimePreflight::Ready(_)
+    );
+    drop(ambient);
+    fs::remove_dir_all(cwd).expect("remove unrelated cwd");
+    assert!(
+        ready,
+        "bundled preflight should use absolute installed entries"
+    );
 }
 
 #[test]
@@ -646,7 +899,7 @@ fn tauri_resource_adapter_uses_the_fixed_runtime_manifest_location() {
 #[cfg(all(target_os = "linux", feature = "runtime-system"))]
 #[test]
 fn tauri_system_runtime_reaches_real_selectors_before_sidecar_preflight() {
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     let tree = copied_tree("system", "ready");
 
     assert_eq!(
@@ -658,7 +911,7 @@ fn tauri_system_runtime_reaches_real_selectors_before_sidecar_preflight() {
 #[cfg(all(target_os = "linux", feature = "runtime-system"))]
 #[test]
 fn staged_linux_system_runtime_preflights_the_installed_sidecar_without_a_session() {
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     let resource_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug");
     let adapter = TauriResourceRuntimeLayoutAdapter::new(resource_root);
 
@@ -722,7 +975,7 @@ fn strict_manifest_rejects_unknown_layout_mismatch_duplicate_keys_and_unsafe_seg
 #[test]
 fn copied_system_tree_accepts_an_absolute_noncanonical_resource_root() {
     #[cfg(all(target_os = "linux", feature = "runtime-system"))]
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     let mut tree = copied_tree("system", "ready");
     tree.resource_root.push(".");
 
@@ -736,7 +989,7 @@ fn copied_system_tree_accepts_an_absolute_noncanonical_resource_root() {
 #[test]
 fn injected_process_adapter_preserves_the_primary_protocol_error() {
     #[cfg(all(target_os = "linux", feature = "runtime-system"))]
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     INCOMPLETE_CLEANUP_CALLS.store(0, Ordering::Relaxed);
     let tree = IncompleteCleanupTree(copied_tree("system", "malformed"));
     match preflight_with_limits(&tree, FAST_LIMITS) {
@@ -754,7 +1007,7 @@ fn injected_process_adapter_preserves_the_primary_protocol_error() {
 #[cfg(all(target_os = "linux", feature = "runtime-system"))]
 #[test]
 fn linux_owned_process_adapter_reaps_a_real_live_descendant_after_timeout() {
-    let _lock = lock_runtime_system_test();
+    let _lock = lock_runtime_layout_test();
     let tree = copied_tree("system", "descendant");
     let marker = tree.runtime_root().join("descendant-pid");
     let error = unavailable(&tree);
