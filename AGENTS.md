@@ -88,13 +88,11 @@ If a change touches `AGENTS.md` as a secondary part of code or architecture work
 Use a multi-line commit message when a change spans multiple Modules or when the reason is not obvious from the diff:
 
 ```txt
-refactor(core,web): route current save rendering through semantic snapshots
+feat(desktop): complete bundled runtime vertical slice
 
-Move the existing Web UI save interpretation behind the core semantic
-Interface so CLI and Web can share the same behavior.
+Resolve manifest-owned bundled sidecar and private Git entries through the shared runtime layout policy. Reuse the frozen preflight plan for business sidecars, preserve system-runtime behavior, and qualify the production-shaped Linux adapter path with environment and lifecycle coverage.
 
-This preserves current static upload behavior while creating the seam needed
-for history snapshots in later changes.
+Closes #64
 ```
 
 Choose the right place for explanation:
