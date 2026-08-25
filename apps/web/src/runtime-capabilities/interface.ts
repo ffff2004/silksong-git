@@ -227,6 +227,10 @@ export type RuntimeCapabilities =
       readonly getRepoSessionConnection: () =>
         | Promise<RepoSessionConnection>
         | RepoSessionConnection;
+      readonly getWatcherActivityNotificationsEnabled?: () => Promise<boolean>;
+      readonly setWatcherActivityNotificationsEnabled?: (
+        enabled: boolean,
+      ) => Promise<void>;
       readonly kind: "desktop";
       readonly startup: Extract<
         DesktopRuntimeStartup,

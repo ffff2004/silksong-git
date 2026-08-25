@@ -19,6 +19,10 @@ export function createDesktopRuntimeCapabilities(input: {
   readonly getRepoSessionConnection: () =>
     | Promise<RepoSessionConnection>
     | RepoSessionConnection;
+  readonly getWatcherActivityNotificationsEnabled?: () => Promise<boolean>;
+  readonly setWatcherActivityNotificationsEnabled?: (
+    enabled: boolean,
+  ) => Promise<void>;
   readonly openExternalRepository: () => Promise<OpenExternalRepositoryResult>;
   readonly initializeManagedRepository?: () => Promise<ManagedInitializationResult>;
   readonly importRepository?: () => Promise<ImportRepositoryResult>;
@@ -57,6 +61,10 @@ export function createDesktopRuntimeCapabilities(input: {
 
   return {
     getRepoSessionConnection: input.getRepoSessionConnection,
+    getWatcherActivityNotificationsEnabled:
+      input.getWatcherActivityNotificationsEnabled,
+    setWatcherActivityNotificationsEnabled:
+      input.setWatcherActivityNotificationsEnabled,
     closeRepository: input.closeRepository,
     getRepositoryLibrary: input.getRepositoryLibrary,
     archiveRepository: input.archiveRepository,

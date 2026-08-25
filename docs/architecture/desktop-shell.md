@@ -114,8 +114,9 @@ direct managed child, run one explicit archive-and-reinitialize managed-
 repository workflow, import one external repository into the managed library,
 open an external
 repository, explicitly reopen an invalidated in-memory selection, obtain the
-current Repo Session connection, and start or stop watching for that current
-session. It grants no
+current Repo Session connection, start or stop watching for that current
+session, read or update the global watcher-activity notification preference,
+and receive Desktop lifecycle events. It grants no
 generic filesystem, shell, process, arbitrary HTTP, or native command
 Interface. The CSP allows bundled application resources, the Tauri IPC origin,
 and IPv4-loopback connections.
@@ -289,6 +290,17 @@ The exact wire and exit contract belongs to the
 [Desktop Sidecar Process Protocol](../reference/desktop-sidecar-protocol.md)
 and follows
 [ADR-0022](../adr/0022-use-a-private-versioned-desktop-sidecar.md).
+
+The Desktop shell drains safe watcher observation and fatal-stop events on an
+independent sidecar event pump, so activity is handled while the WebView is
+minimized or not on the watcher route. It stores the global watcher-activity
+notification preference in App-local `settings.json`, outside every Project
+Config and Save History Repository. The Rust shell reads that preference,
+suppresses ordinary activity while the main window is foregrounded or the
+preference is disabled, and sends notifications through the Tauri notification
+plugin's native Rust API. A fatal watcher stop is always reported. The WebView
+only reads and updates the preference; it is not part of the notification
+delivery path.
 
 The private `SidecarSupervisor` is the only stdout reader. It correlates JSONL
 responses by request ID, consumes safe lifecycle events, drains stderr, and

@@ -26,6 +26,8 @@ fn main() {
             "desktop_reopen_repository",
             "desktop_start_watching",
             "desktop_stop_watching",
+            "desktop_get_watcher_activity_notifications_enabled",
+            "desktop_set_watcher_activity_notifications_enabled",
         ]),
     ))
     .expect("failed to build Tauri application metadata");

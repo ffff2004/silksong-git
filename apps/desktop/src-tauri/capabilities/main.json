@@ -20,6 +20,8 @@
     "allow-desktop-reopen-repository",
     "allow-desktop-start-watching",
     "allow-desktop-stop-watching",
+    "allow-desktop-get-watcher-activity-notifications-enabled",
+    "allow-desktop-set-watcher-activity-notifications-enabled",
     "core:event:default"
   ]
 }

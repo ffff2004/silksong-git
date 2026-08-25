@@ -1,10 +1,11 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 
 import type {
   LocalHttpCheckpointResult,
   LocalHttpWatcherStatus,
 } from "@silksong-git/repo-session/http-wire";
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
+import { useRuntimeCapabilities } from "../../state/runtime-capabilities.tsx";
 import buttonStyles from "../../ui/Button.module.css";
 import viewStyles from "../../ui/View.module.css";
 import { LocalRoute } from "../local-history/LocalRoute.tsx";
@@ -19,6 +20,7 @@ export function WatcherRoute() {
 
 function WatcherView() {
   const localHistory = useLocalHistoryStore();
+  const runtimeCapabilities = useRuntimeCapabilities();
   const [checkpointMessage, setCheckpointMessage] = createSignal("");
   const [allowUnchanged, setAllowUnchanged] = createSignal(false);
   const [checkpointPending, setCheckpointPending] = createSignal(false);
@@ -27,6 +29,51 @@ function WatcherView() {
   const [checkpointError, setCheckpointError] = createSignal<string>();
   const [watchControlPending, setWatchControlPending] = createSignal(false);
   const [watchControlError, setWatchControlError] = createSignal<string>();
+  const [notificationsEnabled, setNotificationsEnabled] =
+    createSignal<boolean>();
+  const [notificationSettingPending, setNotificationSettingPending] =
+    createSignal(false);
+  const [notificationSettingError, setNotificationSettingError] =
+    createSignal<string>();
+  const notificationSettings =
+    runtimeCapabilities.kind === "desktop"
+    && typeof runtimeCapabilities.getWatcherActivityNotificationsEnabled
+      === "function"
+    && typeof runtimeCapabilities.setWatcherActivityNotificationsEnabled
+      === "function"
+      ? {
+          get: runtimeCapabilities.getWatcherActivityNotificationsEnabled,
+          set: runtimeCapabilities.setWatcherActivityNotificationsEnabled,
+        }
+      : undefined;
+
+  onMount(() => {
+    if (notificationSettings === undefined) {
+      return;
+    }
+    notificationSettings
+      .get()
+      .then(setNotificationsEnabled)
+      .catch((error: unknown) => {
+        setNotificationSettingError(getNotificationSettingErrorMessage(error));
+      });
+  });
+
+  const setNotificationPreference = async (enabled: boolean) => {
+    if (notificationSettings === undefined) {
+      return;
+    }
+    setNotificationSettingPending(true);
+    setNotificationSettingError(undefined);
+    try {
+      await notificationSettings.set(enabled);
+      setNotificationsEnabled(enabled);
+    } catch (error) {
+      setNotificationSettingError(getNotificationSettingErrorMessage(error));
+    } finally {
+      setNotificationSettingPending(false);
+    }
+  };
   const isReadOnly = () => {
     const connection = localHistory.connection();
     return (
@@ -92,6 +139,34 @@ function WatcherView() {
   return (
     <section class={viewStyles["view"]} data-testid="watcher-view">
       <h2 class={viewStyles["heading"]}>Watcher</h2>
+      <Show
+        when={
+          notificationSettings !== undefined
+          && notificationsEnabled() !== undefined
+        }
+      >
+        <label>
+          <input
+            type="checkbox"
+            checked={notificationsEnabled()}
+            disabled={notificationSettingPending()}
+            onChange={(event) => {
+              setNotificationPreference(event.currentTarget.checked).catch(
+                (error: unknown) => {
+                  console.error(
+                    "[watcher] Unexpected notification preference failure:",
+                    error,
+                  );
+                },
+              );
+            }}
+          />
+          Notify me about watcher activity (Desktop-wide)
+        </label>
+      </Show>
+      <Show when={notificationSettingError()}>
+        {(message) => <p role="alert">{message()}</p>}
+      </Show>
       <Show when={isReadOnly()}>
         <p>Archived · Read-only. Watching and checkpoints are unavailable.</p>
       </Show>
@@ -254,6 +329,12 @@ function getWatchControlErrorMessage(
   return action === "start"
     ? "Watching could not be started."
     : "Watching could not be stopped.";
+}
+
+function getNotificationSettingErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "The Desktop preference could not be saved.";
 }
 
 function getWatcherErrorMessage(

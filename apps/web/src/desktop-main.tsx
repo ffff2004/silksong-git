@@ -33,6 +33,13 @@ const desktopRuntimeStartup = await invoke<DesktopRuntimeStartup>(
 const desktopRuntimeCapabilities = createDesktopRuntimeCapabilities({
   getRepoSessionConnection: async () =>
     await invoke<RepoSessionConnection>("desktop_get_repo_session_connection"),
+  getWatcherActivityNotificationsEnabled: async () =>
+    await invoke<boolean>("desktop_get_watcher_activity_notifications_enabled"),
+  setWatcherActivityNotificationsEnabled: async (enabled) => {
+    await invoke("desktop_set_watcher_activity_notifications_enabled", {
+      enabled,
+    });
+  },
   openExternalRepository: async () =>
     await invoke<OpenExternalRepositoryResult>(
       "desktop_open_external_repository",

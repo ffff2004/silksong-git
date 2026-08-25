@@ -110,6 +110,52 @@ struct ManagedSession {
     lifecycle: RepositoryLifecycle,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub(crate) enum WatcherActivityEvent {
+    #[serde(rename = "watcher.observation")]
+    Observation {
+        cause: WatcherObservationCause,
+        status: WatcherObservationStatus,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<WatcherObservationReason>,
+    },
+    #[serde(rename = "watcher.failed")]
+    Failed { reason: WatcherFailureReason },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum WatcherObservationCause {
+    Startup,
+    Change,
+    Deferred,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum WatcherObservationStatus {
+    Committed,
+    Skipped,
+    WatcherError,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum WatcherObservationReason {
+    Unchanged,
+    MinimumCommitInterval,
+    DecodeFailure,
+    ReadFailure,
+    StabilityTimeout,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum WatcherFailureReason {
+    WatchBackendFailure,
+}
+
 struct PendingRepositoryMigration {
     sidecar: SidecarSupervisor,
 }
@@ -2016,22 +2062,41 @@ impl DesktopWorkflow {
         if state.invalidated.is_some() {
             return Err(DesktopRuntimeError::Invalidated);
         }
+        poll_current_session_sidecar(&mut state)?;
+        let session = state
+            .current_session
+            .as_ref()
+            .ok_or(DesktopRuntimeError::NoOpenSession)?;
+        Ok(session.connection.clone())
+    }
+
+    /// Drains sidecar lifecycle events without making the Desktop WebView poll for them.
+    /// Watcher ownership remains in Repo Session; this only projects safe activity to the
+    /// native shell and updates the App-owned watcher flag after a fatal backend stop.
+    pub(crate) fn poll_sidecar_events(
+        &self,
+    ) -> Result<Vec<WatcherActivityEvent>, DesktopRuntimeError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| DesktopRuntimeError::Unavailable)?;
+        if state.current_session.is_none() {
+            return Ok(Vec::new());
+        }
+        poll_current_session_sidecar(&mut state)?;
         let session = state
             .current_session
             .as_mut()
             .ok_or(DesktopRuntimeError::NoOpenSession)?;
-        if let Err(error) = session.sidecar.poll() {
-            let repo_path = session.repo_path.clone();
-            let lifecycle = session.lifecycle;
-            state.current_session = None;
-            state.invalidated = Some(InvalidatedSession {
-                _diagnostic: diagnostic_for(&error),
-                repo_path,
-                lifecycle,
-            });
-            return Err(error);
+
+        let events = session.sidecar.take_events();
+        if events
+            .iter()
+            .any(|event| matches!(event, WatcherActivityEvent::Failed { .. }))
+        {
+            session.watching = false;
         }
-        Ok(session.connection.clone())
+        Ok(events)
     }
 
     pub(crate) fn control_watcher(&self, command_type: &str) -> Result<(), DesktopRuntimeError> {
@@ -4490,6 +4555,7 @@ struct SidecarSupervisor {
     output: Receiver<SidecarOutput>,
     request_sequence: u64,
     mutation_active: bool,
+    pending_events: Vec<WatcherActivityEvent>,
 }
 
 enum SidecarOutput {
@@ -4555,6 +4621,7 @@ impl SidecarSupervisor {
             output: output_receiver,
             request_sequence: 0,
             mutation_active: false,
+            pending_events: Vec::new(),
         };
 
         let ready = process.next_message()?;
@@ -4596,10 +4663,14 @@ impl SidecarSupervisor {
             }
             match message.get("kind").and_then(Value::as_str) {
                 Some("event") => {
-                    self.handle_event(&message).map_err(|error| match error {
-                        DesktopRuntimeError::Protocol(_) => SidecarError::Protocol,
-                        _ => SidecarError::Io,
-                    })?;
+                    if let Some(event) =
+                        self.handle_event(&message).map_err(|error| match error {
+                            DesktopRuntimeError::Protocol(_) => SidecarError::Protocol,
+                            _ => SidecarError::Io,
+                        })?
+                    {
+                        self.pending_events.push(event);
+                    }
                     continue;
                 }
                 Some("response") => {
@@ -4659,7 +4730,9 @@ impl SidecarSupervisor {
                             "The Desktop sidecar sent an unexpected response.".into(),
                         ));
                     }
-                    self.handle_event(&message)?;
+                    if let Some(event) = self.handle_event(&message)? {
+                        self.pending_events.push(event);
+                    }
                 }
                 Ok(SidecarOutput::Eof) | Err(TryRecvError::Disconnected) => {
                     return Err(DesktopRuntimeError::SidecarUnavailable);
@@ -4687,7 +4760,14 @@ impl SidecarSupervisor {
         self.mutation_active
     }
 
-    fn handle_event(&mut self, message: &Value) -> Result<(), DesktopRuntimeError> {
+    fn take_events(&mut self) -> Vec<WatcherActivityEvent> {
+        std::mem::take(&mut self.pending_events)
+    }
+
+    fn handle_event(
+        &mut self,
+        message: &Value,
+    ) -> Result<Option<WatcherActivityEvent>, DesktopRuntimeError> {
         match message.pointer("/event/type").and_then(Value::as_str) {
             Some("mutation.activity") => {
                 match message.pointer("/event/status").and_then(Value::as_str) {
@@ -4699,17 +4779,17 @@ impl SidecarSupervisor {
                         ));
                     }
                 }
+                Ok(None)
             }
-            Some("session.failed") => return Err(DesktopRuntimeError::SidecarUnavailable),
-            Some("process.ready") | Some("watcher.observation") | Some("watcher.failed") => {}
-            Some(_) => {} // Forward-compatible events are safe to ignore.
-            None => {
-                return Err(DesktopRuntimeError::Protocol(
-                    "The Desktop sidecar sent an invalid event.".into(),
-                ));
-            }
+            Some("session.failed") => Err(DesktopRuntimeError::SidecarUnavailable),
+            Some("process.ready") => Ok(None),
+            Some("watcher.observation") => parse_watcher_observation_event(message).map(Some),
+            Some("watcher.failed") => parse_watcher_failed_event(message).map(Some),
+            Some(_) => Ok(None), // Forward-compatible events are safe to ignore.
+            None => Err(DesktopRuntimeError::Protocol(
+                "The Desktop sidecar sent an invalid event.".into(),
+            )),
         }
-        Ok(())
     }
 
     fn shutdown(&mut self) -> Result<(), DesktopRuntimeError> {
@@ -4736,6 +4816,106 @@ impl SidecarSupervisor {
     fn shutdown_without_session(&mut self) {
         let _ = self.shutdown();
     }
+}
+
+fn parse_watcher_observation_event(
+    message: &Value,
+) -> Result<WatcherActivityEvent, DesktopRuntimeError> {
+    let cause = match message.pointer("/event/cause").and_then(Value::as_str) {
+        Some("startup") => WatcherObservationCause::Startup,
+        Some("change") => WatcherObservationCause::Change,
+        Some("deferred") => WatcherObservationCause::Deferred,
+        _ => {
+            return Err(DesktopRuntimeError::Protocol(
+                "The Desktop sidecar sent an invalid watcher observation cause.".into(),
+            ));
+        }
+    };
+    let status = message.pointer("/event/status").and_then(Value::as_str);
+    let reason = message.pointer("/event/reason").and_then(Value::as_str);
+    let (status, reason) = match status {
+        Some("committed") => (WatcherObservationStatus::Committed, None),
+        Some("skipped") => (
+            WatcherObservationStatus::Skipped,
+            Some(match reason {
+                Some("unchanged") => WatcherObservationReason::Unchanged,
+                Some("minimumCommitInterval") => WatcherObservationReason::MinimumCommitInterval,
+                _ => {
+                    return Err(DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar sent an invalid skipped observation reason.".into(),
+                    ));
+                }
+            }),
+        ),
+        Some("watcherError") => (
+            WatcherObservationStatus::WatcherError,
+            Some(match reason {
+                Some("decodeFailure") => WatcherObservationReason::DecodeFailure,
+                Some("readFailure") => WatcherObservationReason::ReadFailure,
+                Some("stabilityTimeout") => WatcherObservationReason::StabilityTimeout,
+                _ => {
+                    return Err(DesktopRuntimeError::Protocol(
+                        "The Desktop sidecar sent an invalid watcher error reason.".into(),
+                    ));
+                }
+            }),
+        ),
+        _ => {
+            return Err(DesktopRuntimeError::Protocol(
+                "The Desktop sidecar sent an invalid watcher observation status.".into(),
+            ));
+        }
+    };
+
+    Ok(WatcherActivityEvent::Observation {
+        cause,
+        status,
+        reason,
+    })
+}
+
+fn parse_watcher_failed_event(
+    message: &Value,
+) -> Result<WatcherActivityEvent, DesktopRuntimeError> {
+    if message.pointer("/event/reason").and_then(Value::as_str) != Some("watchBackendFailure") {
+        return Err(DesktopRuntimeError::Protocol(
+            "The Desktop sidecar sent an invalid watcher failure reason.".into(),
+        ));
+    }
+
+    Ok(WatcherActivityEvent::Failed {
+        reason: WatcherFailureReason::WatchBackendFailure,
+    })
+}
+
+fn poll_current_session_sidecar(
+    state: &mut DesktopWorkflowState,
+) -> Result<(), DesktopRuntimeError> {
+    let poll_result = {
+        let session = state
+            .current_session
+            .as_mut()
+            .ok_or(DesktopRuntimeError::NoOpenSession)?;
+        session.sidecar.poll()
+    };
+
+    if let Err(error) = poll_result {
+        invalidate_current_session(state, &error);
+        return Err(error);
+    }
+
+    Ok(())
+}
+
+fn invalidate_current_session(state: &mut DesktopWorkflowState, error: &DesktopRuntimeError) {
+    let Some(session) = state.current_session.take() else {
+        return;
+    };
+    state.invalidated = Some(InvalidatedSession {
+        _diagnostic: diagnostic_for(error),
+        repo_path: session.repo_path,
+        lifecycle: session.lifecycle,
+    });
 }
 
 fn drain_sidecar_diagnostics(stderr: ChildStderr) {

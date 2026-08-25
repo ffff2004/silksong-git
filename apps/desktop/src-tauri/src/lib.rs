@@ -3,6 +3,8 @@ compile_error!("runtime-system and runtime-bundled are mutually exclusive");
 #[cfg(not(any(feature = "runtime-system", feature = "runtime-bundled")))]
 compile_error!("one runtime layout feature must be selected");
 
+mod app_settings;
+mod desktop_notifications;
 mod desktop_runtime;
 pub mod desktop_sidecar_protocol {
     include!(concat!(env!("OUT_DIR"), "/desktop_sidecar_protocol.rs"));
@@ -12,18 +14,20 @@ pub mod runtime_layout;
 mod save_location;
 mod security;
 
-use std::thread;
+use std::{thread, time::Duration};
 
 use serde::Serialize;
 use tauri::{
-    Emitter, Manager, State,
+    Emitter, Manager, Runtime, State,
     menu::{Menu, MenuItem, Submenu},
     utils::config::WebviewUrl,
     webview::{NewWindowResponse, WebviewWindowBuilder},
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+use tauri_plugin_notification::init as init_notification_plugin;
 use tauri_plugin_opener::OpenerExt;
 
+use crate::app_settings::AppSettingsStore;
 use crate::desktop_runtime::DesktopWorkflow;
 use crate::runtime_layout::{
     RuntimeLaunchPlan, RuntimePreflight, RuntimePreflightError, RuntimePreflightErrorCode,
@@ -123,6 +127,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(init_notification_plugin())
         .manage(DesktopWorkflow::default())
         .on_menu_event(|app, event| {
             match event.id().as_ref() {
@@ -162,6 +167,8 @@ pub fn run() {
             desktop_runtime::desktop_reopen_repository,
             desktop_runtime::desktop_start_watching,
             desktop_runtime::desktop_stop_watching,
+            desktop_get_watcher_activity_notifications_enabled,
+            desktop_set_watcher_activity_notifications_enabled,
         ])
         .setup(|app| {
             // This is intentionally before window construction. The WebView
@@ -186,6 +193,7 @@ pub fn run() {
                     NewWindowResponse::Deny
                 })
                 .build()?;
+            start_watcher_event_pump(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -468,6 +476,59 @@ fn focus_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let _ = window.set_focus();
 }
 
+#[tauri::command]
+fn desktop_get_watcher_activity_notifications_enabled<R: Runtime>(
+    app: tauri::AppHandle<R>,
+) -> Result<bool, String> {
+    app_settings(&app).map(|settings| settings.watcher_activity_notifications_enabled())
+}
+
+#[tauri::command]
+fn desktop_set_watcher_activity_notifications_enabled<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    enabled: bool,
+) -> Result<(), String> {
+    app_settings(&app)
+        .map_err(|error| error.to_string())?
+        .set_watcher_activity_notifications_enabled(enabled)
+        .map_err(|error| format!("Could not persist Desktop notification settings: {error}"))
+}
+
+fn app_settings<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<AppSettingsStore, String> {
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("Could not resolve Desktop settings directory: {error}"))?;
+    Ok(AppSettingsStore::new(root.join("settings.json")))
+}
+
+fn start_watcher_event_pump<R: Runtime>(app: &tauri::AppHandle<R>) {
+    let app = app.clone();
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_millis(100));
+            if app.get_webview_window(MAIN_WINDOW_LABEL).is_none() {
+                break;
+            }
+
+            let events = match app.state::<DesktopWorkflow>().poll_sidecar_events() {
+                Ok(events) => events,
+                Err(_) => {
+                    update_repository_menu(&app);
+                    continue;
+                }
+            };
+            if events.is_empty() {
+                continue;
+            }
+            for event in events {
+                desktop_notifications::notify_watcher_activity(&app, event);
+            }
+            update_repository_menu(&app);
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -547,6 +608,8 @@ mod tests {
                 "allow-desktop-reopen-repository",
                 "allow-desktop-start-watching",
                 "allow-desktop-stop-watching",
+                "allow-desktop-get-watcher-activity-notifications-enabled",
+                "allow-desktop-set-watcher-activity-notifications-enabled",
                 "core:event:default",
             ])
         );
