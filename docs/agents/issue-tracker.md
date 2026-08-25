@@ -1,90 +1,17 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues in `ffff2004/silksong-git`. Use the `gh` CLI for all operations.
+Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
+- **Read an issue**: `gh issue view <number> --json title,body,comments`, filtering comments by `jq` and also fetching labels.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
-- **Comment on an issue**: `gh issue comment <number> --body "..."`.
-- **Apply or remove labels**: `gh issue edit <number> --add-label "..."` or `--remove-label "..."`.
-- **Close**: `gh issue close <number> --comment "..."`.
+- **Comment on an issue**: `gh issue comment <number> --body "..."`
+- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `gh issue edit <number> --remove-label "..."`
+- **Close**: `gh issue close <number> --comment "..."`
 
-## Global frontier
-
-The global frontier is every open `ready-for-agent` issue that has no assignee
-and no reported blocker. It covers standalone issues and child tickets without
-requiring a repository-maintained initiative list:
-
-```sh
-gh issue list --state open --limit 1000 \
-  --search 'label:ready-for-agent no:assignee -is:blocked' \
-  --json number,title,labels,assignees
-```
-
-Treat this query as candidate discovery. Before claiming an issue, fetch its
-native dependency data and confirm every blocker is closed.
-
-## Generic ticket operations
-
-Fetch the complete human-facing ticket context:
-
-```sh
-gh issue view <number> --comments \
-  --json number,title,state,body,comments,labels,assignees
-```
-
-Fetch its parent, child summary, and dependency summary:
-
-```sh
-gh issue view <number> \
-  --json parent,subIssuesSummary,blockedBy,blocking
-```
-
-List the ticket's blockers and children:
-
-```sh
-gh issue view <number> --json blockedBy \
-  --jq '.blockedBy[] | {number, title, state}'
-gh issue view <number> --json subIssues \
-  --jq '.subIssues[] | {number, title, state}'
-```
-
-GitHub relationship writes use issue numbers (or issue URLs):
-
-- add a child with `gh issue edit <parent> --add-sub-issue <child>`;
-- add a blocker with `gh issue edit <ticket> --add-blocked-by <blocker>`; and
-- claim with
-  `gh issue edit <number> --add-assignee @me`.
-
-Create related issues before wiring relationships so every edge can use a real
-issue number.
-
-## Implementation lifecycle
-
-Before implementation:
-
-1. Fetch the ticket, comments, labels, assignee, parent, children, and blockers.
-2. Confirm it is open, `ready-for-agent`, unassigned, and has no open blocker.
-3. Read its Parent Spec and the relevant domain, Architecture, Reference, and ADR
-   authorities.
-4. Claim it. This is the session's first tracker write.
-5. Implement only its accepted scope and keep its acceptance criteria visible.
-
-If scope, acceptance, dependencies, or execution state changes, update GitHub
-when that change occurs. Record durable implemented behavior in the owning
-repository authority; do not maintain implementation logs in prose docs.
-
-On completion:
-
-1. Use `code-review` skill and sub-agents to check every satisfied acceptance criterion in the issue body.
-2. Comment with the commit SHA, exact verification commands and results,
-   authoritative documents changed, and links to non-blocking follow-ups.
-3. Remove the active workflow label such as `ready-for-agent`, then close the
-   issue. Keep its category label. A rejected issue instead retains `wontfix`.
-4. Close a Parent Spec only after all child tickets and final integration
-   verification are complete; add a parent-level completion summary first.
+Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
 ## Pull requests as a triage surface
 
@@ -92,41 +19,27 @@ On completion:
 
 When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
 
-- **Read a PR**: `gh pr view <number> --comments` and `gh pr diff <number>` for the diff.
-- **List external PRs for triage**: `gh pr list --state open --json number,title,body,labels,author,authorAssociation,comments`, then keep only `authorAssociation` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` and drop `OWNER`, `MEMBER`, and `COLLABORATOR`.
-- **Comment, label, or close**: use `gh pr comment`, `gh pr edit`, or `gh pr close`.
+- **Read a PR**: `gh pr view <number> --json title,body,comments` and `gh pr diff <number>` for the diff.
+- **List external PRs for triage**: `gh pr list --state open --json number,title,body,labels,author,authorAssociation,comments` then keep only `authorAssociation` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` (drop `OWNER`/`MEMBER`/`COLLABORATOR`).
+- **Comment / label / close**: `gh pr comment`, `gh pr edit --add-label`/`--remove-label`, `gh pr close`.
 
-GitHub shares one number space across issues and PRs, so a bare `#42` may be either. Resolve it with `gh pr view 42` and fall back to `gh issue view 42`.
+GitHub shares one number space across issues and PRs, so a bare `#42` may be either — resolve with `gh pr view 42` and fall back to `gh issue view 42`.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a GitHub issue in `ffff2004/silksong-git`.
+Create a GitHub issue.
 
 ## When a skill says "fetch the relevant ticket"
 
-Use the commands in [Generic ticket operations](#generic-ticket-operations),
-including native relationship and dependency reads.
-
-## Project-level rejected enhancements
-
-Use `.out-of-scope/<concept>.md` as the durable owner for an enhancement the
-project has explicitly decided not to support. Create the directory lazily when
-the first rejection is accepted, keep one concept per file, and record the
-rejected outcome, the reason, and links to relevant requests or decisions.
-
-Do not use this directory for deferred work, rejected implementation approaches,
-bugs, or behavior the project already supports. A spec's `Out of Scope` section
-applies only to that effort, and a Wayfinder map's `Out of Scope` section applies
-only to that destination. If the project reconsiders a rejected enhancement,
-remove its file before returning the outcome to tracker planning or triage.
+Run `gh issue view <number> --json title,body,comments`.
 
 ## Wayfinding operations
 
 Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
 
-- **Map**: a single issue labelled `wayfinder:map`, holding the Notes, Decisions-so-far, and Fog body. Create it with `gh issue create --label wayfinder:map`.
-- **Child ticket**: create an issue labelled `wayfinder:<type>` (`research`, `prototype`, `grilling`, or `task`), then link it to the map using the generic native sub-issue operation. Where sub-issues are unavailable, add it to a task list in the map body and put `Part of #<map>` at the top of the child body.
-- **Blocking**: use the generic native dependency operation. Where dependencies are unavailable, fall back to a `Blocked by: #<number>, #<number>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
-- **Frontier query**: list the map's open children, drop any with an open blocker or an assignee, and take the first in map order. Scope children through GitHub sub-issues when available or the map task list fallback otherwise.
-- **Claim**: use the generic claim operation before doing any ticket work.
-- **Resolve**: comment on the ticket with the answer, close it, then append a context pointer consisting of a gist and link to the map's Decisions-so-far.
+- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
+- **Child ticket**: create an issue linked to the map as a GitHub sub-issue with `gh issue create --parent <map-number> --label "wayfinder:<type>"`, or link an existing issue with `gh issue edit <child> --parent <map-number>` / `gh issue edit <map> --add-sub-issue <child>`. Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
+- **Blocking**: GitHub's **native issue dependencies** — the canonical, UI-visible representation. Add an edge with `gh issue edit <child> --add-blocked-by <blocker>` or `gh issue edit <blocker> --add-blocking <child>`; include `--blocked-by` or `--blocking` when creating an issue. No database ID lookup is required. Inspect relationships with `gh issue view <n> --json blockedBy,blocking`. Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
+- **Frontier query**: inspect the map's children with `gh issue view <map> --json subIssues`, then use `gh issue view <child> --json blockedBy,assignees` for each open child. Drop any with an open blocker or an assignee; first in map order wins.
+- **Claim**: `gh issue edit <n> --add-assignee @me` — the session's first write.
+- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
