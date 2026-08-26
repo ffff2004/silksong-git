@@ -54,13 +54,8 @@ history.
 
 ## Test Strategy
 
-Tests should verify behavior through public Interfaces:
-
-- `packages/core` tests use `createSemanticSnapshot` and `diffSemanticSnapshots`.
-- `packages/history` tests use the history Interface with temporary directories, real Git, and real SQLite.
-- `packages/repo-session` runtime behavior tests use the root Repo Session Interface with real History repositories and loopback HTTP. Tests for `./http-wire` and `./http-contract` may call those public contract subpaths directly.
-- Mocks are limited to true system boundaries such as time and watcher event delivery.
-- Tests should not assert internal helper calls, Git command calls, or SQLite table layout.
+Tests should verify behavior through public Interfaces of each module, not internal helpers.
+Mock only real system boundries.
 
 ## Commit Messages
 
