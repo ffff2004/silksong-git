@@ -106,6 +106,37 @@ export default defineConfig(
     },
   },
   {
+    files: ["apps/desktop-sidecar/prototypes/**/*.ts"],
+    rules: {
+      // Prototypes intentionally exercise the private sidecar seam and shell tooling directly; they
+      // are not production package code and are deleted or promoted as a unit.
+      "@typescript-eslint/no-restricted-imports": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
+      "@typescript-eslint/strict-boolean-expressions": "off",
+      "@typescript-eslint/strict-void-return": "off",
+      "complete/no-mutable-return": "off",
+      "complete/no-string-length-0": "off",
+      "complete/prefer-readonly-parameter-types": "off",
+      "complete/prefer-const": "off",
+      "complete/prefer-is-array": "off",
+      "complete/sort-objects": "off",
+      "no-bitwise": "off",
+      "no-param-reassign": "off",
+      "no-void": "off",
+      "preserve-caught-error": "off",
+      "prefer-const": "off",
+      "unicorn/no-array-front-mutation": "off",
+      "unicorn/no-await-expression-member": "off",
+      "unicorn/no-return-array-push": "off",
+      "unicorn/no-unnecessary-splice": "off",
+      "unicorn/no-unreadable-for-of-expression": "off",
+      "unicorn/no-unreadable-new-expression": "off",
+      "unicorn/no-this-outside-of-class": "off",
+      "unicorn/prefer-top-level-await": "off",
+      "unicorn/try-complexity": "off",
+    },
+  },
+  {
     files: ["**/*.ts"],
     rules: {
       // Sequential async work is common for filesystem polling and ordered IO.
