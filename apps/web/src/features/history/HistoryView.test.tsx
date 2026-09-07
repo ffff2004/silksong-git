@@ -907,6 +907,7 @@ describe("History view", () => {
         "Restore completed. The watcher will observe the new save.",
       ),
     ).toBeDefined();
+    expect(screen.queryByTestId("restore-dialog")).toBeNull();
     expect(restoreRequests).toHaveLength(2);
     const restoreBody = restoreRequests[0]?.body;
     if (typeof restoreBody !== "string") {
@@ -1097,6 +1098,7 @@ describe("History view", () => {
         "Restore completed. The watcher will observe the new save.",
       ),
     ).toBeDefined();
+    expect(screen.queryByTestId("restore-dialog")).toBeNull();
     expect(restoreRequests).toHaveLength(1);
     const restoreBody = restoreRequests[0]?.body;
     if (typeof restoreBody !== "string") {
@@ -1210,6 +1212,7 @@ describe("History view", () => {
         "Restore completed. The watcher will observe the new save.",
       ),
     ).toBeDefined();
+    expect(screen.queryByTestId("restore-dialog")).toBeNull();
     expect(restoreRequests).toHaveLength(2);
     const firstRestoreBody = restoreRequests[0]?.body;
     const secondRestoreBody = restoreRequests[1]?.body;
@@ -1558,6 +1561,7 @@ describe("History view", () => {
         "Restore completed. The watcher will observe the new save.",
       ),
     ).toBeDefined();
+    expect(screen.queryByTestId("restore-dialog")).toBeNull();
     expect(restoreRequests).toHaveLength(1);
     const restoreBody = restoreRequests[0]?.body;
     if (typeof restoreBody !== "string") {

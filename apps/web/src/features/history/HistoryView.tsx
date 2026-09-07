@@ -3,6 +3,7 @@ import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 
 import { useLocalHistoryStore } from "../../state/local-history-store.tsx";
+import { useToastStore } from "../../state/toast-store.tsx";
 import buttonStyles from "../../ui/Button.module.css";
 import dialogStyles from "../../ui/Dialog.module.css";
 import viewStyles from "../../ui/View.module.css";
@@ -450,6 +451,7 @@ function RestoreDialog(props: {
     | { readonly status: "missing" };
 
   const localHistory = useLocalHistoryStore();
+  const toastStore = useToastStore();
   const [isSubmitting, setIsSubmitting] = createSignal(false);
   const [requiresMissingConfirmation, setRequiresMissingConfirmation] =
     createSignal(false);
@@ -545,8 +547,10 @@ function RestoreDialog(props: {
         commitRef: props.commit,
         expectedCurrent,
       });
-      setRequiresMissingConfirmation(false);
-      setMessage("Restore completed. The watcher will observe the new save.");
+      toastStore.showToast(
+        "Restore completed. The watcher will observe the new save.",
+      );
+      props.onClose();
     } catch (error) {
       setMessage(getRestoreErrorMessage(error));
       if (isRestoreConflictError(error)) {
