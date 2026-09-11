@@ -2,7 +2,8 @@ import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
 import { randomBytes } from "node:crypto";
 import { watch } from "node:fs";
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
+import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type {
@@ -484,10 +485,21 @@ function summarizeObservation(
 }
 
 const nodeWatchEventSource: WatchEventSource = {
-  start(input: WatchEventSourceStartInput): WatchEventSubscription {
-    const watcher = watch(input.watchedSavePath, () => {
-      handleWatchChange(input);
-    });
+  async start(
+    input: WatchEventSourceStartInput,
+  ): Promise<WatchEventSubscription> {
+    const canonicalWatchedSavePath = await realpath(input.watchedSavePath);
+    const watchedSaveName = path.basename(canonicalWatchedSavePath);
+    const watcher = watch(
+      path.dirname(canonicalWatchedSavePath),
+      (_eventType, name) => {
+        if (name !== null && name !== watchedSaveName) {
+          return;
+        }
+
+        handleWatchChange(input);
+      },
+    );
 
     watcher.on("error", (error) => {
       handleWatchError(input, error);

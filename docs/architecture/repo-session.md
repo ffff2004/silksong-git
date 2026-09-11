@@ -73,12 +73,16 @@ startup are not missed. Startup and later opportunities use the same bounded
 file-stability probe before History reads the Watched Save.
 
 A filesystem event is a scheduling signal, not a commit boundary. The session
-keeps at most one active stability-probe/observation path and one pending timed
-opportunity. Real changes use trailing debounce. A change arriving during
-active work is retained for a later opportunity. Minimum Commit Interval skips
-schedule one deferred read no earlier than both History's next-allowed time and
-the latest change's debounce deadline; deferred work reads current bytes rather
-than retaining an earlier payload.
+resolves the Watched Save's canonical target when watching starts, attaches the
+production backend to that target's stable parent directory, filters named
+events to the canonical target basename, and conservatively schedules when the
+backend omits a filename so atomic file replacement cannot detach the watch.
+The session keeps at most one active stability-probe/observation path and one
+pending timed opportunity. Real changes use trailing debounce. A change arriving
+during active work is retained for a later opportunity. Minimum Commit Interval
+skips schedule one deferred read no earlier than both History's next-allowed
+time and the latest change's debounce deadline; deferred work reads current
+bytes rather than retaining an earlier payload.
 
 History owns committed, skipped, and Watcher Error meanings. A recoverable read,
 decode, or stability failure completes one observation opportunity and permits

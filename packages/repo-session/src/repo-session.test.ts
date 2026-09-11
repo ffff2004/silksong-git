@@ -2,12 +2,22 @@ import { strict as assert } from "node:assert";
 import { fork } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
 import test from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type {
   ObserveSaveResult,
@@ -133,6 +143,146 @@ async function createHistoryRepo(
     watchedSavePath,
     configPath: initialized.configPath,
   };
+}
+
+async function createSymlinkHistoryRepo(
+  t: TestContext,
+  config?: ProjectConfigOverrides,
+): Promise<HistoryRepoFixture & { readonly canonicalWatchedSavePath: string }> {
+  const tempDirectory = await createTempDirectory(t);
+  const repoPath = path.join(tempDirectory, "history-repo");
+  const watchedSavePath = path.join(tempDirectory, "watched-save.dat");
+  const canonicalDirectory = path.join(tempDirectory, "canonical");
+  const canonicalWatchedSavePath = path.join(
+    canonicalDirectory,
+    "actual-save.dat",
+  );
+
+  await mkdir(canonicalDirectory);
+  await copyFile(minimalEncodedSavePath, canonicalWatchedSavePath);
+  await symlink(canonicalWatchedSavePath, watchedSavePath);
+  const initialized = await initSaveHistory({
+    repoPath,
+    watchedSavePath,
+    config,
+  });
+
+  return {
+    tempDirectory,
+    repoPath,
+    watchedSavePath,
+    canonicalWatchedSavePath,
+    configPath: initialized.configPath,
+  };
+}
+
+async function waitForRecordedSave(
+  session: RepoSession,
+  events: readonly RepoSessionEvent[],
+  encodedSha256: string,
+) {
+  const deadline = Date.now() + 5000;
+
+  while (Date.now() < deadline) {
+    if (
+      events.some(
+        (event) =>
+          event.type === "observation"
+          && event.result.status === "committed"
+          && event.result.observation.encodedSha256 === encodedSha256,
+      )
+    ) {
+      return;
+    }
+
+    assert.equal(session.getWatcherStatus().status, "running");
+    await sleep(10);
+  }
+
+  assert.fail(`Timed out waiting for encoded save ${encodedSha256}.`);
+}
+
+async function waitForWatcherQuiescence(session: RepoSession) {
+  const deadline = Date.now() + 5000;
+  let idleRevision: number | undefined;
+  let idleSince = Date.now();
+
+  while (Date.now() < deadline) {
+    const status = session.getWatcherStatus();
+    if (status.status !== "running" || status.activity !== "idle") {
+      idleRevision = undefined;
+    } else if (idleRevision !== status.observationRevision) {
+      idleRevision = status.observationRevision;
+      idleSince = Date.now();
+    } else if (Date.now() - idleSince >= 300) {
+      return;
+    }
+
+    await sleep(10);
+  }
+
+  assert.fail("Timed out waiting for the watcher to become quiescent.");
+}
+
+async function atomicallyReplaceFile(
+  sourcePath: string,
+  targetPath: string,
+  replacementIndex: number,
+) {
+  const replacementPath = `${targetPath}.replacement-${replacementIndex}`;
+
+  await copyFile(sourcePath, replacementPath);
+  await rename(replacementPath, targetPath);
+}
+
+async function assertRepeatedAtomicReplacementsObserved(
+  t: TestContext,
+  repo: HistoryRepoFixture,
+  replacementTargetPath: string,
+) {
+  const events: RepoSessionEvent[] = [];
+  const session = await startRepoSessionForTest({
+    repoPath: repo.repoPath,
+    onEvent: (event) => {
+      events.push(event);
+    },
+  });
+  t.after(async () => {
+    await session.stop();
+  });
+
+  assert.equal(session.getWatcherStatus().observationRevision, 1);
+
+  const firstReplacementHash = createHash("sha256")
+    .update(await readFile(maskShard2CollectedEncodedSavePath))
+    .digest("hex");
+  const secondReplacementHash = createHash("sha256")
+    .update(await readFile(maskShard2CollectedRosariesEncodedSavePath))
+    .digest("hex");
+
+  await atomicallyReplaceFile(
+    maskShard2CollectedEncodedSavePath,
+    replacementTargetPath,
+    1,
+  );
+  await waitForRecordedSave(session, events, firstReplacementHash);
+  await waitForWatcherQuiescence(session);
+
+  await atomicallyReplaceFile(
+    maskShard2CollectedRosariesEncodedSavePath,
+    replacementTargetPath,
+    2,
+  );
+  await waitForRecordedSave(session, events, secondReplacementHash);
+  await waitForWatcherQuiescence(session);
+
+  const status = session.getWatcherStatus();
+  assert.equal(status.status, "running");
+  assert.equal(status.watchedSavePath, repo.watchedSavePath);
+  assert.ok(status.observationRevision >= 3);
+
+  const observations = await queryRawObservations({ repoPath: repo.repoPath });
+  assert.equal(observations.entries.length, 3);
 }
 
 async function startExternalWatcher(t: TestContext, repoPath: string) {
@@ -832,6 +982,25 @@ test("Repo Session observes file-change events", async (t) => {
     startupObservation.result.observation.encodedSha256,
   );
   await process.stop();
+});
+
+test("Repo Session keeps observing across repeated atomic Watched Save replacements", async (t) => {
+  const repo = await createHistoryRepo(t, minimalEncodedSavePath, {
+    capturePolicy: { debounceWriteMs: 0 },
+  });
+  await assertRepeatedAtomicReplacementsObserved(t, repo, repo.watchedSavePath);
+});
+
+test("Repo Session observes repeated atomic replacements of a symlinked Watched Save target", async (t) => {
+  const repo = await createSymlinkHistoryRepo(t, {
+    capturePolicy: { debounceWriteMs: 0 },
+  });
+
+  await assertRepeatedAtomicReplacementsObserved(
+    t,
+    repo,
+    repo.canonicalWatchedSavePath,
+  );
 });
 
 test("Repo Session waits for file stability before observing changes", async (t) => {
